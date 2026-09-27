@@ -1,6 +1,8 @@
 import { Controller, Get, Header, HttpCode, HttpException, Inject } from '@nestjs/common';
+import { Public } from './auth/guard';
 import { APP_CONTEXT, type AppContext } from './context';
 
+@Public()
 @Controller()
 export class HealthController {
   constructor(@Inject(APP_CONTEXT) private readonly ctx: AppContext) {}

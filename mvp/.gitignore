@@ -6,3 +6,5 @@ out/
 coverage/
 .env
 offline-bundle/
+test-results/
+playwright-report/

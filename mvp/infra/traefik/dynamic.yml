@@ -1,0 +1,25 @@
+# Маршруты и промежуточные обработчики Traefik задаются здесь, а НЕ метками контейнеров.
+# Причина: во время поэтапного обновления старые и новые контейнеры работают одновременно; если их
+# метки маршрутов различаются, Traefik считает это конфликтом и снимает маршрут (ответы 404).
+# Метки контейнеров описывают только сервис: порт и проверку готовности (они не меняются между версиями).
+http:
+  routers:
+    api:
+      rule: PathPrefix(`/api`)
+      entryPoints: [websecure]
+      tls: {}
+      service: api@docker
+      middlewares: [retry]
+    web:
+      rule: PathPrefix(`/`)
+      priority: 1
+      entryPoints: [websecure]
+      tls: {}
+      service: web@docker
+      middlewares: [retry]
+  middlewares:
+    # Повтор только при сетевой ошибке до получения ответа (например, соединение закрыто остановленным экземпляром).
+    retry:
+      retry:
+        attempts: 3
+        initialInterval: 50ms

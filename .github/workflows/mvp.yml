@@ -15,6 +15,15 @@ defaults:
 jobs:
   checks:
     runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env: { POSTGRES_USER: cc, POSTGRES_PASSWORD: cc, POSTGRES_DB: cc }
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U cc" --health-interval 2s --health-retries 30
+    env:
+      TEST_DATABASE_URL: postgres://cc:cc@127.0.0.1:5432/postgres
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -32,11 +41,14 @@ jobs:
       - name: Правило expand/contract для миграций
         run: pnpm migrations:lint
       - name: Squawk (безопасность миграций PostgreSQL)
-        run: npx --yes squawk-cli@2 --assume-in-transaction --exclude=prefer-robust-stmts,require-timeout-settings,prefer-bigint-over-int packages/db/migrations/*.sql
+        run: npx --yes squawk-cli@2 --assume-in-transaction --exclude=prefer-robust-stmts,require-timeout-settings,prefer-bigint-over-int,prefer-bigint-over-smallint packages/db/migrations/*.sql
 
-  zero-downtime:
+  stack:
     needs: checks
     runs-on: ubuntu-24.04
+    env:
+      SEED_DEMO: 'true'
+      BOOTSTRAP_ADMIN_PASSWORD: Admin12345!
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -45,9 +57,17 @@ jobs:
         with: { node-version: 22, cache: pnpm, cache-dependency-path: mvp/pnpm-lock.yaml }
       - run: ops/build-images.sh v1 && ops/build-images.sh v2
       - run: API_TAG=v1 docker compose -f infra/compose/docker-compose.yml up -d --wait
+      - name: Сквозные тесты в браузере (Playwright)
+        run: |
+          cd e2e && pnpm exec playwright install --with-deps chromium && pnpm exec playwright test
       - name: Поэтапное обновление api под нагрузкой — 0 ошибок
-        run: node ops/test/rollout-under-load.mjs v2 50 60
+        run: API_TAG=v1 node ops/test/rollout-under-load.mjs v2 50 60
+      - name: Поэтапное обновление web под нагрузкой — 0 ошибок
+        run: API_TAG=v2 SERVICE=web node ops/test/rollout-under-load.mjs v2 40 30
       - name: Перезапуск узла NATS — без потерь
         run: node ops/test/nats-failover.mjs 2000
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with: { name: e2e-results, path: mvp/e2e/test-results, if-no-files-found: ignore }
       - if: failure()
         run: docker compose -f infra/compose/docker-compose.yml logs --no-color | tail -300

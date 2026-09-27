@@ -8,7 +8,12 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 OUT="${1:-offline-bundle}"
 mkdir -p "$OUT"
-docker compose -f infra/compose/docker-compose.yml --profile observability config --images | sort -u > "$OUT/images.txt"
+# Образы из compose + базовые образы для пересборки приложений без интернета.
+{
+  docker compose -f infra/compose/docker-compose.yml --profile observability config --images
+  echo "${NODE_IMAGE:-node:22-alpine}"
+  echo "${NGINX_IMAGE:-nginx:1.29-alpine}"
+} | sort -u > "$OUT/images.txt"
 echo "образов: $(wc -l < "$OUT/images.txt")"
 if [ -z "${SKIP_IMAGES:-}" ]; then
   while read -r img; do
