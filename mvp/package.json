@@ -1,0 +1,30 @@
+{
+  "name": "contact-center-mvp",
+  "private": true,
+  "packageManager": "pnpm@10.28.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "licenses:check": "node ops/licenses/check.mjs",
+    "migrations:lint": "node ops/test/migrations-lint.mjs"
+  },
+  "devDependencies": {
+    "@eslint/js": "9.39.5",
+    "@types/node": "22.20.4",
+    "autocannon": "8.0.0",
+    "nats": "2.29.3",
+    "eslint": "9.39.5",
+    "prettier": "3.6.2",
+    "turbo": "2.11.4",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.70.1",
+    "vitest": "3.2.7"
+  }
+}
