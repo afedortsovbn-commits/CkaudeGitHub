@@ -2,91 +2,23 @@
  * Интеграционные тесты API на реальной PostgreSQL (DoD Ф1).
  * Требует TEST_DATABASE_URL (подключение с правом CREATE DATABASE); без него — пропуск.
  */
-import type { NestFastifyApplication } from '@nestjs/platform-fastify';
-import { newId } from '@cc/contracts';
-import { createPool, migrate } from '@cc/db';
-import { createMetrics, Lifecycle } from '@cc/service-kit';
-import { Pool } from 'pg';
-import pino from 'pino';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { createApp } from '../app.factory';
-import { hashPassword } from '../auth/passwords';
-import { PrincipalLoader } from '../auth/principal';
-import { TokenService } from '../auth/tokens';
-import { seedDemo } from '../cli/demo-seed';
-import { ApiConfigSchema, type AppContext } from '../context';
-import { withTx } from '../lib/db';
-
-const ADMIN_URL = process.env.TEST_DATABASE_URL;
-const DEMO_PW = 'Demo12345!';
-const dbName = `cc_it_${Date.now()}`;
+import { ADMIN_URL, createTestApp, DEMO_PW } from './setup';
 
 describe.skipIf(!ADMIN_URL)('API Ф1 (интеграция)', () => {
-  let app: NestFastifyApplication;
-  let pool: Pool;
-  let admin: Pool;
-
-  const http = () => app.getHttpAdapter().getInstance();
-  async function call(method: string, url: string, token?: string, payload?: unknown) {
-    const res = await http().inject({
-      method: method as 'GET',
-      url,
-      headers: token ? { authorization: `Bearer ${token}` } : {},
-      payload: payload as object,
-    });
-    return { status: res.statusCode, body: res.body ? JSON.parse(res.body) : undefined, res };
-  }
-  async function login(email: string, password = DEMO_PW) {
-    const r = await call('POST', '/api/v1/auth/login', undefined, { email, password });
-    expect(r.status, JSON.stringify(r.body)).toBe(200);
-    return r.body.accessToken as string;
-  }
+  let t: Awaited<ReturnType<typeof createTestApp>>;
+  const http = () => t.http();
+  const call = (...a: Parameters<typeof t.call>) => t.call(...a);
+  const login = (email: string, password = DEMO_PW) => t.login(email, password);
+  let pool: typeof t.pool;
 
   beforeAll(async () => {
-    admin = new Pool({ connectionString: ADMIN_URL });
-    await admin.query(`CREATE DATABASE ${dbName}`);
-    const url = new URL(ADMIN_URL!);
-    url.pathname = `/${dbName}`;
-    pool = createPool(url.toString());
-    await migrate(pool);
-    await withTx(pool, async (tx) => {
-      const id = newId();
-      await tx.query(
-        `INSERT INTO app_user (id, full_name, email, password_hash) VALUES ($1, 'Админ', 'admin@test.local', $2)`,
-        [id, await hashPassword(DEMO_PW)],
-      );
-      await tx.query(`INSERT INTO user_role VALUES ($1, 'admin')`, [id]);
-      await tx.query(`INSERT INTO access_scope (id, user_id) VALUES ($1, $2)`, [newId(), id]);
-      await seedDemo(tx, DEMO_PW);
-    });
-    const config = ApiConfigSchema.parse({
-      SERVICE_NAME: 'api-test',
-      DATABASE_URL: url.toString(),
-      JWT_SECRET: 'x'.repeat(40),
-      COOKIE_SECURE: 'false',
-    });
-    const logger = pino({ level: 'silent' });
-    const lifecycle = new Lifecycle({ logger, drainDelayMs: 0, timeoutMs: 1000, exit: () => undefined });
-    lifecycle.markReady();
-    const ctx: AppContext = {
-      config,
-      logger,
-      lifecycle,
-      metrics: createMetrics('api-test'),
-      pool,
-      tokens: new TokenService(config.JWT_SECRET, 900),
-      principals: new PrincipalLoader(pool, 0),
-    };
-    app = await createApp(ctx);
-    await app.init();
-    await http().ready();
+    t = await createTestApp();
+    pool = t.pool;
   }, 60_000);
 
   afterAll(async () => {
-    await app?.close();
-    await pool?.end();
-    await admin?.query(`DROP DATABASE IF EXISTS ${dbName} WITH (FORCE)`);
-    await admin?.end();
+    await t?.cleanup();
   });
 
   it('вход, me, refresh с ротацией, выход', async () => {

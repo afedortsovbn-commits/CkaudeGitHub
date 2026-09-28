@@ -1,5 +1,5 @@
 import { z, type ZodTypeAny } from 'zod';
-import type { ScopeColumns } from '../access/scope';
+import type { ScopeColumns } from '@cc/auth';
 
 export interface FieldSpec {
   api: string;
@@ -150,6 +150,34 @@ export const DICTIONARIES: Record<string, DictSpec> = {
       f('holidays', z.array(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)).default([])),
     ],
     orderBy: 'name',
+    search: ['name'],
+    writePerm: 'admin.directories',
+  },
+  channels: {
+    table: 'channel',
+    title: 'Канал',
+    fields: [
+      f('kind', z.enum(['webchat', 'app', 'telegram', 'email', 'api'])),
+      f('name', name),
+      f('queueId', uuid.nullable().optional()),
+      f(
+        'config',
+        z
+          .object({
+            public_key: z.string().min(8).max(64).optional(),
+            allowed_origins: z.array(z.string().max(200)).optional(),
+            consent_text: z.string().max(4000).optional(),
+            consent_version: z.string().max(32).optional(),
+            greeting: z.string().max(1000).optional(),
+            max_file_mb: z.number().int().min(1).max(50).optional(),
+            app_secret: z.string().min(16).max(200).optional(),
+          })
+          .passthrough()
+          .default({}),
+        { json: true },
+      ),
+    ],
+    orderBy: 'kind, name',
     search: ['name'],
     writePerm: 'admin.directories',
   },

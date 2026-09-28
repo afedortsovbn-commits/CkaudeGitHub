@@ -9,7 +9,7 @@ import {
 import { Reflector } from '@nestjs/core';
 import type { FastifyRequest } from 'fastify';
 import { ApiError } from '../lib/errors';
-import type { Principal } from './principal';
+import type { Principal } from '@cc/auth';
 import { APP_CONTEXT, type AppContext } from '../context';
 
 const PUBLIC = 'cc:public';

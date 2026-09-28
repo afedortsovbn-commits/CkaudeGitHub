@@ -18,6 +18,7 @@ export default tseslint.config(
         URL: 'readonly',
         TextEncoder: 'readonly',
         TextDecoder: 'readonly',
+        WebSocket: 'readonly',
       },
     },
     rules: {

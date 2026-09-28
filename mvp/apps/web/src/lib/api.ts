@@ -26,6 +26,39 @@ export function setAccessToken(t: string | null): void {
   accessToken = t;
 }
 
+export const getAccessToken = (): string | null => accessToken;
+
+/** Загрузка файла сырым телом (вложения). */
+export async function upload<T>(path: string, file: File): Promise<T> {
+  const doIt = () =>
+    fetch(`/api/v1${path}`, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: {
+        'content-type': file.type || 'application/octet-stream',
+        'x-filename': encodeURIComponent(file.name),
+        ...(accessToken ? { authorization: `Bearer ${accessToken}` } : {}),
+      },
+      body: file,
+    });
+  let r = await doIt();
+  if (r.status === 401 && (await refreshSession())) r = await doIt();
+  const data = await r.json();
+  if (!r.ok) throw new ApiError(r.status, String(data.error), String(data.message), data.details);
+  return data as T;
+}
+
+/** Открыть вложение (скачивание с авторизацией через Bearer). */
+export async function openAttachment(id: string): Promise<void> {
+  const r = await fetch(`/api/v1/attachments/${id}`, {
+    headers: accessToken ? { authorization: `Bearer ${accessToken}` } : {},
+  });
+  if (!r.ok) throw new ApiError(r.status, 'download', 'Файл недоступен');
+  const url = URL.createObjectURL(await r.blob());
+  window.open(url, '_blank', 'noopener');
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
 export async function refreshSession(): Promise<boolean> {
   refreshing ??= (async () => {
     try {

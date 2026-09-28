@@ -10,6 +10,11 @@ http:
       tls: {}
       service: api@docker
       middlewares: [retry]
+    realtime:
+      rule: PathPrefix(`/ws`)
+      entryPoints: [websecure]
+      tls: {}
+      service: realtime@docker
     web:
       rule: PathPrefix(`/`)
       priority: 1

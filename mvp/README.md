@@ -6,7 +6,7 @@
 Требования, архитектура и план — в [`../Контакт-центр/planning/`](../Контакт-центр/planning/).
 Журнал выполненных фаз — [`docs/PROGRESS.md`](docs/PROGRESS.md).
 
-## Состав (выполнены фазы Ф0–Ф1)
+## Состав (выполнены фазы Ф0–Ф2)
 
 | Каталог                | Что это                                                                                                    |
 | ---------------------- | ---------------------------------------------------------------------------------------------------------- |
@@ -27,6 +27,7 @@ ops/build-images.sh dev                                   # сборка код�
 SEED_DEMO=true BOOTSTRAP_ADMIN_PASSWORD='Admin12345!' \
   docker compose -f infra/compose/docker-compose.yml up -d --wait
 # интерфейс: https://localhost  (самоподписанный сертификат)
+# демо-сайт с виджетом чата: https://localhost/widget/demo.html
 docker compose -f infra/compose/docker-compose.yml --profile observability up -d   # Prometheus :9090, Grafana :3001
 ```
 
@@ -57,6 +58,7 @@ WEB_TAG=v2 ops/rollout.sh web
 ```bash
 node ops/test/rollout-under-load.mjs v2 50 60   # 50 запросов/с в течение 60 с, во время обновления — 0 ошибок
 SERVICE=web node ops/test/rollout-under-load.mjs v2 40 30
+node ops/test/chat-under-rollout.mjs v2 60     # переписка во время обновления worker, realtime, api — 0 потерь
 node ops/test/nats-failover.mjs 2000             # перезапуск узла-лидера NATS — 0 потерь и дублей
 ```
 

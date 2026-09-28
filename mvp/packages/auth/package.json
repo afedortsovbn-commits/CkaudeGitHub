@@ -1,0 +1,22 @@
+{
+  "name": "@cc/auth",
+  "version": "0.1.0",
+  "private": true,
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "jose": "5.10.0",
+    "pg": "8.23.0"
+  },
+  "devDependencies": {
+    "@types/pg": "8.23.1"
+  }
+}

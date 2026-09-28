@@ -3,7 +3,7 @@ import { newId } from '@cc/contracts';
 import { z } from 'zod';
 import { CurrentUser, RequirePerm } from '../auth/guard';
 import { hashPassword, PASSWORD_MIN_LENGTH } from '../auth/passwords';
-import type { Principal } from '../auth/principal';
+import type { Principal } from '@cc/auth';
 import { APP_CONTEXT, type AppContext } from '../context';
 import { audit } from '../lib/audit';
 import { one, rows, toApi, withTx } from '../lib/db';

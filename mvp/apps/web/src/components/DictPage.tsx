@@ -23,6 +23,8 @@ interface Props {
   rowActions?(row: Row): ReactNode;
   /** Подготовка значений формы редактирования. */
   toForm?(row: Row): Record<string, unknown>;
+  /** Преобразование значений формы перед отправкой (например, сборка вложенного config). */
+  fromForm?(values: Record<string, unknown>): Record<string, unknown>;
   hideTitle?: boolean;
 }
 
@@ -36,6 +38,7 @@ export function DictPage({
   toolbar,
   rowActions,
   toForm,
+  fromForm,
   hideTitle,
 }: Props) {
   const { can } = useAuth();
@@ -45,9 +48,12 @@ export function DictPage({
   const list = useList(
     `/dict/${kind}?active=${showInactive ? 'all' : 'true'}${q ? `&q=${encodeURIComponent(q)}` : ''}`,
   );
-  const save = useAction(async (vals: Record<string, unknown>) =>
-    editing === 'new' ? post(`/dict/${kind}`, vals) : patch(`/dict/${kind}/${(editing as Row).id}`, vals),
-  );
+  const save = useAction(async (raw: Record<string, unknown>) => {
+    const vals = fromForm ? fromForm(raw) : raw;
+    return editing === 'new'
+      ? post(`/dict/${kind}`, vals)
+      : patch(`/dict/${kind}/${(editing as Row).id}`, vals);
+  });
   const toggle = useAction((r: Row) =>
     post(`/dict/${kind}/${r.id}/${r.isActive ? 'deactivate' : 'activate'}`),
   );

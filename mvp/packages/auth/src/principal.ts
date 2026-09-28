@@ -1,5 +1,5 @@
 import type { Pool } from 'pg';
-import type { ScopeRule, ScopeSubject } from '../access/scope';
+import type { ScopeRule, ScopeSubject } from './scope';
 
 export const PERMISSIONS = [
   'scope.all',
