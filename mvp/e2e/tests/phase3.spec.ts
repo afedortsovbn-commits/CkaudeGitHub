@@ -67,10 +67,7 @@ test.describe.serial('Ф3: маршрутизация (ACD), статусы оп
     await client.ctx.close();
   });
 
-  test('отказ от предложения возвращает обращение в очередь оператору не предлагается повторно', async ({
-    page,
-    browser,
-  }) => {
+  test('отказ от предложения возвращает обращение в очередь', async ({ page, browser }) => {
     await login(page, 'operator2@demo.local', DEMO_PASSWORD);
     await nav(page, 'Рабочее место оператора');
     await page.getByTestId('agent-status').getByText('Готов').click();

@@ -234,10 +234,9 @@ export class ConversationsController {
         `UPDATE conversation SET assignee_id = $2, status = 'active', assigned_at = now(), version = version + 1, updated_at = now() WHERE id = $1`,
         [id, p.id],
       );
+      // Только отметка для стратегии least_recent; статус не трогаем — ручное «Взять» не делает оператора «Готов».
       await tx.query(
-        `INSERT INTO agent_status (user_id, status, last_assigned_at, since, updated_at)
-         VALUES ($1, 'ready', now(), now(), now())
-         ON CONFLICT (user_id) DO UPDATE SET last_assigned_at = now(), updated_at = now()`,
+        `UPDATE agent_status SET last_assigned_at = now(), updated_at = now() WHERE user_id = $1`,
         [p.id],
       );
       await appendMessage(tx, {
@@ -271,7 +270,7 @@ export class ConversationsController {
       await appendMessage(tx, {
         conversationId: id,
         direction: 'system',
-        body: `Оператор ${p.fullName} принял обращение`,
+        body: `Оператор ${p.fullName} подключился к диалогу`,
         channelKind: c.channel_kind,
       });
       await emitConversation(tx, CONVERSATION_EVENTS.updated, await loadRef(tx, id), { action: 'accepted' });
@@ -481,7 +480,11 @@ export class ConversationsController {
         direction: 'system',
         body:
           d.behavior === 'postponed'
-            ? `Диалог отложен. Перезвон/повторный контакт: ${new Date(callbackAt!).toLocaleString('ru-RU')}`
+            ? `Мы свяжемся с вами ${new Date(callbackAt!).toLocaleString('ru-RU', {
+                timeZone: 'Europe/Minsk',
+                dateStyle: 'short',
+                timeStyle: 'short',
+              })}`
             : 'Диалог завершён. Спасибо за обращение!',
         channelKind: c.channel_kind,
         authorUserId: p.id,
@@ -490,13 +493,18 @@ export class ConversationsController {
         action: 'closed',
         disposition: d.name,
       });
-      // Постобработка (M-RT-06): оператор автоматически уходит в «Постобработка», затем сам вернётся
-      // в «Готов» — или router переведёт его туда по истечении времени очереди (router.sweepWrapUp).
+      // Постобработка (M-RT-06) — только для своего обращения и только из «Готов»: иначе оператор на перерыве
+      // (или супервизор, закрывший чужое) через wrap_up_s автоматически стал бы «Готов» и получал обращения.
       const wrapUpS = await one<{ wrap_up_s: number }>(tx, `SELECT wrap_up_s FROM queue WHERE id = $1`, [
         c.queue_id,
       ]);
       const seconds = wrapUpS?.wrap_up_s ?? 15;
-      if (seconds > 0) {
+      const cur = await one<{ status: string }>(
+        tx,
+        `SELECT status FROM agent_status WHERE user_id = $1 FOR UPDATE`,
+        [p.id],
+      );
+      if (seconds > 0 && c.assignee_id === p.id && (cur?.status === 'ready' || cur?.status === 'wrap_up')) {
         await setAgentStatus(tx, p.id, 'wrap_up', {
           wrapUpUntil: new Date(Date.now() + seconds * 1000),
         });

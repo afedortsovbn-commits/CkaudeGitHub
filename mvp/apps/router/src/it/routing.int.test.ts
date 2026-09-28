@@ -1,6 +1,8 @@
 /** Интеграционные тесты ACD (Ф3) на реальной PostgreSQL: назначение, отказ, перелив, конкурентность. */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { createJobQueue, createLogger } from '@cc/service-kit';
 import { assignQueued, handleOfferTimeout } from '../assign';
+import { registerJobs, scheduleOfferTimeout } from '../jobs';
 import { sweepOverflow } from '../sweep';
 import { ADMIN_URL, createTestDb } from './setup';
 
@@ -117,6 +119,40 @@ describe.skipIf(!ADMIN_URL)('Маршрутизация (ACD), Ф3', () => {
     expect(n).toBe(1);
     void opB;
   });
+
+  it('таймаут принятия через настоящий pg-boss: задача срабатывает сама и возвращает обращение в очередь', async () => {
+    const logger = createLogger({ service: 'router-test', version: 'test', level: 'silent' });
+    const boss = await createJobQueue({ connectionString: t.url, logger });
+    try {
+      await registerJobs(boss, t.pool, logger);
+      const q = await t.queue({ name: 'pg-boss', offerTimeoutS: 1 });
+      const ch = await t.channel(q);
+      const contact = await t.contact();
+      await t.operator(q);
+      const conv = await t.queuedConversation(q, ch, contact);
+      const n = await assignQueued(t.pool, { maxChatsFallback: 5, batchSize: 10 }, (o) =>
+        scheduleOfferTimeout(boss, o, o.offerTimeoutS),
+      );
+      expect(n).toBe(1);
+
+      let status = 'offered';
+      for (let i = 0; i < 40 && status !== 'queued'; i++) {
+        await new Promise((r) => setTimeout(r, 250));
+        const r = await t.pool.query<{ status: string }>(`SELECT status FROM conversation WHERE id = $1`, [
+          conv,
+        ]);
+        status = r.rows[0]!.status;
+      }
+      expect(status).toBe('queued');
+      const outcome = await t.pool.query<{ outcome: string }>(
+        `SELECT outcome FROM routing_offer WHERE conversation_id = $1`,
+        [conv],
+      );
+      expect(outcome.rows[0]!.outcome).toBe('timeout');
+    } finally {
+      await boss.stop({ graceful: false, wait: true });
+    }
+  }, 30_000);
 
   it('перелив в резервную группу по истечении времени ожидания', async () => {
     const reserve = await t.queue({ name: 'Резерв' });

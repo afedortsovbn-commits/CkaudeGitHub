@@ -1,7 +1,7 @@
 import type { Logger } from '@cc/service-kit';
 import type { Pool } from 'pg';
 import type PgBoss from 'pg-boss';
-import { Gauge } from 'prom-client';
+import { Counter } from 'prom-client';
 import { assignQueued } from './assign';
 import { scheduleOfferTimeout } from './jobs';
 import { sweepCallbacks, sweepEscalation, sweepOverflow, sweepWrapUp } from './sweep';
@@ -26,12 +26,12 @@ export class Ticker {
   private running = false;
   private loop: Promise<void> | undefined;
   private wake: (() => void) | undefined;
-  private readonly assignedGauge: Gauge;
+  private readonly assigned: Counter;
 
   constructor(private readonly o: TickerOptions) {
-    this.assignedGauge = new Gauge({
+    this.assigned = new Counter({
       name: 'router_assigned_total',
-      help: 'Обращений назначено операторам (нарастающе за жизнь процесса)',
+      help: 'Обращений предложено операторам',
       registers: [o.registry],
     });
   }
@@ -75,7 +75,7 @@ export class Ticker {
       },
       this.o.logger,
     );
-    if (assigned) this.assignedGauge.inc(assigned);
+    if (assigned) this.assigned.inc(assigned);
     return assigned;
   }
 

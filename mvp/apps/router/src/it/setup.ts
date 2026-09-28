@@ -91,5 +91,5 @@ export async function createTestDb() {
     await admin.end();
   }
 
-  return { pool, queue, operator, channel, contact, queuedConversation, cleanup };
+  return { pool, url: url.toString(), queue, operator, channel, contact, queuedConversation, cleanup };
 }

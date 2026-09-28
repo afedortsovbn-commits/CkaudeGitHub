@@ -27,7 +27,7 @@ export async function sweepOverflow(pool: Pool): Promise<number> {
       if (!r.rowCount) return; // уже назначено/переведено другим экземпляром
       await appendMessage(tx, {
         conversationId: c.id,
-        direction: 'system',
+        direction: 'note', // служебное уведомление ACD — клиенту не показывается
         body: 'Превышено время ожидания в очереди — обращение переведено в резервную группу',
         channelKind: c.channel_kind,
       });
@@ -78,7 +78,7 @@ export async function sweepCallbacks(pool: Pool): Promise<number> {
       if (!r.rowCount) return;
       await appendMessage(tx, {
         conversationId: c.id,
-        direction: 'system',
+        direction: 'note', // служебное уведомление ACD — клиенту не показывается
         body: 'Наступило время отложенного перезвона/контакта — обращение снова в очереди',
         channelKind: c.channel_kind,
       });

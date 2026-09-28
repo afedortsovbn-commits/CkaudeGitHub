@@ -174,7 +174,7 @@ export async function handleOfferTimeout(
     );
     await appendMessage(tx, {
       conversationId: conv.id,
-      direction: 'system',
+      direction: 'note', // служебное уведомление ACD — клиенту не показывается
       body: 'Оператор не принял предложенное обращение вовремя — оно возвращено в очередь',
       channelKind: conv.channel_kind,
     });

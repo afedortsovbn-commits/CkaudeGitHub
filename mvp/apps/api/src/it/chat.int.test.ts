@@ -184,4 +184,32 @@ describe.skipIf(!ADMIN_URL)('Обращения Ф2 (интеграция)', () 
     });
     expect(r.status).toBe(400); // вложение загружено другим оператором
   });
+  it('статус оператора (Ф3): «Взять» не делает оператора «Готов»; закрытие на перерыве не уводит в постобработку', async () => {
+    // Предыдущий тест снизил лимит до 1 и оставил у operator3 открытый чат.
+    await t.call('PATCH', '/api/v1/settings', await t.login('admin@test.local'), { 'operator.max_chats': 5 });
+    const op = await t.login('operator3@demo.local');
+    const status = async () => (await t.call('GET', '/api/v1/agent-status/me', op)).body.status;
+    const reason = (await t.call('GET', '/api/v1/dict/break-reasons', op)).body[0].id;
+    const disp = (await t.call('GET', '/api/v1/dict/dispositions', op)).body.find(
+      (d: { code: string }) => d.code === 'no_reply',
+    ).id;
+
+    await t.call('POST', '/api/v1/agent-status', op, { status: 'offline' });
+    const a = await inbound('st-1', 'client-status-A');
+    expect((await t.call('POST', `/api/v1/conversations/${a.conversationId}/take`, op)).status).toBe(200);
+    expect(await status()).toBe('offline');
+
+    await t.call('POST', '/api/v1/agent-status', op, { status: 'break', reasonId: reason });
+    const closed = await t.call('POST', `/api/v1/conversations/${a.conversationId}/close`, op, {
+      dispositionId: disp,
+    });
+    expect(closed.status).toBe(200);
+    expect(await status()).toBe('break');
+
+    await t.call('POST', '/api/v1/agent-status', op, { status: 'ready' });
+    const b = await inbound('st-2', 'client-status-B');
+    await t.call('POST', `/api/v1/conversations/${b.conversationId}/take`, op);
+    await t.call('POST', `/api/v1/conversations/${b.conversationId}/close`, op, { dispositionId: disp });
+    expect(await status()).toBe('wrap_up');
+  });
 });

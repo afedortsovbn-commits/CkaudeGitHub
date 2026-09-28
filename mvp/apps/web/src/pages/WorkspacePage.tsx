@@ -297,7 +297,7 @@ function Messages({ conv, typing, onTyping }: { conv: Row; typing: boolean; onTy
                     {dir === 'in'
                       ? String(conv.contactName)
                       : dir === 'note'
-                        ? `Заметка · ${String(m.authorName ?? '')}`
+                        ? `Заметка · ${String(m.authorName ?? 'система')}`
                         : String(m.authorName ?? '')}{' '}
                     · {time(m.sentAt)}
                   </Text>
