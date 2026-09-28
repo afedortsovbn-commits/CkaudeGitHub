@@ -238,6 +238,26 @@ function List({
   );
 }
 
+/** Доставка ответа во внешний канал (Telegram, email): ставится в очередь → отправлено / ошибка. */
+function Delivery({ m }: { m: Row }) {
+  if (m.deliveryStatus === 'sent')
+    return (
+      <span data-testid="delivery-sent" title="Отправлено клиенту">
+        {' '}
+        · ✓ отправлено
+      </span>
+    );
+  if (m.deliveryStatus === 'failed')
+    return (
+      <span data-testid="delivery-failed" style={{ color: 'var(--mantine-color-red-7)' }}>
+        {' '}
+        · ⚠ не доставлено{m.deliveryError ? `: ${String(m.deliveryError)}` : ''}
+      </span>
+    );
+  if (m.deliveryStatus === 'pending') return <span data-testid="delivery-pending"> · отправляется…</span>;
+  return null;
+}
+
 function Messages({ conv, typing, onTyping }: { conv: Row; typing: boolean; onTyping(): void }) {
   const { me } = useAuth();
   const msgs = useList(`/conversations/${conv.id}/messages`);
@@ -300,6 +320,7 @@ function Messages({ conv, typing, onTyping }: { conv: Row; typing: boolean; onTy
                         ? `Заметка · ${String(m.authorName ?? 'система')}`
                         : String(m.authorName ?? '')}{' '}
                     · {time(m.sentAt)}
+                    {dir === 'out' && <Delivery m={m} />}
                   </Text>
                 )}
                 <Text

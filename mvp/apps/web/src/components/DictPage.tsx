@@ -24,8 +24,10 @@ interface Props {
   /** Подготовка значений формы редактирования. */
   toForm?(row: Row): Record<string, unknown>;
   /** Преобразование значений формы перед отправкой (например, сборка вложенного config). */
-  fromForm?(values: Record<string, unknown>): Record<string, unknown>;
+  fromForm?(values: Record<string, unknown>, editing: Row | null): Record<string, unknown>;
   hideTitle?: boolean;
+  /** Начальные значения формы новой записи. */
+  createDefaults?: Record<string, unknown>;
 }
 
 /** Страница простого справочника поверх /api/v1/dict/:kind. */
@@ -40,6 +42,7 @@ export function DictPage({
   toForm,
   fromForm,
   hideTitle,
+  createDefaults,
 }: Props) {
   const { can } = useAuth();
   const [showInactive, setShowInactive] = useState(false);
@@ -49,7 +52,7 @@ export function DictPage({
     `/dict/${kind}?active=${showInactive ? 'all' : 'true'}${q ? `&q=${encodeURIComponent(q)}` : ''}`,
   );
   const save = useAction(async (raw: Record<string, unknown>) => {
-    const vals = fromForm ? fromForm(raw) : raw;
+    const vals = fromForm ? fromForm(raw, editing === 'new' ? null : editing) : raw;
     return editing === 'new'
       ? post(`/dict/${kind}`, vals)
       : patch(`/dict/${kind}/${(editing as Row).id}`, vals);
@@ -59,8 +62,8 @@ export function DictPage({
   );
   const writable = can(writePerm);
   const initial = useMemo(
-    () => (editing && editing !== 'new' ? (toForm ? toForm(editing) : editing) : {}),
-    [editing, toForm],
+    () => (editing && editing !== 'new' ? (toForm ? toForm(editing) : editing) : (createDefaults ?? {})),
+    [editing, toForm, createDefaults],
   );
 
   return (

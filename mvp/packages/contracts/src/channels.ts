@@ -42,6 +42,68 @@ export type InboundMessage = z.infer<typeof InboundMessageSchema>;
 
 export const inboundSubject = (kind: string) => `cc.inbound.${kind}`;
 
+/** Метаданные письма во входящем (InboundMessage.meta.email) — для цепочек писем (M-CH-06). */
+export interface EmailMeta {
+  subject: string;
+  messageId: string | null;
+  /** Message-ID из In-Reply-To и References — по ним письмо относится к существующему обращению. */
+  references: string[];
+}
+
+/** Каналы, доставку в которые выполняют коннекторы (веб-чат и приложение доставляет realtime). */
+export const CONNECTOR_CHANNELS = ['telegram', 'email'] as const;
+export type ConnectorChannel = (typeof CONNECTOR_CHANNELS)[number];
+
+/**
+ * Исходящее сообщение оператора во внешний канал (контракт коннектора M-CH-07).
+ * Публикуется через outbox в поток CC_OUTBOUND (subject cc.outbound.<kind>) с Nats-Msg-Id = messageId;
+ * коннектор доставляет его и публикует DeliveryStatus.
+ */
+export const OutboundMessageSchema = z.object({
+  messageId: z.string().uuid(),
+  conversationId: z.string().uuid(),
+  channelId: z.string().uuid(),
+  channelKind: z.enum(CONNECTOR_CHANNELS),
+  /** Адрес клиента в канале: chat id Telegram или email. */
+  to: z.string().min(1),
+  body: z.string().default(''),
+  attachments: z
+    .array(
+      z.object({
+        id: z.string().uuid(),
+        filename: z.string(),
+        contentType: z.string(),
+        size: z.number().int(),
+      }),
+    )
+    .default([]),
+  email: z
+    .object({
+      subject: z.string(),
+      inReplyTo: z.string().nullable(),
+      references: z.array(z.string()),
+    })
+    .optional(),
+});
+export type OutboundMessage = z.infer<typeof OutboundMessageSchema>;
+export const outboundSubject = (kind: string) => `cc.outbound.${kind}`;
+
+/** Результат доставки исходящего (коннектор → worker, subject cc.delivery.<kind>). */
+export const DeliveryStatusSchema = z.object({
+  messageId: z.string().uuid(),
+  channelId: z.string().uuid(),
+  status: z.enum(['sent', 'failed']),
+  /** Идентификатор сообщения в канале (Telegram message_id, email Message-ID). */
+  externalId: z.string().nullable().default(null),
+  error: z.string().nullable().default(null),
+  at: z.number().int(),
+});
+export type DeliveryStatus = z.infer<typeof DeliveryStatusSchema>;
+export const deliverySubject = (kind: string) => `cc.delivery.${kind}`;
+
+/** Детерминированный Message-ID исходящего письма: ответ клиента (In-Reply-To) находит обращение. */
+export const emailMessageId = (messageId: string, domain: string) => `<${messageId}@${domain}>`;
+
 /** Сводка обращения в событиях — достаточна для фильтрации по правам и областям без запроса к БД. */
 export interface ConversationRef {
   conversationId: string;
@@ -68,6 +130,8 @@ export interface MessageDto {
   sentAt: string;
   /** Идентификатор в канале (для веб-чата — clientMessageId): клиент сопоставляет отправленное с подтверждённым. */
   externalId?: string | null;
+  /** Доставка исходящего во внешний канал (Telegram, email): pending → sent | failed. */
+  deliveryStatus?: 'pending' | 'sent' | 'failed' | null;
 }
 
 /** Типы событий обращений (payload — ConversationRef [+ message]). */
@@ -75,4 +139,45 @@ export const CONVERSATION_EVENTS = {
   created: 'conversation.created',
   updated: 'conversation.updated',
   message: 'conversation.message_created',
+  /** Изменился статус доставки исходящего во внешний канал (payload — ConversationRef + messageId, status). */
+  messageStatus: 'conversation.message_status',
 } as const;
+
+/** Ключи config канала, которые хранятся зашифрованными и никогда не отдаются в интерфейс. */
+export const CHANNEL_SECRET_KEYS = ['bot_token', 'webhook_secret', 'imap_password', 'smtp_password'] as const;
+/** Маска секрета в ответах api; пришедшая обратно маска означает «не менять». */
+export const SECRET_MASK = '********';
+
+/** Экземпляр канала Telegram (бот). Режим webhook требует доступности адреса КЦ из интернета. */
+export const TelegramChannelConfigSchema = z
+  .object({
+    bot_token: z.string().min(10),
+    mode: z.enum(['polling', 'webhook']).default('polling'),
+    /** Адрес Bot API; по умолчанию api.telegram.org (другой — локальный Bot API-сервер или мок в тестах). */
+    api_root: z.string().url().optional(),
+    webhook_secret: z.string().min(16).optional(),
+  })
+  .passthrough();
+export type TelegramChannelConfig = z.infer<typeof TelegramChannelConfigSchema>;
+
+/** Экземпляр канала email (почтовый ящик): приём по IMAP, отправка по SMTP (M-CH-06). */
+export const EmailChannelConfigSchema = z
+  .object({
+    address: z.string().email(),
+    display_name: z.string().max(200).optional(),
+    imap_host: z.string().min(1),
+    imap_port: z.coerce.number().int().default(993),
+    imap_secure: z.boolean().default(true),
+    imap_user: z.string().min(1),
+    imap_password: z.string().min(1),
+    mailbox: z.string().default('INBOX'),
+    smtp_host: z.string().min(1),
+    smtp_port: z.coerce.number().int().default(465),
+    smtp_secure: z.boolean().default(true),
+    smtp_user: z.string().optional(),
+    smtp_password: z.string().optional(),
+    /** Не проверять TLS-сертификат почтового сервера (самоподписанный внутри контура). */
+    tls_insecure: z.boolean().default(false),
+  })
+  .passthrough();
+export type EmailChannelConfig = z.infer<typeof EmailChannelConfigSchema>;

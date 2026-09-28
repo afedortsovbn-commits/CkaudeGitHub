@@ -13,6 +13,7 @@ import { ApiConfigSchema, type AppContext } from '../context';
 import { withTx } from '../lib/db';
 import { createMemoryStorage } from '../lib/storage';
 
+export const TEST_SECRETS_KEY = 'test-secrets-key-0123456789';
 export const ADMIN_URL = process.env.TEST_DATABASE_URL;
 export const DEMO_PW = 'Demo12345!';
 
@@ -45,6 +46,7 @@ export async function createTestApp() {
     DATABASE_URL: url.toString(),
     JWT_SECRET: 'x'.repeat(40),
     COOKIE_SECURE: 'false',
+    SECRETS_KEY: TEST_SECRETS_KEY,
   });
   const logger = pino({ level: 'silent' });
   const lifecycle = new Lifecycle({ logger, drainDelayMs: 0, timeoutMs: 1000, exit: () => undefined });

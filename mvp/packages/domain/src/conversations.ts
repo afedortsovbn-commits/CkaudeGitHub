@@ -1,12 +1,18 @@
 import {
+  CONNECTOR_CHANNELS,
+  type ConnectorChannel,
   CONVERSATION_EVENTS,
   type ConversationRef,
+  type DeliveryStatus,
+  type EmailMeta,
   type InboundMessage,
   makeEvent,
   type MessageDto,
   newId,
+  type OutboundMessage,
+  outboundSubject,
 } from '@cc/contracts';
-import { enqueueEvent } from '@cc/service-kit';
+import { enqueueCommand, enqueueEvent } from '@cc/service-kit';
 import type { PoolClient } from 'pg';
 
 interface ConvRow {
@@ -123,6 +129,9 @@ export async function appendMessage(tx: PoolClient, m: AppendInput): Promise<Mes
     sentAt: sentAt.toISOString(),
     externalId: m.externalId ?? null,
   };
+  if (m.direction === 'out' && (CONNECTOR_CHANNELS as readonly string[]).includes(m.channelKind)) {
+    msg.deliveryStatus = await queueOutbound(tx, msg, m.channelKind as ConnectorChannel);
+  }
   await emitConversation(tx, CONVERSATION_EVENTS.message, await loadRef(tx, m.conversationId), {
     message: msg,
   });
@@ -240,12 +249,28 @@ export async function ingestInbound(
     [newId(), contactId, m.identity.kind, m.identity.value],
   );
 
-  const open = await tx.query<{ id: string }>(
-    `SELECT id FROM conversation WHERE contact_id = $1 AND channel_id = $2 AND status NOT IN ('closed', 'waiting_2nd_line')
-      ORDER BY created_at DESC LIMIT 1 FOR UPDATE`,
-    [contactId, m.channelId],
-  );
-  let conversationId = open.rows[0]?.id;
+  const email = m.channelKind === 'email' ? (m.meta?.email as EmailMeta | undefined) : undefined;
+  // Цепочка писем (M-CH-06): ответ на письмо обращения (In-Reply-To/References) попадает в это обращение,
+  // пока оно не закрыто — даже если клиент пишет с другого адреса.
+  let conversationId: string | undefined;
+  if (email?.references.length) {
+    const thread = await tx.query<{ id: string }>(
+      `SELECT c.id FROM message msg JOIN conversation c ON c.id = msg.conversation_id
+        WHERE msg.channel_kind = 'email' AND msg.external_id = ANY($1) AND c.channel_id = $2
+          AND c.status NOT IN ('closed', 'waiting_2nd_line')
+        ORDER BY msg.sent_at DESC LIMIT 1 FOR UPDATE OF c`,
+      [email.references, m.channelId],
+    );
+    conversationId = thread.rows[0]?.id;
+  }
+  if (!conversationId) {
+    const open = await tx.query<{ id: string }>(
+      `SELECT id FROM conversation WHERE contact_id = $1 AND channel_id = $2 AND status NOT IN ('closed', 'waiting_2nd_line')
+        ORDER BY created_at DESC LIMIT 1 FOR UPDATE`,
+      [contactId, m.channelId],
+    );
+    conversationId = open.rows[0]?.id;
+  }
   let created = false;
   if (!conversationId) {
     conversationId = newId();
@@ -276,5 +301,109 @@ export async function ingestInbound(
     sentAt: new Date(m.receivedAt),
     id: m.id,
   });
+  if (msg && email) {
+    // Тема — от первого письма обращения; Message-ID и References — для ответа в ту же цепочку.
+    await tx.query(
+      `UPDATE conversation SET channel_meta = channel_meta
+          || jsonb_build_object('subject', COALESCE(channel_meta ->> 'subject', $2::text))
+          || jsonb_build_object('lastMessageId', $3::text)
+          || jsonb_build_object('references', $4::jsonb)
+        WHERE id = $1`,
+      [
+        conversationId,
+        email.subject,
+        email.messageId,
+        JSON.stringify([...email.references, ...(email.messageId ? [email.messageId] : [])].slice(-20)),
+      ],
+    );
+  }
   return { conversationId, created, duplicate: msg === null };
+}
+
+const REPLY_PREFIX = /^\s*(re|ответ|отв)\s*:/i;
+
+/**
+ * Ставит ответ оператора в исходящие коннектора (M-CH-08) той же транзакцией, что и само сообщение:
+ * outbox → CC_OUTBOUND → коннектор канала → статус доставки. Возвращает начальный статус доставки.
+ */
+async function queueOutbound(
+  tx: PoolClient,
+  msg: MessageDto,
+  kind: ConnectorChannel,
+): Promise<'pending' | 'failed'> {
+  const { rows } = await tx.query<{
+    channel_id: string;
+    contact_id: string;
+    channel_meta: { subject?: string; lastMessageId?: string | null; references?: string[] };
+  }>('SELECT channel_id, contact_id, channel_meta FROM conversation WHERE id = $1', [msg.conversationId]);
+  const c = rows[0]!;
+  const ident = await tx.query<{ value: string }>(
+    `SELECT value FROM contact_identity WHERE contact_id = $1 AND kind = $2 ORDER BY created_at DESC LIMIT 1`,
+    [c.contact_id, kind],
+  );
+  if (!ident.rows[0]) {
+    await tx.query(
+      `UPDATE message SET delivery_status = 'failed', delivery_error = 'У клиента нет адреса в этом канале' WHERE id = $1`,
+      [msg.id],
+    );
+    return 'failed';
+  }
+  const meta = c.channel_meta ?? {};
+  const subject = meta.subject
+    ? REPLY_PREFIX.test(meta.subject)
+      ? meta.subject
+      : `Re: ${meta.subject}`
+    : '';
+  const out: OutboundMessage = {
+    messageId: msg.id,
+    conversationId: msg.conversationId,
+    channelId: c.channel_id,
+    channelKind: kind,
+    to: ident.rows[0].value,
+    body: msg.body,
+    attachments: msg.attachments,
+    ...(kind === 'email'
+      ? {
+          email: {
+            subject: subject || 'Ответ на ваше обращение',
+            inReplyTo: meta.lastMessageId ?? null,
+            references: meta.references ?? [],
+          },
+        }
+      : {}),
+  };
+  await tx.query(`UPDATE message SET delivery_status = 'pending' WHERE id = $1`, [msg.id]);
+  await enqueueCommand(tx, msg.id, outboundSubject(kind), out);
+  return 'pending';
+}
+
+/**
+ * Статус доставки исходящего от коннектора (идемпотентно): уже доставленное не откатывается повторной или
+ * запоздавшей доставкой статуса. Возвращает false, если статус ничего не изменил.
+ */
+export async function applyDeliveryStatus(tx: PoolClient, s: DeliveryStatus): Promise<boolean> {
+  const r = await tx.query<{ conversation_id: string }>(
+    `UPDATE message m SET delivery_status = $2, delivery_error = $3,
+        delivered_at = CASE WHEN $2 = 'sent' THEN to_timestamp($4::bigint / 1000.0) ELSE m.delivered_at END,
+        external_id = CASE
+          WHEN $5::text IS NULL OR m.external_id IS NOT NULL THEN m.external_id
+          WHEN EXISTS (SELECT 1 FROM message x WHERE x.channel_kind = m.channel_kind AND x.external_id = $5) THEN NULL
+          ELSE $5 END
+      WHERE m.id = $1 AND m.delivery_status IS DISTINCT FROM 'sent'
+        AND NOT (m.delivery_status = $2 AND m.delivery_error IS NOT DISTINCT FROM $3)
+      RETURNING m.conversation_id`,
+    [s.messageId, s.status, s.error, s.at, s.externalId],
+  );
+  if (!r.rows[0]) return false;
+  await emitConversation(
+    tx,
+    CONVERSATION_EVENTS.messageStatus,
+    await loadRef(tx, r.rows[0].conversation_id),
+    {
+      messageId: s.messageId,
+      deliveryStatus: s.status,
+      deliveryError: s.error,
+    },
+  );
+  return true;
 }

@@ -19,6 +19,8 @@ const ALLOWED = new Set([
   'Apache-2.0 OR MIT',
   '(MIT OR CC0-1.0)',
   'MIT-0',
+  // Двойная лицензия — используем на условиях MIT (@zone-eu/mailsplit, зависимость mailparser, Ф4).
+  '(MIT OR EUPL-1.1+)',
 ]);
 const raw = execSync('pnpm licenses list --prod --json', { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
 const byLicense = JSON.parse(raw);

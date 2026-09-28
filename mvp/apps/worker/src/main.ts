@@ -10,10 +10,12 @@ import {
   loadConfig,
   BaseConfigSchema,
   natsServers,
+  OUTBOUND_STREAM,
   OutboxRelay,
   startHealthServer,
 } from '@cc/service-kit';
 import { z } from 'zod';
+import { DeliveryProcessor } from './delivery';
 import { InboundProcessor } from './inbound';
 
 const ConfigSchema = BaseConfigSchema.extend({
@@ -44,13 +46,17 @@ async function main(): Promise<void> {
   const jsm = await nc.jetstreamManager();
   await ensureStream(jsm, { ...EVENTS_STREAM, replicas: config.NATS_STREAM_REPLICAS });
   await ensureStream(jsm, { ...INBOUND_STREAM, replicas: config.NATS_STREAM_REPLICAS });
+  await ensureStream(jsm, { ...OUTBOUND_STREAM, replicas: config.NATS_STREAM_REPLICAS });
 
   const inbound = new InboundProcessor({ pool, js: nc.jetstream(), jsm, logger, registry: metrics.registry });
   await inbound.start();
+  const delivery = new DeliveryProcessor({ pool, js: nc.jetstream(), jsm, logger });
+  await delivery.start();
   const relay = new OutboxRelay({ pool, js: nc.jetstream(), logger });
   if (config.OUTBOX_RELAY_ENABLED) relay.start();
 
   lifecycle.onShutdown('inbound', 20, () => inbound.stop());
+  lifecycle.onShutdown('delivery', 20, () => delivery.stop());
   lifecycle.onShutdown('outbox-relay', 21, () => relay.stop());
   lifecycle.onShutdown('nats', 30, () => nc.drain());
   lifecycle.onShutdown('postgres', 31, () => pool.end());

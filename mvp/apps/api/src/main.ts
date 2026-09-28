@@ -10,6 +10,7 @@ import {
   Lifecycle,
   loadConfig,
   natsServers,
+  OUTBOUND_STREAM,
   OutboxRelay,
 } from '@cc/service-kit';
 import { createApp } from './app.factory';
@@ -47,6 +48,11 @@ async function bootstrap(): Promise<void> {
   });
   await ensureStream(await nc.jetstreamManager(), {
     ...INBOUND_STREAM,
+    replicas: config.NATS_STREAM_REPLICAS,
+  });
+  // Исходящие коннекторов публикует и outbox-relay api — поток должен существовать до его запуска.
+  await ensureStream(await nc.jetstreamManager(), {
+    ...OUTBOUND_STREAM,
     replicas: config.NATS_STREAM_REPLICAS,
   });
   const storage = createS3Storage({

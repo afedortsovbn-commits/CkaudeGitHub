@@ -10,6 +10,13 @@ http:
       tls: {}
       service: api@docker
       middlewares: [retry]
+    # Webhook Telegram-ботов (режим webhook): https://<адрес>/tg/<id канала>.
+    telegram-webhook:
+      rule: PathPrefix(`/tg/`)
+      entryPoints: [websecure]
+      tls: {}
+      service: connector-telegram@docker
+      middlewares: [retry]
     realtime:
       rule: PathPrefix(`/ws`)
       entryPoints: [websecure]

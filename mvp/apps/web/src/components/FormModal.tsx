@@ -25,6 +25,8 @@ export interface FormField {
   /** Поле показывается только при создании. */
   createOnly?: boolean;
   placeholder?: string;
+  /** Показывать поле в зависимости от текущих значений формы (например, от типа канала). */
+  show?(values: Record<string, unknown>): boolean;
 }
 
 interface Props {
@@ -45,7 +47,7 @@ export function FormModal({ opened, title, fields, initial, isCreate, loading, o
     if (opened) setV(initial ?? {});
   }, [opened, initial]);
   const set = (k: string, val: unknown) => setV((s) => ({ ...s, [k]: val }));
-  const visible = fields.filter((f) => isCreate || !f.createOnly);
+  const visible = fields.filter((f) => (isCreate || !f.createOnly) && (!f.show || f.show(v)));
 
   const submit = () => {
     const out: Record<string, unknown> = {};

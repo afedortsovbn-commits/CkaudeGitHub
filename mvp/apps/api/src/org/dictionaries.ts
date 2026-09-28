@@ -1,5 +1,6 @@
 import { z, type ZodTypeAny } from 'zod';
 import type { ScopeColumns } from '@cc/auth';
+import { maskChannelRow, prepareChannelConfig } from './channel-config';
 
 export interface FieldSpec {
   api: string;
@@ -20,6 +21,14 @@ export interface DictSpec {
   /** Столбцы строки для областей видимости (алиас таблицы — t). */
   scope?: ScopeColumns;
   writePerm: string;
+  /** Подготовка данных к записи (проверка, шифрование секретов); before — текущая строка при изменении. */
+  prepare?: (
+    data: Record<string, unknown>,
+    before: Record<string, unknown> | null,
+    secretsKey: string | undefined,
+  ) => Record<string, unknown>;
+  /** Представление строки в ответах и журнале аудита (маскирование секретов). */
+  present?: <T extends Record<string, unknown> | null>(row: T) => T;
 }
 
 const code = z.string().trim().min(1).max(64);
@@ -193,26 +202,20 @@ export const DICTIONARIES: Record<string, DictSpec> = {
       f('kind', z.enum(['webchat', 'app', 'telegram', 'email', 'api'])),
       f('name', name),
       f('queueId', uuid.nullable().optional()),
-      f(
-        'config',
-        z
-          .object({
-            public_key: z.string().min(8).max(64).optional(),
-            allowed_origins: z.array(z.string().max(200)).optional(),
-            consent_text: z.string().max(4000).optional(),
-            consent_version: z.string().max(32).optional(),
-            greeting: z.string().max(1000).optional(),
-            max_file_mb: z.number().int().min(1).max(50).optional(),
-            app_secret: z.string().min(16).max(200).optional(),
-          })
-          .passthrough()
-          .default({}),
-        { json: true },
-      ),
+      // Проверка по типу канала и шифрование секретов — prepareChannelConfig (hooks.prepare).
+      f('config', z.record(z.unknown()).default({}), { json: true }),
     ],
     orderBy: 'kind, name',
     search: ['name'],
     writePerm: 'admin.directories',
+    prepare: (data, before, secretsKey) => {
+      if (data.config === undefined && data.kind === undefined) return data;
+      const kind = String(data.kind ?? before?.kind);
+      const config = (data.config ?? before?.config ?? {}) as Record<string, unknown>;
+      const prev = before && before.kind === kind ? (before.config as Record<string, unknown>) : null;
+      return { ...data, config: prepareChannelConfig(kind, config, prev, secretsKey) };
+    },
+    present: maskChannelRow,
   },
   'scope-templates': {
     table: 'scope_template',
