@@ -1,7 +1,7 @@
 import { Body, Controller, Get, HttpCode, Inject, Param, Patch, Post, Query, Req, Res } from '@nestjs/common';
 import { CONVERSATION_EVENTS } from '@cc/contracts';
 import { scopeFilter, type Principal } from '@cc/auth';
-import { appendMessage, emitConversation, loadRef } from '@cc/domain';
+import { appendMessage, emitConversation, loadRef, setAgentStatus } from '@cc/domain';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { PoolClient } from 'pg';
 import { z } from 'zod';
@@ -42,7 +42,9 @@ const TransferBody = z
   .object({ toUserId: uuid.optional(), toQueueId: uuid.optional(), comment: z.string().max(1000).optional() })
   .strict()
   .refine((b) => !!b.toUserId !== !!b.toQueueId, 'Укажите оператора или очередь');
-const CloseBody = z.object({ dispositionId: uuid }).strict();
+const CloseBody = z
+  .object({ dispositionId: uuid, callbackAt: z.string().datetime({ offset: true }).optional() })
+  .strict();
 const ContactPatch = z
   .object({
     displayName: z.string().trim().max(200).nullable().optional(),
@@ -203,12 +205,18 @@ export class ConversationsController {
     return list.map((r) => toApi(r));
   }
 
-  /** Взять обращение из очереди (ручное распределение до Ф3); лимит одновременных чатов (M-OP-03). */
+  /**
+   * Взять обращение из очереди вручную — наравне с автоматическим распределением router (Ф3):
+   * пригодится, когда оператор хочет опередить очередь предложений или супервизор назначает вручную
+   * (M-RT-05). Лимит одновременных чатов (M-OP-03) общий с автоматическим назначением.
+   */
   @Post('conversations/:id/take')
   @HttpCode(200)
   async take(@CurrentUser() p: Principal, @Param('id') id: string) {
     await withTx(this.ctx.pool, async (tx) => {
       const c = await this.visible(p, id, tx, true);
+      if (c.status === 'offered')
+        throw new ApiError(409, 'taken', 'Обращение уже предложено другому оператору');
       if (c.status !== 'queued' || c.assignee_id)
         throw new ApiError(409, 'taken', 'Обращение уже взято другим оператором');
       const max = await one<{ value: number }>(
@@ -226,6 +234,12 @@ export class ConversationsController {
         `UPDATE conversation SET assignee_id = $2, status = 'active', assigned_at = now(), version = version + 1, updated_at = now() WHERE id = $1`,
         [id, p.id],
       );
+      await tx.query(
+        `INSERT INTO agent_status (user_id, status, last_assigned_at, since, updated_at)
+         VALUES ($1, 'ready', now(), now(), now())
+         ON CONFLICT (user_id) DO UPDATE SET last_assigned_at = now(), updated_at = now()`,
+        [p.id],
+      );
       await appendMessage(tx, {
         conversationId: id,
         direction: 'system',
@@ -235,6 +249,57 @@ export class ConversationsController {
       await emitConversation(tx, CONVERSATION_EVENTS.updated, await loadRef(tx, id), { action: 'assigned' });
     });
     return this.get(p, id);
+  }
+
+  /** Оператор принимает предложенное router обращение (M-RT-05). */
+  @Post('conversations/:id/accept')
+  @HttpCode(200)
+  async accept(@CurrentUser() p: Principal, @Param('id') id: string) {
+    await withTx(this.ctx.pool, async (tx) => {
+      const c = await this.visible(p, id, tx, true);
+      if (c.status !== 'offered' || c.assignee_id !== p.id)
+        throw new ApiError(409, 'not_offered', 'Обращение не предложено вам');
+      await tx.query(
+        `UPDATE conversation SET status = 'active', assigned_at = now(), version = version + 1, updated_at = now() WHERE id = $1`,
+        [id],
+      );
+      await tx.query(
+        `UPDATE routing_offer SET outcome = 'accepted', decided_at = now()
+          WHERE conversation_id = $1 AND user_id = $2 AND outcome IS NULL`,
+        [id, p.id],
+      );
+      await appendMessage(tx, {
+        conversationId: id,
+        direction: 'system',
+        body: `Оператор ${p.fullName} принял обращение`,
+        channelKind: c.channel_kind,
+      });
+      await emitConversation(tx, CONVERSATION_EVENTS.updated, await loadRef(tx, id), { action: 'accepted' });
+    });
+    return this.get(p, id);
+  }
+
+  /** Оператор отклоняет предложение — router предложит его следующему подходящему оператору (M-RT-05). */
+  @Post('conversations/:id/decline')
+  @HttpCode(200)
+  async decline(@CurrentUser() p: Principal, @Param('id') id: string) {
+    await withTx(this.ctx.pool, async (tx) => {
+      const c = await this.visible(p, id, tx, true);
+      if (c.status !== 'offered' || c.assignee_id !== p.id)
+        throw new ApiError(409, 'not_offered', 'Обращение не предложено вам');
+      await tx.query(
+        `UPDATE conversation SET status = 'queued', assignee_id = NULL, offered_at = NULL,
+           version = version + 1, updated_at = now() WHERE id = $1`,
+        [id],
+      );
+      await tx.query(
+        `UPDATE routing_offer SET outcome = 'declined', decided_at = now()
+          WHERE conversation_id = $1 AND user_id = $2 AND outcome IS NULL`,
+        [id, p.id],
+      );
+      await emitConversation(tx, CONVERSATION_EVENTS.updated, await loadRef(tx, id), { action: 'declined' });
+    });
+    return { ok: true };
   }
 
   @Post('conversations/:id/messages')
@@ -347,13 +412,18 @@ export class ConversationsController {
           authorUserId: p.id,
         });
       } else {
-        const q = await one<{ name: string }>(tx, 'SELECT name FROM queue WHERE id = $1 AND is_active', [
-          b.toQueueId,
-        ]);
+        const q = await one<{ name: string; priority: number }>(
+          tx,
+          'SELECT name, priority FROM queue WHERE id = $1 AND is_active',
+          [b.toQueueId],
+        );
         if (!q) throw badRequest('Очередь не найдена');
+        // Новая постановка в очередь (M-RT-04): отсчёт ожидания для перелива/эскалации начинается заново.
         await tx.query(
-          `UPDATE conversation SET assignee_id = NULL, queue_id = $2, status = 'queued', version = version + 1, updated_at = now() WHERE id = $1`,
-          [id, b.toQueueId],
+          `UPDATE conversation SET assignee_id = NULL, queue_id = $2, status = 'queued', priority = $3,
+             escalated = false, queued_at = now(), offered_at = NULL, version = version + 1, updated_at = now()
+           WHERE id = $1`,
+          [id, b.toQueueId, q.priority],
         );
         await appendMessage(tx, {
           conversationId: id,
@@ -374,7 +444,7 @@ export class ConversationsController {
   @Post('conversations/:id/close')
   @HttpCode(200)
   async close(@CurrentUser() p: Principal, @Param('id') id: string, @Body() body: unknown) {
-    const { dispositionId } = parse(CloseBody, body);
+    const { dispositionId, callbackAt } = parse(CloseBody, body);
     await withTx(this.ctx.pool, async (tx) => {
       const c = await this.visible(p, id, tx, true);
       this.ensureHandler(p, c);
@@ -385,8 +455,9 @@ export class ConversationsController {
       );
       if (!d) throw notFound('Результат обработки');
       if (d.behavior === 'escalate') throw badRequest('Передача на 2-ю линию появится в фазе Ф8');
-      if (d.behavior === 'postponed')
-        throw badRequest('Отложенные обращения с напоминанием появятся в фазе Ф3');
+      if (d.behavior === 'postponed' && !callbackAt) throw badRequest('Укажите дату и время перезвона');
+      if (d.behavior === 'postponed' && new Date(callbackAt!).getTime() <= Date.now())
+        throw badRequest('Дата перезвона должна быть в будущем');
       if (d.behavior !== 'no_reply_needed' && !c.topic_id) throw badRequest('Укажите тему обращения');
       if (c.topic_id) {
         const req = await rows<{ key: string; label: string }>(
@@ -401,13 +472,17 @@ export class ConversationsController {
           throw badRequest(`Заполните обязательные поля: ${missing.map((f) => f.label).join(', ')}`);
       }
       await tx.query(
-        `UPDATE conversation SET status = 'closed', disposition_id = $2, closed_at = now(), closed_by = $3, version = version + 1, updated_at = now() WHERE id = $1`,
-        [id, dispositionId, p.id],
+        `UPDATE conversation SET status = 'closed', disposition_id = $2, closed_at = now(), closed_by = $3,
+           callback_at = $4, version = version + 1, updated_at = now() WHERE id = $1`,
+        [id, dispositionId, p.id, d.behavior === 'postponed' ? callbackAt : null],
       );
       await appendMessage(tx, {
         conversationId: id,
         direction: 'system',
-        body: 'Диалог завершён. Спасибо за обращение!',
+        body:
+          d.behavior === 'postponed'
+            ? `Диалог отложен. Перезвон/повторный контакт: ${new Date(callbackAt!).toLocaleString('ru-RU')}`
+            : 'Диалог завершён. Спасибо за обращение!',
         channelKind: c.channel_kind,
         authorUserId: p.id,
       });
@@ -415,6 +490,17 @@ export class ConversationsController {
         action: 'closed',
         disposition: d.name,
       });
+      // Постобработка (M-RT-06): оператор автоматически уходит в «Постобработка», затем сам вернётся
+      // в «Готов» — или router переведёт его туда по истечении времени очереди (router.sweepWrapUp).
+      const wrapUpS = await one<{ wrap_up_s: number }>(tx, `SELECT wrap_up_s FROM queue WHERE id = $1`, [
+        c.queue_id,
+      ]);
+      const seconds = wrapUpS?.wrap_up_s ?? 15;
+      if (seconds > 0) {
+        await setAgentStatus(tx, p.id, 'wrap_up', {
+          wrapUpUntil: new Date(Date.now() + seconds * 1000),
+        });
+      }
     });
     return this.get(p, id);
   }

@@ -129,6 +129,79 @@ export async function appendMessage(tx: PoolClient, m: AppendInput): Promise<Mes
   return msg;
 }
 
+interface Routing {
+  queueId: string | null;
+  priority: number;
+  isUrgent: boolean;
+}
+
+/**
+ * Куда поставить новое обращение и с каким эффективным приоритетом (M-RT-01/07/08):
+ * правило маршрутизации текста (канал/ключевые слова/regex) переопределяет очередь по умолчанию канала;
+ * приоритет = приоритет очереди + надбавка правила + приоритет сегмента клиента. Дальнейшая эскалация
+ * по времени ожидания и перелив в резервную группу — задача router (Ф3).
+ */
+async function resolveRouting(
+  tx: PoolClient,
+  contactId: string,
+  channelId: string,
+  channelKind: string,
+  body: string,
+): Promise<Routing> {
+  const rules = await tx.query<{
+    queue_id: string;
+    match_type: string;
+    pattern: string;
+    priority_boost: number;
+    is_urgent: boolean;
+  }>(
+    `SELECT queue_id, match_type, pattern, priority_boost, is_urgent FROM routing_rule
+      WHERE is_active AND (channel_kind IS NULL OR channel_kind = $1) ORDER BY sort_order`,
+    [channelKind],
+  );
+  let rule: (typeof rules.rows)[number] | undefined;
+  for (const r of rules.rows) {
+    let matched = false;
+    try {
+      matched =
+        r.match_type === 'regex'
+          ? new RegExp(r.pattern, 'i').test(body)
+          : body.toLowerCase().includes(r.pattern.toLowerCase());
+    } catch {
+      matched = false; // некорректное регулярное выражение — правило пропускается, а не роняет обработку
+    }
+    if (matched) {
+      rule = r;
+      break;
+    }
+  }
+  let queueId: string | null = rule?.queue_id ?? null;
+  if (!queueId) {
+    const ch = await tx.query<{ queue_id: string | null }>('SELECT queue_id FROM channel WHERE id = $1', [
+      channelId,
+    ]);
+    queueId = ch.rows[0]?.queue_id ?? null;
+  }
+  let priority = 0;
+  if (queueId) {
+    const q = await tx.query<{ priority: number }>('SELECT priority FROM queue WHERE id = $1', [queueId]);
+    priority += q.rows[0]?.priority ?? 0;
+  }
+  priority += rule?.priority_boost ?? 0;
+  const contact = await tx.query<{ segment: string | null }>('SELECT segment FROM contact WHERE id = $1', [
+    contactId,
+  ]);
+  const segment = contact.rows[0]?.segment;
+  if (segment) {
+    const sp = await tx.query<{ boost: number }>(
+      'SELECT boost FROM segment_priority WHERE segment = $1 AND is_active',
+      [segment],
+    );
+    priority += sp.rows[0]?.boost ?? 0;
+  }
+  return { queueId, priority, isUrgent: rule?.is_urgent ?? false };
+}
+
 /**
  * Обработка входящего сообщения канала: клиент по идентификатору (или известный contactId),
  * открытое обращение клиента в этом канале (иначе новое в очереди канала), сообщение.
@@ -177,10 +250,19 @@ export async function ingestInbound(
   if (!conversationId) {
     conversationId = newId();
     created = true;
+    const routing = await resolveRouting(tx, contactId, m.channelId, m.channelKind, m.body);
     await tx.query(
-      `INSERT INTO conversation (id, channel_id, channel_kind, contact_id, status, queue_id)
-       SELECT $1, c.id, c.kind, $2, 'queued', c.queue_id FROM channel c WHERE c.id = $3`,
-      [conversationId, contactId, m.channelId],
+      `INSERT INTO conversation (id, channel_id, channel_kind, contact_id, status, queue_id, priority, is_urgent, queued_at)
+       VALUES ($1, $2, $3, $4, 'queued', $5, $6, $7, now())`,
+      [
+        conversationId,
+        m.channelId,
+        m.channelKind,
+        contactId,
+        routing.queueId,
+        routing.priority,
+        routing.isUrgent,
+      ],
     );
     await emitConversation(tx, CONVERSATION_EVENTS.created, await loadRef(tx, conversationId));
   }

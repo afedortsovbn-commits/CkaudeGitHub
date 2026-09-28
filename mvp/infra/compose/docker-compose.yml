@@ -205,6 +205,19 @@ services:
       nats-2: { condition: service_healthy }
       nats-3: { condition: service_healthy }
 
+  router:
+    image: cc/router:${ROUTER_TAG:-${API_TAG:-dev}}
+    restart: unless-stopped
+    deploy:
+      replicas: ${ROUTER_REPLICAS:-2}
+    environment:
+      <<: *app-env
+      SERVICE_NAME: router
+    networks: [cc]
+    stop_grace_period: 35s
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+
   realtime:
     image: cc/realtime:${REALTIME_TAG:-${API_TAG:-dev}}
     restart: unless-stopped

@@ -20,10 +20,15 @@ export const DEMO_PW = 'Demo12345!';
 export async function createTestApp() {
   const dbName = `cc_it_${Date.now()}_${Math.floor(Math.random() * 1e6)}`;
   const admin = new Pool({ connectionString: ADMIN_URL });
+  admin.on('error', () => undefined);
   await admin.query(`CREATE DATABASE ${dbName}`);
   const url = new URL(ADMIN_URL!);
   url.pathname = `/${dbName}`;
   const pool = createPool(url.toString());
+  // Без обработчика 'error' Node аварийно завершает процесс на ошибке простаивающего соединения —
+  // проявляется в cleanup(), когда DROP DATABASE ... WITH (FORCE) обрывает ещё закрывающиеся сокеты
+  // (чаще при параллельном запуске нескольких пакетов интеграционных тестов, Ф3).
+  pool.on('error', () => undefined);
   await migrate(pool);
   await withTx(pool, async (tx) => {
     const id = newId();

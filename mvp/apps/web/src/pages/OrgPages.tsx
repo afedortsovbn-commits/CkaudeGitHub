@@ -264,8 +264,14 @@ const CHANNELS = ['voice', 'webchat', 'app', 'telegram', 'email', 'review', 'api
   label: c,
 }));
 
+const STRATEGIES = [
+  { value: 'least_recent', label: 'Дольше всех свободен' },
+  { value: 'least_load', label: 'Наименьшая загрузка' },
+];
+
 export function DictionariesPage() {
   const topics = useList('/topics');
+  const queues = useList('/dict/queues');
   return (
     <>
       <Title order={3} mb="md">
@@ -276,6 +282,8 @@ export function DictionariesPage() {
           <Tabs.Tab value="dispositions">Результаты обработки</Tabs.Tab>
           <Tabs.Tab value="answer-methods">Способы ответа</Tabs.Tab>
           <Tabs.Tab value="queues">Очереди</Tabs.Tab>
+          <Tabs.Tab value="routing-rules">Правила маршрутизации</Tabs.Tab>
+          <Tabs.Tab value="segment-priority">Приоритет сегментов</Tabs.Tab>
           <Tabs.Tab value="skills">Навыки</Tabs.Tab>
           <Tabs.Tab value="tags">Теги</Tabs.Tab>
           <Tabs.Tab value="break-reasons">Причины перерывов</Tabs.Tab>
@@ -328,12 +336,90 @@ export function DictionariesPage() {
               { key: 'name', label: 'Название' },
               { key: 'channels', label: 'Каналы', render: (r) => (r.channels as string[]).join(', ') },
               { key: 'priority', label: 'Приоритет' },
+              {
+                key: 'strategy',
+                label: 'Стратегия',
+                render: (r) => STRATEGIES.find((s) => s.value === r.strategy)?.label ?? String(r.strategy),
+              },
             ]}
             fields={[
               { key: 'name', label: 'Название', required: true },
               { key: 'channels', label: 'Каналы', type: 'multiselect', options: CHANNELS },
               { key: 'priority', label: 'Приоритет (0–100)', type: 'number' },
-              { key: 'maxWaitS', label: 'Макс. ожидание, с', type: 'number' },
+              { key: 'maxWaitS', label: 'Макс. ожидание до эскалации, с', type: 'number' },
+              { key: 'strategy', label: 'Стратегия распределения', type: 'select', options: STRATEGIES },
+              {
+                key: 'overflowQueueId',
+                label: 'Резервная группа (перелив)',
+                type: 'select',
+                options: options((queues.data ?? []).filter((q) => q.id !== undefined)),
+              },
+              { key: 'overflowAfterS', label: 'Перелив в резерв через, с', type: 'number' },
+              { key: 'offerTimeoutS', label: 'Таймаут принятия оператором, с', type: 'number' },
+              { key: 'wrapUpS', label: 'Постобработка, с', type: 'number' },
+            ]}
+          />
+        </Tabs.Panel>
+        <Tabs.Panel value="routing-rules">
+          <DictPage
+            hideTitle
+            kind="routing-rules"
+            title="Правило маршрутизации"
+            columns={[
+              { key: 'name', label: 'Название' },
+              { key: 'channelKind', label: 'Канал', render: (r) => String(r.channelKind ?? 'любой') },
+              { key: 'matchType', label: 'Тип' },
+              { key: 'pattern', label: 'Условие' },
+              {
+                key: 'queueId',
+                label: 'Очередь',
+                render: (r) => String((queues.data ?? []).find((q) => q.id === r.queueId)?.name ?? ''),
+              },
+            ]}
+            fields={[
+              { key: 'name', label: 'Название', required: true },
+              {
+                key: 'channelKind',
+                label: 'Канал (пусто — любой)',
+                type: 'select',
+                options: CHANNELS.filter((c) => c.value !== 'voice'),
+              },
+              {
+                key: 'matchType',
+                label: 'Тип условия',
+                type: 'select',
+                required: true,
+                options: [
+                  { value: 'keyword', label: 'Ключевое слово (подстрока)' },
+                  { value: 'regex', label: 'Регулярное выражение' },
+                ],
+              },
+              { key: 'pattern', label: 'Слово или regex', required: true },
+              {
+                key: 'queueId',
+                label: 'Очередь',
+                type: 'select',
+                required: true,
+                options: options(queues.data),
+              },
+              { key: 'priorityBoost', label: 'Надбавка приоритета', type: 'number' },
+              { key: 'isUrgent', label: 'Помечать «срочное»', type: 'switch' },
+              { key: 'sortOrder', label: 'Порядок проверки', type: 'number' },
+            ]}
+          />
+        </Tabs.Panel>
+        <Tabs.Panel value="segment-priority">
+          <DictPage
+            hideTitle
+            kind="segment-priority"
+            title="Приоритет сегмента"
+            columns={[
+              { key: 'segment', label: 'Сегмент клиента' },
+              { key: 'boost', label: 'Надбавка приоритета' },
+            ]}
+            fields={[
+              { key: 'segment', label: 'Сегмент (как в карточке клиента)', required: true },
+              { key: 'boost', label: 'Надбавка приоритета', type: 'number' },
             ]}
           />
         </Tabs.Panel>

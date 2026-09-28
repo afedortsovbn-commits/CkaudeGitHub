@@ -12,6 +12,7 @@ import { HomePage, Layout } from './pages/Layout';
 import { LoginPage } from './pages/LoginPage';
 import { MatrixPage } from './pages/MatrixPage';
 import { DepartmentsPage, DictionariesPage, EnterprisesPage, ObjectsPage } from './pages/OrgPages';
+import { SupervisorPage } from './pages/SupervisorPage';
 import { TopicsPage } from './pages/TopicsPage';
 import { UsersPage } from './pages/UsersPage';
 import { WorkspacePage } from './pages/WorkspacePage';
@@ -35,6 +36,7 @@ function App() {
       <Route element={<Layout />}>
         <Route index element={<HomePage />} />
         <Route path="workspace" element={<WorkspacePage />} />
+        <Route path="supervisor" element={<SupervisorPage />} />
         <Route path="channels" element={<ChannelsPage />} />
         <Route path="enterprises" element={<EnterprisesPage />} />
         <Route path="departments" element={<DepartmentsPage />} />

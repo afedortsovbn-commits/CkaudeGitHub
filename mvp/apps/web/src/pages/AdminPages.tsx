@@ -29,6 +29,14 @@ export function SettingsPage() {
         value={String(v['ticket.daily_notification_time'] ?? '08:00')}
         onChange={(e) => setV({ ...v, 'ticket.daily_notification_time': e.currentTarget.value })}
       />
+      <NumberInput
+        label="Надбавка приоритета при эскалации по времени ожидания"
+        description="Прибавляется к приоритету обращения один раз, когда истекает «Макс. ожидание» очереди (M-RT-04)"
+        min={0}
+        max={100000}
+        value={Number(v['routing.escalation_boost'] ?? 1000)}
+        onChange={(x) => setV({ ...v, 'routing.escalation_boost': Number(x) })}
+      />
       <Select
         label="Кто согласует закрытие тикета"
         data={[
