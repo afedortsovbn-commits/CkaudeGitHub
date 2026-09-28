@@ -16,7 +16,9 @@ export async function connectNats(opts: {
   });
   void (async () => {
     for await (const s of nc.status()) {
-      opts.logger.info({ type: s.type, data: String(s.data) }, 'статус NATS');
+      // pingTimer — штатные пинги каждые pingInterval, в info они только засоряют журнал.
+      const level = s.type === 'pingTimer' ? 'debug' : 'info';
+      opts.logger[level]({ type: s.type, data: String(s.data) }, 'статус NATS');
     }
   })();
   return nc;

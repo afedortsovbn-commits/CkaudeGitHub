@@ -30,7 +30,7 @@ import type { TgUpdate } from './telegram-api';
 
 const ConfigSchema = ConnectorConfigSchema.extend({
   /** Внешний адрес КЦ для режима webhook (Telegram присылает обновления на <адрес>/tg/<id канала>). */
-  PUBLIC_BASE_URL: z.string().url().optional(),
+  PUBLIC_BASE_URL: z.preprocess((v) => (v === '' ? undefined : v), z.string().url().optional()),
 });
 
 function readBody(req: IncomingMessage, limit = 1_000_000): Promise<string> {

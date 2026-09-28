@@ -107,11 +107,12 @@ export class BotRunner {
           await this.api.deleteWebhook();
           prepared = true;
         }
+        // Токен принят Bot API — канал подключён, не дожидаясь первого long-poll (до POLL_TIMEOUT_S).
+        this.o.journal.status(id, 'connected', 'polling');
         const offset = Number((await this.o.offsets.get(id))?.string() || 0);
         const updates = await this.api.getUpdates(offset, POLL_TIMEOUT_S, signal);
         for (const u of updates) await this.handleUpdate(u);
         if (updates.length) await this.o.offsets.put(id, String(updates.at(-1)!.update_id + 1));
-        this.o.journal.status(id, 'connected', 'polling');
       } catch (err) {
         if (signal.aborted) break;
         this.o.logger.warn({ err: String(err), channelId: id }, 'ошибка канала Telegram');
