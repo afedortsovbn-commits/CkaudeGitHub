@@ -1,0 +1,32 @@
+{
+  "name": "@cc/api",
+  "version": "0.1.0",
+  "private": true,
+  "main": "dist/main.js",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "start": "node dist/main.js"
+  },
+  "dependencies": {
+    "@cc/contracts": "workspace:*",
+    "@cc/db": "workspace:*",
+    "@cc/service-kit": "workspace:*",
+    "@nestjs/common": "11.2.6",
+    "@nestjs/core": "11.2.6",
+    "@nestjs/platform-fastify": "11.2.6",
+    "nats": "2.29.3",
+    "pg": "8.23.0",
+    "pino": "9.14.0",
+    "reflect-metadata": "0.2.2",
+    "rxjs": "7.8.2",
+    "zod": "3.25.76"
+  },
+  "devDependencies": {
+    "@types/pg": "8.23.1"
+  }
+}

@@ -1,0 +1,222 @@
+# Контакт-центр MVP — локальное/серверное развёртывание одной командой:
+#   ops/build-images.sh && docker compose -f infra/compose/docker-compose.yml up -d
+# Профили: (по умолчанию) ядро; observability — Prometheus, Grafana, Loki.
+# Прикладные сервисы НЕ имеют container_name и опубликованных портов — иначе невозможны
+# масштабирование и поэтапное обновление (ops/rollout.sh, 02-архитектура 6.2).
+name: cc
+
+x-nats: &nats
+  image: ${NATS_IMAGE:-nats:2.11-alpine}
+  restart: unless-stopped
+  networks: [cc]
+  healthcheck:
+    test: ['CMD', 'wget', '-qO-', 'http://127.0.0.1:8222/healthz?js-enabled-only=true']
+    interval: 3s
+    timeout: 2s
+    retries: 20
+
+x-app-env: &app-env
+  LOG_LEVEL: ${LOG_LEVEL:-info}
+  DATABASE_URL: postgres://cc:${POSTGRES_PASSWORD:-cc_dev_password}@postgres:5432/cc
+  NATS_SERVERS: nats://nats-1:4222,nats://nats-2:4222,nats://nats-3:4222
+
+services:
+  traefik:
+    # v3.6+: корректное согласование версии API с Docker Engine 29+ (v3.5 обращается к API 1.24 и получает отказ).
+    image: ${TRAEFIK_IMAGE:-traefik:v3.6}
+    restart: unless-stopped
+    command:
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --providers.docker.network=cc
+      - --entrypoints.web.address=:80
+      - --entrypoints.web.http.redirections.entrypoint.to=websecure
+      - --entrypoints.web.http.redirections.entrypoint.scheme=https
+      - --entrypoints.websecure.address=:443
+      - --entrypoints.websecure.http.tls=true
+      - --ping=true
+      - --metrics.prometheus=true
+      - --accesslog=true
+      - --accesslog.format=json
+      - --log.format=json
+    ports:
+      - '${HTTP_PORT:-80}:80'
+      - '${HTTPS_PORT:-443}:443'
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks: [cc]
+    healthcheck:
+      test: ['CMD', 'traefik', 'healthcheck', '--ping']
+      interval: 5s
+
+  postgres:
+    image: ${POSTGRES_IMAGE:-postgres:16-alpine}
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: cc
+      POSTGRES_USER: cc
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-cc_dev_password}
+    volumes: [pgdata:/var/lib/postgresql/data]
+    networks: [cc]
+    ports: ['127.0.0.1:${PG_HOST_PORT:-5432}:5432']
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U cc -d cc']
+      interval: 2s
+      retries: 30
+
+  nats-1:
+    <<: *nats
+    command:
+      [
+        '-js',
+        '-sd',
+        '/data',
+        '-n',
+        'nats-1',
+        '--cluster_name',
+        'cc',
+        '--cluster',
+        'nats://0.0.0.0:6222',
+        '--routes',
+        'nats://nats-1:6222,nats://nats-2:6222,nats://nats-3:6222',
+        '-m',
+        '8222',
+        '--no_advertise',
+      ]
+    volumes: [nats1:/data]
+    ports: ['127.0.0.1:4222:4222']
+  nats-2:
+    <<: *nats
+    command:
+      [
+        '-js',
+        '-sd',
+        '/data',
+        '-n',
+        'nats-2',
+        '--cluster_name',
+        'cc',
+        '--cluster',
+        'nats://0.0.0.0:6222',
+        '--routes',
+        'nats://nats-1:6222,nats://nats-2:6222,nats://nats-3:6222',
+        '-m',
+        '8222',
+        '--no_advertise',
+      ]
+    volumes: [nats2:/data]
+    ports: ['127.0.0.1:4223:4222']
+  nats-3:
+    <<: *nats
+    command:
+      [
+        '-js',
+        '-sd',
+        '/data',
+        '-n',
+        'nats-3',
+        '--cluster_name',
+        'cc',
+        '--cluster',
+        'nats://0.0.0.0:6222',
+        '--routes',
+        'nats://nats-1:6222,nats://nats-2:6222,nats://nats-3:6222',
+        '-m',
+        '8222',
+        '--no_advertise',
+      ]
+    volumes: [nats3:/data]
+    ports: ['127.0.0.1:4224:4222']
+
+  # S3-совместимое хранилище (записи разговоров, вложения, аудио IVR). SeaweedFS — Apache 2.0,
+  # выбран вместо MinIO из-за рисков смены лицензии/политики сборок (В-36).
+  s3:
+    image: ${S3_IMAGE:-chrislusf/seaweedfs:4.47}
+    restart: unless-stopped
+    command: ['server', '-dir=/data', '-s3', '-s3.port=8333', '-volume.max=0']
+    volumes: [s3data:/data]
+    networks: [cc]
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://127.0.0.1:9333/cluster/status >/dev/null']
+      interval: 5s
+      retries: 20
+
+  migrate:
+    image: cc/api:${API_TAG:-dev}
+    environment:
+      <<: *app-env
+      SERVICE_NAME: migrate
+      ENTRY: node_modules/@cc/db/dist/cli.js
+    networks: [cc]
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: 'no'
+    healthcheck: { disable: true }
+
+  api:
+    image: cc/api:${API_TAG:-dev}
+    restart: unless-stopped
+    deploy:
+      replicas: ${API_REPLICAS:-2}
+    environment:
+      <<: *app-env
+      SERVICE_NAME: api
+      NATS_STREAM_REPLICAS: 3
+    networks: [cc]
+    stop_grace_period: 35s
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      nats-1: { condition: service_healthy }
+      nats-2: { condition: service_healthy }
+      nats-3: { condition: service_healthy }
+    labels:
+      traefik.enable: 'true'
+      traefik.http.routers.api.rule: PathPrefix(`/api`)
+      traefik.http.routers.api.entrypoints: websecure
+      traefik.http.routers.api.tls: 'true'
+      traefik.http.routers.api.middlewares: api-retry
+      traefik.http.middlewares.api-retry.retry.attempts: '3'
+      traefik.http.middlewares.api-retry.retry.initialinterval: 50ms
+      traefik.http.services.api.loadbalancer.server.port: '3000'
+      traefik.http.services.api.loadbalancer.healthcheck.path: /readyz
+      traefik.http.services.api.loadbalancer.healthcheck.interval: 1s
+      traefik.http.services.api.loadbalancer.healthcheck.timeout: 1s
+
+  # --- профиль observability ---
+  prometheus:
+    profiles: [observability]
+    image: ${PROMETHEUS_IMAGE:-prom/prometheus:v3.5.0}
+    volumes: ['../observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro']
+    networks: [cc]
+    ports: ['127.0.0.1:9090:9090']
+  loki:
+    profiles: [observability]
+    image: ${LOKI_IMAGE:-grafana/loki:3.5.3}
+    networks: [cc]
+  promtail:
+    profiles: [observability]
+    image: ${PROMTAIL_IMAGE:-grafana/promtail:3.5.3}
+    command: ['-config.file=/etc/promtail/config.yml']
+    volumes:
+      - '../observability/promtail.yml:/etc/promtail/config.yml:ro'
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks: [cc]
+  grafana:
+    profiles: [observability]
+    image: ${GRAFANA_IMAGE:-grafana/grafana:12.1.0}
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+    volumes: ['../observability/grafana-datasources.yml:/etc/grafana/provisioning/datasources/ds.yml:ro']
+    networks: [cc]
+    ports: ['127.0.0.1:3001:3000']
+
+networks:
+  cc:
+    name: cc
+
+volumes:
+  pgdata:
+  nats1:
+  nats2:
+  nats3:
+  s3data:

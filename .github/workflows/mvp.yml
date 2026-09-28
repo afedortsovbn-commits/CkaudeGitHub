@@ -1,0 +1,53 @@
+name: mvp
+
+on:
+  push:
+    branches: [main]
+    paths: ['mvp/**', '.github/workflows/mvp.yml']
+  pull_request:
+    paths: ['mvp/**', '.github/workflows/mvp.yml']
+  workflow_dispatch:
+
+defaults:
+  run:
+    working-directory: mvp
+
+jobs:
+  checks:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { package_json_file: mvp/package.json }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm, cache-dependency-path: mvp/pnpm-lock.yaml }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm format:check
+      - run: pnpm lint
+      - run: pnpm build
+      - run: pnpm typecheck
+      - run: pnpm test
+      - name: Лицензии зависимостей
+        run: pnpm licenses:check
+      - name: Правило expand/contract для миграций
+        run: pnpm migrations:lint
+      - name: Squawk (безопасность миграций PostgreSQL)
+        run: npx --yes squawk-cli@2 --assume-in-transaction --exclude=prefer-robust-stmts,require-timeout-settings,prefer-bigint-over-int packages/db/migrations/*.sql
+
+  zero-downtime:
+    needs: checks
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { package_json_file: mvp/package.json }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm, cache-dependency-path: mvp/pnpm-lock.yaml }
+      - run: ops/build-images.sh v1 && ops/build-images.sh v2
+      - run: API_TAG=v1 docker compose -f infra/compose/docker-compose.yml up -d --wait
+      - name: Поэтапное обновление api под нагрузкой — 0 ошибок
+        run: node ops/test/rollout-under-load.mjs v2 50 60
+      - name: Перезапуск узла NATS — без потерь
+        run: node ops/test/nats-failover.mjs 2000
+      - if: failure()
+        run: docker compose -f infra/compose/docker-compose.yml logs --no-color | tail -300

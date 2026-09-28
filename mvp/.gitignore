@@ -1,0 +1,8 @@
+node_modules/
+dist/
+out/
+.turbo/
+*.tsbuildinfo
+coverage/
+.env
+offline-bundle/
