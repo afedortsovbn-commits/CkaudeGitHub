@@ -288,6 +288,13 @@ export async function seedDemo(tx: PoolClient, demoPassword: string): Promise<bo
       app_secret: 'demo-app-secret-change-me-0123456789',
     }),
   });
+  await ins('channel', {
+    kind: 'voice',
+    name: 'Телефон (демо)',
+    queue_id: qGeneral,
+    // 1000 — номер демо-страницы «Позвонить» и генератора вызовов SIPp; +375… — пример номера транка.
+    config: JSON.stringify({ dids: ['1000', '+375170000000'], record: true }),
+  });
   await ins('scope_template', {
     name: 'Только предприятие «Север»',
     rules: JSON.stringify([{ enterpriseIds: [ent.E1], departmentIds: null, topicIds: null }]),

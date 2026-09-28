@@ -15,6 +15,18 @@ x-nats: &nats
     timeout: 2s
     retries: 20
 
+x-asterisk: &asterisk
+  image: cc/asterisk:${ASTERISK_TAG:-${MEDIA_TAG:-dev}}
+  restart: unless-stopped
+  networks: [cc]
+  # Остановка узла — только после осушения (ops/update-media.sh): к этому моменту разговоров на нём нет.
+  stop_grace_period: 10s
+
+x-coturn: &coturn
+  image: ${COTURN_IMAGE:-coturn/coturn:4.7}
+  restart: unless-stopped
+  networks: [cc]
+
 x-app-env: &app-env
   LOG_LEVEL: ${LOG_LEVEL:-info}
   # Секрет подписи токенов: на сервере обязательно задать свой (не короче 32 символов) в .env.
@@ -24,6 +36,11 @@ x-app-env: &app-env
   # Ключ шифрования секретов каналов (токены ботов, пароли почты) в БД: на сервере задать свой в .env
   # (не короче 16 символов). Смена ключа потребует повторного ввода секретов каналов в админке.
   SECRETS_KEY: ${SECRETS_KEY:-dev-only-secrets-key-change-me}
+  # Телефония (Ф5): общий с Kamailio секрет короткоживущих SIP-паролей операторов, пароль ARI узлов Asterisk,
+  # общий с coturn секрет TURN REST API. На сервере — свои значения в .env.
+  SIP_SECRET: ${SIP_SECRET:-dev-only-sip-secret-change-me}
+  ARI_PASSWORD: ${ARI_PASSWORD:-dev-only-ari-password}
+  TURN_SECRET: ${TURN_SECRET:-dev-only-turn-secret-change-me}
 
 services:
   traefik:
@@ -175,6 +192,10 @@ services:
       <<: *app-env
       SERVICE_NAME: api
       NATS_STREAM_REPLICAS: 3
+      SIP_DOMAIN: ${SIP_DOMAIN:-cc.local}
+      # Внешние адреса coturn для браузеров (turn:<адрес>:3478,turn:<адрес>:3479); пусто — без TURN (локальная сеть).
+      TURN_URLS: ${TURN_URLS:-}
+      DEMO_CALLER_ENABLED: ${SEED_DEMO:-false}
       S3_ENDPOINT: http://s3:8333
       MAX_UPLOAD_MB: 10
     networks: [cc]
@@ -300,6 +321,77 @@ services:
       nats-3: { condition: service_healthy }
       s3: { condition: service_healthy }
 
+  # --- телефония (Ф5): Kamailio (SIP-периметр), Asterisk ×2 (медиа), coturn ×2 (TURN) ---
+  kamailio:
+    image: cc/kamailio:${KAMAILIO_TAG:-${MEDIA_TAG:-dev}}
+    restart: unless-stopped
+    environment:
+      SIP_SECRET: ${SIP_SECRET:-dev-only-sip-secret-change-me}
+      SIP_DOMAIN: ${SIP_DOMAIN:-cc.local}
+      MEDIA_NODES: asterisk-1:5060 asterisk-2:5060
+      # Адрес SIP-транка оператора связи (МТС) для исходящих; пусто — исходящие наружу недоступны.
+      TRUNK_HOST: ${TRUNK_HOST:-}
+    networks: [cc]
+    # WSS для браузеров — отдельный порт в обход Traefik (02-архитектура 8.1); 5060/udp — приём транка.
+    ports: ['${SIP_WSS_PORT:-8443}:8443', '${SIP_UDP_PORT:-5060}:5060/udp']
+    volumes: ['sipcerts:/etc/kamailio/tls']
+    depends_on:
+      asterisk-1: { condition: service_healthy }
+      asterisk-2: { condition: service_healthy }
+
+  # Управление вызовами (ARI): на каждый узел Asterisk — активный экземпляр (аренда в NATS KV) и резервный.
+  call-control:
+    image: cc/call-control:${CALL_CONTROL_TAG:-${API_TAG:-dev}}
+    restart: unless-stopped
+    deploy:
+      replicas: ${CALL_CONTROL_REPLICAS:-2}
+    environment:
+      <<: *app-env
+      SERVICE_NAME: call-control
+      MEDIA_NODES: asterisk-1,asterisk-2
+      SIP_PROXY: kamailio:5060
+      S3_ENDPOINT: http://s3:8333
+    networks: [cc]
+    stop_grace_period: 35s
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      nats-1: { condition: service_healthy }
+      nats-2: { condition: service_healthy }
+      nats-3: { condition: service_healthy }
+      asterisk-1: { condition: service_healthy }
+      asterisk-2: { condition: service_healthy }
+
+  asterisk-1:
+    <<: *asterisk
+    environment:
+      NODE_NAME: asterisk-1
+      ARI_PASSWORD: ${ARI_PASSWORD:-dev-only-ari-password}
+      RTP_START: 10000
+      RTP_END: 10199
+      EXTERNAL_ADDRESS: ${MEDIA_EXTERNAL_ADDRESS:-}
+    volumes: ['ast1spool:/var/spool/asterisk']
+
+  asterisk-2:
+    <<: *asterisk
+    environment:
+      NODE_NAME: asterisk-2
+      ARI_PASSWORD: ${ARI_PASSWORD:-dev-only-ari-password}
+      RTP_START: 10200
+      RTP_END: 10399
+      EXTERNAL_ADDRESS: ${MEDIA_EXTERNAL_ADDRESS:-}
+    volumes: ['ast2spool:/var/spool/asterisk']
+
+  # TURN для удалённых операторов за NAT; учётные данные — короткоживущие (TURN REST API), выдаёт api
+  # перед каждым вызовом, поэтому экземпляр можно вывести из списка и обновить без обрыва (02-архитектура 6.5).
+  coturn-1:
+    <<: *coturn
+    command: ['-n', '--listening-port=3478', '--use-auth-secret', '--static-auth-secret=${TURN_SECRET:-dev-only-turn-secret-change-me}', '--realm=${SIP_DOMAIN:-cc.local}', '--min-port=49160', '--max-port=49199', '--no-cli', '--no-tls', '--no-dtls', '--log-file=stdout', '--simple-log']
+    ports: ['${TURN1_PORT:-3478}:3478/udp', '${TURN1_PORT:-3478}:3478/tcp']
+  coturn-2:
+    <<: *coturn
+    command: ['-n', '--listening-port=3478', '--use-auth-secret', '--static-auth-secret=${TURN_SECRET:-dev-only-turn-secret-change-me}', '--realm=${SIP_DOMAIN:-cc.local}', '--min-port=49200', '--max-port=49239', '--no-cli', '--no-tls', '--no-dtls', '--log-file=stdout', '--simple-log']
+    ports: ['${TURN2_PORT:-3479}:3478/udp', '${TURN2_PORT:-3479}:3478/tcp']
+
   # --- профиль test: заглушки внешних систем для e2e (в поставку не входят) ---
   mock-telegram:
     profiles: [test]
@@ -316,6 +408,13 @@ services:
       GREENMAIL_OPTS: -Dgreenmail.setup.test.smtp -Dgreenmail.setup.test.imap -Dgreenmail.hostname=0.0.0.0 -Dgreenmail.auth.disabled -Dgreenmail.verbose=false
     networks: [cc]
     ports: ['127.0.0.1:${MAIL_SMTP_PORT:-3025}:3025', '127.0.0.1:${MAIL_IMAP_PORT:-3143}:3143']
+  # Имитация SIP-транка оператора связи для исходящих вызовов (SIPp UAS: отвечает и ждёт BYE).
+  trunk-sim:
+    profiles: [test]
+    image: ${SIPP_IMAGE:-ctaloi/sipp:latest}
+    restart: unless-stopped
+    command: ['-sn', 'uas', '-p', '5060', '-trace_err']
+    networks: [cc]
 
   # --- профиль observability ---
   prometheus:
@@ -350,6 +449,9 @@ networks:
     name: cc
 
 volumes:
+  sipcerts:
+  ast1spool:
+  ast2spool:
   pgdata:
   nats1:
   nats2:

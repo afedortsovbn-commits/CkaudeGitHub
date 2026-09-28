@@ -74,6 +74,7 @@ async function bootstrap(): Promise<void> {
     tokens: new TokenService(config.JWT_SECRET, config.ACCESS_TOKEN_TTL_SEC),
     principals: new PrincipalLoader(pool),
     js: nc.jetstream(),
+    nc,
     storage,
     allowedOrigins: originsCache(pool),
   };

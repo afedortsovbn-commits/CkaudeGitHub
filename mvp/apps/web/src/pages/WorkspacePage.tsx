@@ -24,10 +24,11 @@ import {
 import { notifications } from '@mantine/notifications';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { errorText, get, openAttachment, patch, post, upload } from '../lib/api';
+import { errorText, get, openAttachment, patch, post, recordingUrl, upload } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { type Row, options, useAction, useList } from '../lib/data';
 import { notify, onRealtime, useRealtime } from '../lib/realtime';
+import { softphone, useSoftphone } from '../lib/softphone';
 
 const CHANNEL: Record<string, string> = {
   webchat: 'Сайт',
@@ -445,6 +446,7 @@ function Messages({ conv, typing, onTyping }: { conv: Row; typing: boolean; onTy
 }
 
 function ContactCard({ conv, onOpen }: { conv: Row; onOpen(id: string): void }) {
+  const { me } = useAuth();
   const c = useQuery({
     queryKey: [`/contacts/${conv.contactId}`],
     queryFn: () => get<Row>(`/contacts/${conv.contactId}`),
@@ -480,6 +482,17 @@ function ContactCard({ conv, onOpen }: { conv: Row; onOpen(id: string): void }) 
         value={v.phone ?? ''}
         onChange={(e) => setV({ ...v, phone: e.currentTarget.value })}
       />
+      {v.phone && (
+        <Button
+          size="xs"
+          variant="light"
+          color="green"
+          onClick={() => void softphone.call(v.phone!, conv.assigneeId === me?.id ? String(conv.id) : null)}
+          data-testid="contact-call"
+        >
+          Позвонить {v.phone}
+        </Button>
+      )}
       <TextInput
         size="xs"
         label="Email"
@@ -717,6 +730,109 @@ function ConversationCard({ conv }: { conv: Row }) {
   );
 }
 
+const CALL_STATE: Record<string, string> = {
+  queued: 'ожидает оператора',
+  dialing: 'вызов',
+  talking: 'разговор',
+  external: 'переведён на внешний номер',
+  ended: 'завершён',
+};
+const CALL_EVENT: Record<string, string> = {
+  queued: 'в очереди',
+  offered: 'вызов оператора',
+  agent_connected: 'оператор ответил',
+  agent_no_answer: 'оператор не ответил',
+  agent_declined: 'оператор отклонил',
+  hold: 'удержание',
+  unhold: 'снято с удержания',
+  transfer_queue: 'перевод в очередь',
+  transfer_user: 'перевод оператору',
+  transfer_external: 'прямой перевод',
+  external_connected: 'подразделение ответило',
+  listen: 'прослушивание супервизором',
+  dialing_out: 'исходящий вызов',
+  ended: 'завершён',
+};
+
+interface CallRow {
+  id: string;
+  direction: 'in' | 'out';
+  state: string;
+  fromNumber: string | null;
+  toNumber: string | null;
+  startedAt: string;
+  agentName: string | null;
+  waitS: number;
+  talkS: number;
+  endReason: string | null;
+  recordings: { id: string; status: string; durationS: number | null }[];
+  events: { at: string; type: string; userName: string | null }[];
+}
+
+function Recording({ id }: { id: string }) {
+  const [url, setUrl] = useState<string | null>(null);
+  useEffect(() => () => void (url && URL.revokeObjectURL(url)), [url]);
+  if (url) return <audio controls src={url} style={{ width: '100%' }} data-testid="recording-audio" />;
+  return (
+    <Button
+      size="xs"
+      variant="light"
+      onClick={() =>
+        void recordingUrl(id)
+          .then(setUrl)
+          .catch((e: unknown) => notifications.show({ color: 'red', message: errorText(e) }))
+      }
+      data-testid="recording-play"
+    >
+      Прослушать запись
+    </Button>
+  );
+}
+
+/** Журнал вызовов обращения и записи разговоров (M-TEL-04/05); супервизору — прослушивание (M-TEL-10). */
+function CallsPanel({ conv }: { conv: Row }) {
+  const { can } = useAuth();
+  const calls = useList<CallRow>(`/conversations/${conv.id}/calls`);
+  const listen = useAction((id: string) => post(`/calls/${id}/listen`), 'Звонок прослушивания — ответьте в софтфоне');
+  if (!calls.data?.length) return <Text c="dimmed" size="sm">Звонков нет</Text>;
+  return (
+    <Stack gap="sm" data-testid="calls">
+      {calls.data.map((c) => (
+        <Paper key={c.id} withBorder p="xs" data-testid="call-item">
+          <Group justify="space-between">
+            <Text size="sm" fw={600}>
+              {c.direction === 'in' ? `Входящий ${c.fromNumber ?? ''}` : `Исходящий ${c.toNumber ?? ''}`}
+            </Text>
+            <Badge variant="light" data-testid="call-state">
+              {CALL_STATE[c.state] ?? c.state}
+            </Badge>
+          </Group>
+          <Text size="xs" c="dimmed">
+            {time(c.startedAt)} · ожидание {c.waitS} с · разговор {c.talkS} с{c.agentName ? ` · ${c.agentName}` : ''}
+          </Text>
+          <Text size="xs" c="dimmed">
+            {c.events.map((e) => `${time(e.at)} ${CALL_EVENT[e.type] ?? e.type}`).join(' → ')}
+          </Text>
+          {c.state === 'talking' && can('supervisor.monitor') && (
+            <Button size="xs" mt={4} variant="light" onClick={() => listen.mutate(c.id)} data-testid="call-listen">
+              Прослушать разговор
+            </Button>
+          )}
+          {c.recordings.map((r) =>
+            r.status === 'uploaded' ? (
+              <Recording key={r.id} id={r.id} />
+            ) : (
+              <Text key={r.id} size="xs" c="dimmed">
+                Запись: {r.status === 'failed' ? 'не сохранилась' : 'обрабатывается…'}
+              </Text>
+            ),
+          )}
+        </Paper>
+      ))}
+    </Stack>
+  );
+}
+
 export function WorkspacePage() {
   const { me, can } = useAuth();
   const [tab, setTab] = useState('mine');
@@ -731,6 +847,12 @@ export function WorkspacePage() {
   });
   const typingTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const lastTyping = useRef(0);
+  const phone = useSoftphone();
+  // Входящий звонок: обращение звонящего открывается сразу (карточка клиента по АОН).
+  const ringingConv = phone.call && !phone.call.listen ? phone.call.conversationId : null;
+  useEffect(() => {
+    if (ringingConv) setSelected(ringingConv);
+  }, [ringingConv]);
 
   useEffect(() => {
     if ('Notification' in window && Notification.permission === 'default')
@@ -876,6 +998,9 @@ export function WorkspacePage() {
             <Tabs.List mb="xs">
               <Tabs.Tab value="card">Обращение</Tabs.Tab>
               <Tabs.Tab value="contact">Клиент</Tabs.Tab>
+              <Tabs.Tab value="calls" data-testid="tab-calls">
+                Звонки
+              </Tabs.Tab>
             </Tabs.List>
             <ScrollArea h="calc(100vh - 170px)">
               <Tabs.Panel value="card">
@@ -883,6 +1008,9 @@ export function WorkspacePage() {
               </Tabs.Panel>
               <Tabs.Panel value="contact">
                 <ContactCard conv={conv.data} onOpen={setSelected} />
+              </Tabs.Panel>
+              <Tabs.Panel value="calls">
+                <CallsPanel conv={conv.data} />
               </Tabs.Panel>
             </ScrollArea>
           </Tabs>

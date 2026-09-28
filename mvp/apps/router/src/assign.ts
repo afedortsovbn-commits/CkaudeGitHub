@@ -2,7 +2,7 @@ import { CONVERSATION_EVENTS, newId } from '@cc/contracts';
 import { appendMessage, emitConversation, loadRef } from '@cc/domain';
 import type { Logger } from '@cc/service-kit';
 import type { Pool } from 'pg';
-import { declinedUserIds, eligibleCandidates } from './candidates';
+import { declinedUserIds, eligibleCandidates, VOICE_BUSY } from './candidates';
 import { one, withTx } from './db';
 import { pickCandidate } from './strategies';
 
@@ -68,6 +68,7 @@ async function assignOne(pool: Pool, conversationId: string, maxChats: number): 
       topicPath: conv.topic_path ?? [],
       maxChats,
       excludeUserIds: excluded,
+      voice: conv.channel_kind === 'voice',
     });
     const picked = pickCandidate(queue.strategy, candidates);
     if (!picked) return null;
@@ -80,13 +81,20 @@ async function assignOne(pool: Pool, conversationId: string, maxChats: number): 
       picked.userId,
     ]);
     if (!locked.rowCount) return null;
-    const stillFree = await one<{ n: number }>(
-      tx,
-      `SELECT count(*)::int AS n FROM conversation WHERE assignee_id = $1
-         AND status IN ('active', 'hold', 'offered') AND channel_kind <> 'voice'`,
-      [picked.userId],
-    );
-    if ((stillFree?.n ?? 0) >= maxChats) return null;
+    if (conv.channel_kind === 'voice') {
+      const busy = await one<{ busy: boolean }>(tx, `SELECT ${VOICE_BUSY} AS busy FROM (SELECT $1::uuid AS user_id) u`, [
+        picked.userId,
+      ]);
+      if (busy?.busy) return null;
+    } else {
+      const stillFree = await one<{ n: number }>(
+        tx,
+        `SELECT count(*)::int AS n FROM conversation WHERE assignee_id = $1
+           AND status IN ('active', 'hold', 'offered') AND channel_kind <> 'voice'`,
+        [picked.userId],
+      );
+      if ((stillFree?.n ?? 0) >= maxChats) return null;
+    }
 
     const offerId = newId();
     await tx.query(

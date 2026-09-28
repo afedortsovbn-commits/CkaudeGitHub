@@ -59,6 +59,19 @@ export async function openAttachment(id: string): Promise<void> {
   setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
 
+/** Аудио записи разговора как blob-URL для <audio> (авторизация через Bearer). */
+export async function recordingUrl(id: string): Promise<string> {
+  let r = await fetch(`/api/v1/recordings/${id}`, {
+    headers: accessToken ? { authorization: `Bearer ${accessToken}` } : {},
+  });
+  if (r.status === 401 && (await refreshSession()))
+    r = await fetch(`/api/v1/recordings/${id}`, {
+      headers: accessToken ? { authorization: `Bearer ${accessToken}` } : {},
+    });
+  if (!r.ok) throw new ApiError(r.status, 'recording', 'Запись недоступна');
+  return URL.createObjectURL(await r.blob());
+}
+
 export async function refreshSession(): Promise<boolean> {
   refreshing ??= (async () => {
     try {

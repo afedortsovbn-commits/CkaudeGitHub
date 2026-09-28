@@ -5,7 +5,7 @@ import { Notifications } from '@mantine/notifications';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { BrowserRouter, Route, Routes } from 'react-router';
+import { BrowserRouter, Route, Routes, useLocation } from 'react-router';
 import { AuthProvider, useAuth } from './lib/auth';
 import { AuditPage, SettingsPage } from './pages/AdminPages';
 import { HomePage, Layout } from './pages/Layout';
@@ -17,6 +17,7 @@ import { TopicsPage } from './pages/TopicsPage';
 import { UsersPage } from './pages/UsersPage';
 import { WorkspacePage } from './pages/WorkspacePage';
 import { ChannelsPage } from './pages/ChannelsPage';
+import { DemoCallPage } from './pages/DemoCallPage';
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } },
@@ -24,6 +25,9 @@ const queryClient = new QueryClient({
 
 function App() {
   const { me, loading } = useAuth();
+  const loc = useLocation();
+  // Публичная демо-страница звонка — без входа сотрудника.
+  if (loc.pathname.startsWith('/demo-call')) return <DemoCallPage />;
   if (loading)
     return (
       <Center h="100vh">

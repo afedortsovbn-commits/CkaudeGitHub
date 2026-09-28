@@ -5,6 +5,7 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 import { headers } from 'nats';
 import { z } from 'zod';
 import { Public } from '../auth/guard';
+import { RateLimiter } from '../lib/rate-limit';
 import { APP_CONTEXT, type AppContext } from '../context';
 import { ownAttachments, saveUpload, sendAttachment } from '../lib/attachments';
 import { one, rows, toApi, withTx } from '../lib/db';
@@ -48,24 +49,6 @@ const MessageBody = z
   })
   .strict()
   .refine((m) => m.body.trim() || m.attachmentIds.length, 'Пустое сообщение');
-
-/** Простое ограничение частоты на экземпляр: N сообщений за окно на клиента (FS-WGT-01). */
-class RateLimiter {
-  private readonly hits = new Map<string, number[]>();
-  constructor(
-    private readonly limit: number,
-    private readonly windowMs: number,
-  ) {}
-  allow(key: string): boolean {
-    const now = Date.now();
-    const arr = (this.hits.get(key) ?? []).filter((t) => now - t < this.windowMs);
-    if (arr.length >= this.limit) return false;
-    arr.push(now);
-    this.hits.set(key, arr);
-    if (this.hits.size > 50_000) this.hits.clear();
-    return true;
-  }
-}
 
 export function originAllowed(channel: ChannelRow, origin: string | undefined): boolean {
   const list = channel.config.allowed_origins ?? [];

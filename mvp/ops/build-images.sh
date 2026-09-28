@@ -6,9 +6,15 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 TAG="${1:-${API_TAG:-dev}}"
-APPS="${APPS:-api worker router realtime connector-telegram connector-email web}"
+APPS="${APPS:-api worker router realtime call-control connector-telegram connector-email web}"
 pnpm install --frozen-lockfile ${PNPM_OFFLINE:+--offline} ${PNPM_STORE:+--store-dir "$PNPM_STORE"}
 pnpm build
+# Медиа (Asterisk, Kamailio) — свои образы из шаблонов конфигурации; обновляются осушением (ops/update-media.sh),
+# поэтому тег отдельный от прикладных сервисов. SKIP_MEDIA=1 — не пересобирать.
+if [ -z "${SKIP_MEDIA:-}" ]; then
+  docker build -q -t "cc/asterisk:${MEDIA_TAG:-dev}" infra/asterisk >/dev/null && echo "собран образ cc/asterisk:${MEDIA_TAG:-dev}"
+  docker build -q -t "cc/kamailio:${MEDIA_TAG:-dev}" infra/kamailio >/dev/null && echo "собран образ cc/kamailio:${MEDIA_TAG:-dev}"
+fi
 for app in $APPS; do
   if [ "$app" = web ]; then
     rm -rf out/web && mkdir -p out/web
