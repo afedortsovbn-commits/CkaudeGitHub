@@ -6,3 +6,5 @@ export * from './outbox';
 export * from './metrics';
 export * from './http';
 export * from './jobs';
+export * from './lease';
+export * from './secrets';

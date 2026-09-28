@@ -19,6 +19,18 @@ export async function enqueueEvent(tx: PoolClient, event: EventEnvelope): Promis
   );
 }
 
+/**
+ * Команда (не доменное событие) в outbox той же транзакцией: например, исходящее сообщение для коннектора
+ * (subject cc.outbound.<kind>). В журнал `event` не пишется. id — ключ идемпотентности (Nats-Msg-Id).
+ */
+export async function enqueueCommand(tx: PoolClient, id: string, subject: string, payload: unknown): Promise<void> {
+  await tx.query(`INSERT INTO outbox (id, subject, payload) VALUES ($1, $2, $3) ON CONFLICT (id) DO NOTHING`, [
+    id,
+    subject,
+    JSON.stringify(payload),
+  ]);
+}
+
 export interface OutboxRelayOptions {
   pool: Pool;
   js: JetStreamClient;

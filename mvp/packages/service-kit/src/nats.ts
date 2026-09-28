@@ -57,3 +57,14 @@ export const EVENTS_STREAM: StreamSpec = { name: 'CC_EVENTS', subjects: ['cc.eve
 
 /** Входящие сообщения каналов: сохраняются в R3 до подтверждения каналу, обрабатываются worker. */
 export const INBOUND_STREAM: StreamSpec = { name: 'CC_INBOUND', subjects: ['cc.inbound.>'] };
+
+/**
+ * Исходящие во внешние каналы (cc.outbound.<kind>, публикует outbox-relay) и статусы их доставки
+ * (cc.delivery.<kind>, публикуют коннекторы). Должен существовать до запуска outbox-relay: публикация
+ * в subject без потока останавливает relay (порядок outbox сохраняется ценой ожидания).
+ */
+export const OUTBOUND_STREAM: StreamSpec = {
+  name: 'CC_OUTBOUND',
+  subjects: ['cc.outbound.>', 'cc.delivery.>'],
+  duplicateWindowMs: 600_000,
+};
