@@ -57,6 +57,7 @@ const SETTINGS: Record<string, z.ZodTypeAny> = {
   'ticket.approval_mode': z.enum(['creator', 'supervisor']),
   'system.timezone': z.string().min(1),
   'operator.max_chats': z.number().int().min(1).max(20),
+  'routing.escalation_boost': z.number().int().min(0).max(100000),
 };
 
 const toCols = (data: Record<string, unknown>) => {

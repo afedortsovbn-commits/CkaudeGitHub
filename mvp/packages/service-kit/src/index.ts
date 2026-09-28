@@ -5,3 +5,4 @@ export * from './nats';
 export * from './outbox';
 export * from './metrics';
 export * from './http';
+export * from './jobs';

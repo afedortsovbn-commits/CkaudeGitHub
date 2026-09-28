@@ -6,23 +6,24 @@
 Требования, архитектура и план — в [`../Контакт-центр/planning/`](../Контакт-центр/planning/).
 Журнал выполненных фаз — [`docs/PROGRESS.md`](docs/PROGRESS.md).
 
-## Состав (выполнены фазы Ф0–Ф2)
+## Состав (выполнены фазы Ф0–Ф3)
 
-| Каталог                | Что это                                                                                                                           |
-| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| `apps/api`             | Основной сервис (NestJS + Fastify): `/api/v1/*`, `/healthz`, `/readyz`, `/metrics`                                                |
-| `apps/worker`          | Приём входящих сообщений из потока `CC_INBOUND` (без потерь и дублей)                                                             |
-| `apps/realtime`        | WebSocket для операторов и клиентов (события по правам, «печатает…»)                                                              |
-| `apps/web`             | Веб-интерфейс (React + Mantine): администрирование, рабочее место оператора                                                       |
-| `apps/widget`          | Виджет чата для сайта и страница для WebView мобильного приложения (Preact)                                                       |
-| `packages/auth`        | Токены, загрузка прав, области видимости (общие для api и realtime)                                                               |
-| `packages/domain`      | Общая логика обращений: приём входящего, добавление сообщения, события                                                            |
-| `e2e`                  | Сквозные тесты в браузере (Playwright)                                                                                            |
-| `packages/contracts`   | Контракты событий (zod): оболочка события, правила совместимости                                                                  |
-| `packages/db`          | SQL-миграции (правило expand/contract), раннер миграций, схема Drizzle                                                            |
-| `packages/service-kit` | Общая основа сервисов: конфиг, JSON-логи, корректная остановка, NATS, transactional outbox, метрики                               |
-| `infra/compose`        | Docker Compose: Traefik, PostgreSQL 16, NATS JetStream ×3, SeaweedFS (S3), api, worker, realtime, web ×2; профиль `observability` |
-| `ops/`                 | Сборка образов, поэтапное обновление, офлайн-комплект, проверки                                                                   |
+| Каталог                | Что это                                                                                                                                   |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `apps/api`             | Основной сервис (NestJS + Fastify): `/api/v1/*`, `/healthz`, `/readyz`, `/metrics`                                                        |
+| `apps/worker`          | Приём входящих сообщений из потока `CC_INBOUND` (без потерь и дублей)                                                                     |
+| `apps/router`          | ACD: распределение текстовых обращений операторам, статусы операторов, перелив, эскалация, таймаут принятия (pg-boss)                     |
+| `apps/realtime`        | WebSocket для операторов и клиентов (события по правам, «печатает…»)                                                                      |
+| `apps/web`             | Веб-интерфейс (React + Mantine): администрирование, рабочее место оператора, супервизор                                                   |
+| `apps/widget`          | Виджет чата для сайта и страница для WebView мобильного приложения (Preact)                                                               |
+| `packages/auth`        | Токены, загрузка прав, области видимости (общие для api и realtime)                                                                       |
+| `packages/domain`      | Общая логика обращений: приём входящего, добавление сообщения, события, статус оператора                                                  |
+| `e2e`                  | Сквозные тесты в браузере (Playwright)                                                                                                    |
+| `packages/contracts`   | Контракты событий (zod): оболочка события, правила совместимости                                                                          |
+| `packages/db`          | SQL-миграции (правило expand/contract), раннер миграций, схема Drizzle                                                                    |
+| `packages/service-kit` | Общая основа сервисов: конфиг, JSON-логи, корректная остановка, NATS, transactional outbox, очередь задач (pg-boss), метрики              |
+| `infra/compose`        | Docker Compose: Traefik, PostgreSQL 16, NATS JetStream ×3, SeaweedFS (S3), api, worker, router, realtime, web ×2; профиль `observability` |
+| `ops/`                 | Сборка образов, поэтапное обновление, офлайн-комплект, проверки                                                                           |
 
 ## Быстрый старт
 
@@ -66,6 +67,7 @@ WEB_TAG=v2 ops/rollout.sh web
 node ops/test/rollout-under-load.mjs v2 50 60   # 50 запросов/с в течение 60 с, во время обновления — 0 ошибок
 SERVICE=web node ops/test/rollout-under-load.mjs v2 40 30
 node ops/test/chat-under-rollout.mjs v2 60     # переписка во время обновления worker, realtime, api — 0 потерь
+node ops/test/route-under-rollout.mjs v2         # распределение обращений во время обновления router — 0 потерь
 node ops/test/nats-failover.mjs 2000             # перезапуск узла-лидера NATS — 0 потерь и дублей
 ```
 

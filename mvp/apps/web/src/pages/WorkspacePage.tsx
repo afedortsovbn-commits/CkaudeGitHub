@@ -57,6 +57,59 @@ interface Att {
   size: number;
 }
 
+const BREAK_POLL_MS = 5000;
+
+/** Статус оператора (M-OP-04): переключение «Готов»/«Перерыв»/«Офлайн»; «Постобработка» — только показ и таймер. */
+function AgentStatusBar() {
+  const reasons = useList('/dict/break-reasons');
+  const status = useQuery({
+    queryKey: ['/agent-status/me'],
+    queryFn: () => get<Row>('/agent-status/me'),
+    refetchInterval: BREAK_POLL_MS,
+  });
+  const setStatus = useAction((b: Record<string, unknown>) => post('/agent-status', b), 'Статус изменён');
+  const cur = String(status.data?.status ?? 'offline');
+  if (cur === 'wrap_up') {
+    const until = status.data?.wrapUpUntil ? new Date(String(status.data.wrapUpUntil)).getTime() : 0;
+    const left = Math.max(0, Math.round((until - Date.now()) / 1000));
+    return (
+      <Badge color="yellow" variant="light" data-testid="agent-status">
+        Постобработка · {left} с
+      </Badge>
+    );
+  }
+  return (
+    <Group gap={4}>
+      <SegmentedControl
+        size="xs"
+        data-testid="agent-status"
+        value={cur}
+        onChange={(v) =>
+          setStatus.mutate(
+            v === 'break' ? { status: 'break', reasonId: reasons.data?.[0]?.id } : { status: v },
+          )
+        }
+        data={[
+          { value: 'ready', label: 'Готов' },
+          { value: 'break', label: 'Перерыв' },
+          { value: 'offline', label: 'Офлайн' },
+        ]}
+      />
+      {cur === 'break' && (
+        <Select
+          size="xs"
+          w={170}
+          placeholder="Причина"
+          data-testid="agent-status-reason"
+          data={options(reasons.data)}
+          value={(status.data?.reasonId as string) ?? null}
+          onChange={(v) => v && setStatus.mutate({ status: 'break', reasonId: v })}
+        />
+      )}
+    </Group>
+  );
+}
+
 function List({
   tab,
   selected,
@@ -66,9 +119,12 @@ function List({
   selected: string | null;
   onSelect(id: string): void;
 }) {
+  const { me } = useAuth();
   const [important, setImportant] = useState(false);
   const list = useList(`/conversations?tab=${tab}${important ? '&important=true' : ''}`);
   const take = useAction((id: string) => post(`/conversations/${id}/take`), 'Диалог взят в работу');
+  const accept = useAction((id: string) => post(`/conversations/${id}/accept`), 'Обращение принято');
+  const decline = useAction((id: string) => post(`/conversations/${id}/decline`), 'Обращение отклонено');
   return (
     <Stack gap={6}>
       <Checkbox
@@ -125,6 +181,11 @@ function List({
                 {String(c.topicName)}
               </Badge>
             ) : null}
+            {c.status === 'offered' ? (
+              <Badge size="xs" color="blue">
+                предложено
+              </Badge>
+            ) : null}
             {tab !== 'mine' && c.assigneeName ? (
               <Badge size="xs" color="gray">
                 {String(c.assigneeName)}
@@ -144,6 +205,33 @@ function List({
               Взять
             </Button>
           )}
+          {c.status === 'offered' && c.assigneeId === me?.id && (
+            <Group gap={4} mt={6}>
+              <Button
+                size="compact-xs"
+                color="green"
+                data-testid="accept"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  accept.mutate(c.id, { onSuccess: () => onSelect(c.id) });
+                }}
+              >
+                Принять
+              </Button>
+              <Button
+                size="compact-xs"
+                variant="light"
+                color="red"
+                data-testid="decline"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  decline.mutate(c.id);
+                }}
+              >
+                Отклонить
+              </Button>
+            </Group>
+          )}
         </Card>
       ))}
     </Stack>
@@ -160,7 +248,9 @@ function Messages({ conv, typing, onTyping }: { conv: Row; typing: boolean; onTy
   const viewport = useRef<HTMLDivElement>(null);
   const qc = useQueryClient();
   useEffect(() => viewport.current?.scrollTo({ top: viewport.current.scrollHeight }), [msgs.data, typing]);
-  const canWrite = conv.status !== 'closed' && (conv.assigneeId === me?.id || note);
+  const canWrite = note
+    ? conv.status !== 'closed'
+    : conv.assigneeId === me?.id && ['active', 'hold'].includes(String(conv.status));
   const send = async () => {
     if (!text.trim() && !files.length) return;
     setBusy(true);
@@ -207,7 +297,7 @@ function Messages({ conv, typing, onTyping }: { conv: Row; typing: boolean; onTy
                     {dir === 'in'
                       ? String(conv.contactName)
                       : dir === 'note'
-                        ? `Заметка · ${String(m.authorName ?? '')}`
+                        ? `Заметка · ${String(m.authorName ?? 'система')}`
                         : String(m.authorName ?? '')}{' '}
                     · {time(m.sentAt)}
                   </Text>
@@ -244,7 +334,11 @@ function Messages({ conv, typing, onTyping }: { conv: Row; typing: boolean; onTy
         <Text c="dimmed" size="sm">
           Обращение закрыто.
         </Text>
-      ) : conv.assigneeId !== me?.id && !note ? (
+      ) : !note && conv.status === 'offered' && conv.assigneeId === me?.id ? (
+        <Text c="dimmed" size="sm">
+          Примите предложенное обращение, чтобы ответить клиенту (заметку можно оставить всегда).
+        </Text>
+      ) : !note && conv.assigneeId !== me?.id ? (
         <Text c="dimmed" size="sm">
           Возьмите обращение, чтобы ответить клиенту (заметку можно оставить всегда).
         </Text>
@@ -420,11 +514,17 @@ function ConversationCard({ conv }: { conv: Row }) {
   const queues = useList('/dict/queues');
   const [vals, setVals] = useState<Record<string, unknown>>({});
   const [disp, setDisp] = useState<string | null>(null);
+  const [callbackAt, setCallbackAt] = useState('');
   const [to, setTo] = useState<string | null>(null);
   useEffect(() => setVals((conv.fields as Record<string, unknown>) ?? {}), [conv.id, conv.fields]);
   const upd = useAction((b: Record<string, unknown>) => patch(`/conversations/${conv.id}`, b));
+  const isPostponed = dispositions.data?.find((d) => d.id === disp)?.behavior === 'postponed';
   const close = useAction(
-    () => post(`/conversations/${conv.id}/close`, { dispositionId: disp }),
+    () =>
+      post(`/conversations/${conv.id}/close`, {
+        dispositionId: disp,
+        ...(isPostponed && callbackAt ? { callbackAt: new Date(callbackAt).toISOString() } : {}),
+      }),
     'Обращение закрыто',
   );
   const transfer = useAction(() => {
@@ -535,12 +635,23 @@ function ConversationCard({ conv }: { conv: Row }) {
               onChange={setDisp}
               data-testid="disposition"
             />
+            {isPostponed && (
+              <TextInput
+                size="xs"
+                mt="xs"
+                type="datetime-local"
+                label="Дата и время перезвона"
+                value={callbackAt}
+                onChange={(e) => setCallbackAt(e.currentTarget.value)}
+                data-testid="callback-at"
+              />
+            )}
             <Button
               size="xs"
               mt="xs"
               fullWidth
               color="green"
-              disabled={!disp}
+              disabled={!disp || (isPostponed && !callbackAt)}
               onClick={() => close.mutate(undefined)}
               data-testid="close"
             >
@@ -628,6 +739,8 @@ export function WorkspacePage() {
         }
         if (e.event === 'conversation.created')
           notify('Новое обращение в очереди', 'Откройте вкладку «Очередь»');
+        if (e.event === 'conversation.updated' && e.data.action === 'offered' && e.data.assigneeId === me?.id)
+          notify('Вам предложено обращение', 'Примите или отклоните во вкладке «Мои»');
       }),
     [qc, me?.id, selected],
   );
@@ -651,6 +764,9 @@ export function WorkspacePage() {
             {rt.connected ? 'онлайн' : 'нет связи'}
           </Badge>
         </Group>
+        <Box mb="xs">
+          <AgentStatusBar />
+        </Box>
         <SegmentedControl
           fullWidth
           size="xs"
@@ -686,6 +802,34 @@ export function WorkspacePage() {
                 >
                   Взять
                 </Button>
+              )}
+              {conv.data.status === 'offered' && conv.data.assigneeId === me?.id && (
+                <Group gap={4}>
+                  <Button
+                    size="xs"
+                    color="green"
+                    data-testid="accept-open"
+                    onClick={() =>
+                      void post(`/conversations/${selected}/accept`).then(() => qc.invalidateQueries())
+                    }
+                  >
+                    Принять
+                  </Button>
+                  <Button
+                    size="xs"
+                    variant="light"
+                    color="red"
+                    data-testid="decline-open"
+                    onClick={() =>
+                      void post(`/conversations/${selected}/decline`).then(() => {
+                        setSelected(null);
+                        void qc.invalidateQueries();
+                      })
+                    }
+                  >
+                    Отклонить
+                  </Button>
+                </Group>
               )}
             </Group>
             <Messages
