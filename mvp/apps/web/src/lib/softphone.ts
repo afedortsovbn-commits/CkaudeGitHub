@@ -236,7 +236,9 @@ class Softphone {
       /* без звука вызова — индикация в интерфейсе остаётся */
     }
     if ('Notification' in window && Notification.permission === 'granted')
-      new Notification('Входящий звонок', { body: this.state.call?.remoteName || this.state.call?.remote || '' });
+      new Notification('Входящий звонок', {
+        body: this.state.call?.remoteName || this.state.call?.remote || '',
+      });
   }
 
   private stopRinging() {

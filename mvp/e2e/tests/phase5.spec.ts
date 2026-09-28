@@ -14,7 +14,11 @@ const stamp = Date.now().toString().slice(-6);
 const clientPhone = `+37529${stamp}1`;
 
 async function operator(browser: Browser, email: string, password = DEMO_PASSWORD): Promise<Page> {
-  const ctx = await browser.newContext({ ignoreHTTPSErrors: true, locale: 'ru-RU', permissions: ['microphone'] });
+  const ctx = await browser.newContext({
+    ignoreHTTPSErrors: true,
+    locale: 'ru-RU',
+    permissions: ['microphone'],
+  });
   const page = await ctx.newPage();
   await login(page, email, password);
   await nav(page, 'Рабочее место оператора');
@@ -23,7 +27,11 @@ async function operator(browser: Browser, email: string, password = DEMO_PASSWOR
 }
 
 async function demoCall(browser: Browser, phone: string, name = `Клиент ${stamp}`): Promise<Page> {
-  const ctx = await browser.newContext({ ignoreHTTPSErrors: true, locale: 'ru-RU', permissions: ['microphone'] });
+  const ctx = await browser.newContext({
+    ignoreHTTPSErrors: true,
+    locale: 'ru-RU',
+    permissions: ['microphone'],
+  });
   const page = await ctx.newPage();
   await page.goto('/demo-call');
   await page.getByLabel('Ваше имя').fill(name);
@@ -84,6 +92,8 @@ test.describe.serial('Ф5: телефония', () => {
     }).toPass({ timeout: 30_000 });
     await item.getByTestId('recording-play').click();
     await expect(item.getByTestId('recording-audio')).toBeVisible();
+    // «Готов» не оставляем: последующие проверки ждут обращения в очереди, а не у оператора без софтфона.
+    await op1.getByTestId('agent-status').getByText('Офлайн').click();
   });
 
   test('исходящий звонок с нормализацией номера: абонент (транк) отвечает, обращение с журналом вызова', async ({
@@ -118,7 +128,10 @@ test.describe.serial('Ф5: телефония', () => {
     await expect(call).toHaveAttribute('data-state', 'active', { timeout: 15_000 });
 
     await sup.getByTestId('tabs').getByText('Все открытые').click();
-    await sup.getByTestId('conv-item').filter({ hasText: `Слушаемый ${stamp}` }).click();
+    await sup
+      .getByTestId('conv-item')
+      .filter({ hasText: `Слушаемый ${stamp}` })
+      .click();
     await sup.getByTestId('tab-calls').click();
     await sup.getByTestId('call-listen').click();
     const listen = sup.getByTestId('softphone-call');

@@ -82,9 +82,11 @@ async function assignOne(pool: Pool, conversationId: string, maxChats: number): 
     ]);
     if (!locked.rowCount) return null;
     if (conv.channel_kind === 'voice') {
-      const busy = await one<{ busy: boolean }>(tx, `SELECT ${VOICE_BUSY} AS busy FROM (SELECT $1::uuid AS user_id) u`, [
-        picked.userId,
-      ]);
+      const busy = await one<{ busy: boolean }>(
+        tx,
+        `SELECT ${VOICE_BUSY} AS busy FROM (SELECT $1::uuid AS user_id) u`,
+        [picked.userId],
+      );
       if (busy?.busy) return null;
     } else {
       const stillFree = await one<{ n: number }>(

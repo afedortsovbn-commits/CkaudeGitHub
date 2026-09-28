@@ -793,8 +793,16 @@ function Recording({ id }: { id: string }) {
 function CallsPanel({ conv }: { conv: Row }) {
   const { can } = useAuth();
   const calls = useList<CallRow>(`/conversations/${conv.id}/calls`);
-  const listen = useAction((id: string) => post(`/calls/${id}/listen`), 'Звонок прослушивания — ответьте в софтфоне');
-  if (!calls.data?.length) return <Text c="dimmed" size="sm">Звонков нет</Text>;
+  const listen = useAction(
+    (id: string) => post(`/calls/${id}/listen`),
+    'Звонок прослушивания — ответьте в софтфоне',
+  );
+  if (!calls.data?.length)
+    return (
+      <Text c="dimmed" size="sm">
+        Звонков нет
+      </Text>
+    );
   return (
     <Stack gap="sm" data-testid="calls">
       {calls.data.map((c) => (
@@ -808,13 +816,20 @@ function CallsPanel({ conv }: { conv: Row }) {
             </Badge>
           </Group>
           <Text size="xs" c="dimmed">
-            {time(c.startedAt)} · ожидание {c.waitS} с · разговор {c.talkS} с{c.agentName ? ` · ${c.agentName}` : ''}
+            {time(c.startedAt)} · ожидание {c.waitS} с · разговор {c.talkS} с
+            {c.agentName ? ` · ${c.agentName}` : ''}
           </Text>
           <Text size="xs" c="dimmed">
             {c.events.map((e) => `${time(e.at)} ${CALL_EVENT[e.type] ?? e.type}`).join(' → ')}
           </Text>
           {c.state === 'talking' && can('supervisor.monitor') && (
-            <Button size="xs" mt={4} variant="light" onClick={() => listen.mutate(c.id)} data-testid="call-listen">
+            <Button
+              size="xs"
+              mt={4}
+              variant="light"
+              onClick={() => listen.mutate(c.id)}
+              data-testid="call-listen"
+            >
               Прослушать разговор
             </Button>
           )}

@@ -15,8 +15,7 @@ const chords = [
 ];
 const notes = [];
 for (let rep = 0; rep < 2; rep++)
-  for (const ch of chords)
-    for (let i = 0; i < 4; i++) notes.push({ f: ch[i % 3], bass: ch[0] / 2 });
+  for (const ch of chords) for (let i = 0; i < 4; i++) notes.push({ f: ch[i % 3], bass: ch[0] / 2 });
 
 const total = Math.round(notes.length * beat * RATE);
 const pcm = new Int16Array(total);

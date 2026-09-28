@@ -24,7 +24,11 @@ export class SupervisorController {
       `SELECT u.id, u.full_name, COALESCE(ag.status, 'offline') AS status, br.name AS reason_name,
          extract(epoch FROM now() - COALESCE(ag.since, u.created_at))::int AS since_s,
          (SELECT count(*)::int FROM conversation c WHERE c.assignee_id = u.id
-            AND c.status IN ('active', 'hold', 'offered') AND c.channel_kind <> 'voice') AS active_chats
+            AND c.status IN ('active', 'hold', 'offered') AND c.channel_kind <> 'voice') AS active_chats,
+         -- Идущий разговор оператора (Ф5): для кнопки «Прослушать» (M-TEL-10).
+         (SELECT cl.id FROM call cl WHERE cl.agent_user_id = u.id AND cl.state = 'talking' LIMIT 1) AS call_id,
+         (SELECT COALESCE(cl.from_number, cl.to_number) FROM call cl
+           WHERE cl.agent_user_id = u.id AND cl.state = 'talking' LIMIT 1) AS call_number
        FROM app_user u
        LEFT JOIN agent_status ag ON ag.user_id = u.id
        LEFT JOIN break_reason br ON br.id = ag.reason_id

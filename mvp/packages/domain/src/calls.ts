@@ -26,7 +26,11 @@ interface CallRow {
 }
 
 /** Клиент по номеру телефона (идентификатор `phone`), при необходимости — новый (M-CARD-01). */
-export async function contactByPhone(tx: PoolClient, phone: string, displayName?: string | null): Promise<string> {
+export async function contactByPhone(
+  tx: PoolClient,
+  phone: string,
+  displayName?: string | null,
+): Promise<string> {
   await tx.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`phone:${phone}`]);
   const found = await tx.query<{ contact_id: string }>(
     `SELECT contact_id FROM contact_identity WHERE kind = 'phone' AND value = $1`,
@@ -233,9 +237,10 @@ export async function connectAgent(
         WHERE conversation_id = $1 AND user_id = $2 AND outcome IS NULL`,
       [c.conversation_id, c.agent_user_id],
     );
-    await tx.query(`UPDATE agent_status SET last_assigned_at = now(), updated_at = now() WHERE user_id = $1`, [
-      c.agent_user_id,
-    ]);
+    await tx.query(
+      `UPDATE agent_status SET last_assigned_at = now(), updated_at = now() WHERE user_id = $1`,
+      [c.agent_user_id],
+    );
   }
   await callEvent(tx, callId, 'agent_connected', c.agent_user_id);
   await appendMessage(tx, {
@@ -283,7 +288,12 @@ export async function agentLegFailed(
     );
   }
   await callEvent(tx, callId, outcome === 'declined' ? 'agent_declined' : 'agent_no_answer', c.agent_user_id);
-  await appendMessage(tx, { conversationId: c.conversation_id, direction: 'note', body: note, channelKind: 'voice' });
+  await appendMessage(tx, {
+    conversationId: c.conversation_id,
+    direction: 'note',
+    body: note,
+    channelKind: 'voice',
+  });
   await emitConversation(tx, CONVERSATION_EVENTS.updated, await loadRef(tx, c.conversation_id), {
     action: outcome === 'declined' ? 'declined' : 'offer_timeout',
   });
@@ -342,7 +352,12 @@ export async function endCall(tx: PoolClient, callId: string, reason: string): P
 }
 
 /** Удержание (M-TEL-07): клиент слышит музыку, оператор остаётся в разговоре. */
-export async function setCallHold(tx: PoolClient, callId: string, onHold: boolean, userId: string): Promise<void> {
+export async function setCallHold(
+  tx: PoolClient,
+  callId: string,
+  onHold: boolean,
+  userId: string,
+): Promise<void> {
   await tx.query(`UPDATE call SET on_hold = $2, version = version + 1, updated_at = now() WHERE id = $1`, [
     callId,
     onHold,
@@ -351,7 +366,10 @@ export async function setCallHold(tx: PoolClient, callId: string, onHold: boolea
   await emitCallState(tx, callId);
 }
 
-async function detachAgent(tx: PoolClient, callId: string): Promise<{ conversation_id: string; agent_user_id: string | null }> {
+async function detachAgent(
+  tx: PoolClient,
+  callId: string,
+): Promise<{ conversation_id: string; agent_user_id: string | null }> {
   const { rows } = await tx.query<{ conversation_id: string; agent_user_id: string | null }>(
     `SELECT conversation_id, agent_user_id FROM call WHERE id = $1 FOR UPDATE`,
     [callId],
@@ -398,12 +416,14 @@ export async function transferCallToUser(
   o: { toUserId: string; byUserId: string; message: string },
 ): Promise<void> {
   const c = await detachAgent(tx, callId);
-  const conv = await tx.query<{ queue_id: string | null }>(`SELECT queue_id FROM conversation WHERE id = $1`, [
-    c.conversation_id,
-  ]);
-  const timeout = await tx.query<{ offer_timeout_s: number }>(`SELECT offer_timeout_s FROM queue WHERE id = $1`, [
-    conv.rows[0]?.queue_id,
-  ]);
+  const conv = await tx.query<{ queue_id: string | null }>(
+    `SELECT queue_id FROM conversation WHERE id = $1`,
+    [c.conversation_id],
+  );
+  const timeout = await tx.query<{ offer_timeout_s: number }>(
+    `SELECT offer_timeout_s FROM queue WHERE id = $1`,
+    [conv.rows[0]?.queue_id],
+  );
   await tx.query(
     `UPDATE conversation SET assignee_id = $2, status = 'offered', offered_at = now(), version = version + 1, updated_at = now() WHERE id = $1`,
     [c.conversation_id, o.toUserId],
@@ -411,7 +431,13 @@ export async function transferCallToUser(
   await tx.query(
     `INSERT INTO routing_offer (id, conversation_id, user_id, queue_id, expires_at)
      VALUES ($1, $2, $3, $4, now() + ($5 || ' seconds')::interval)`,
-    [newId(), c.conversation_id, o.toUserId, conv.rows[0]?.queue_id ?? null, timeout.rows[0]?.offer_timeout_s ?? 20],
+    [
+      newId(),
+      c.conversation_id,
+      o.toUserId,
+      conv.rows[0]?.queue_id ?? null,
+      timeout.rows[0]?.offer_timeout_s ?? 20,
+    ],
   );
   await callEvent(tx, callId, 'transfer_user', o.byUserId, { toUserId: o.toUserId });
   await appendMessage(tx, {

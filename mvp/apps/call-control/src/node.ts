@@ -210,8 +210,10 @@ export class MediaNode {
     // Мы никогда не возвращаем каналы в диалплан, поэтому StasisEnd = канал завершён.
     else if (e.type === 'StasisEnd' && e.channel) await this.gone(e.channel.id, 16);
     else if (e.type === 'ChannelDestroyed' && e.channel) await this.gone(e.channel.id, e.cause ?? 16);
-    else if (e.type === 'RecordingFinished' && e.recording) await this.o.store.finished(this.o.name, e.recording);
-    else if (e.type === 'RecordingFailed' && e.recording) await this.o.store.failed(this.o.name, e.recording.name);
+    else if (e.type === 'RecordingFinished' && e.recording)
+      await this.o.store.finished(this.o.name, e.recording);
+    else if (e.type === 'RecordingFailed' && e.recording)
+      await this.o.store.failed(this.o.name, e.recording.name);
   }
 
   private async started(ch: AriChannel, args: string[]): Promise<void> {
@@ -351,9 +353,10 @@ export class MediaNode {
 
   private async userName(userId: string | null): Promise<string> {
     if (!userId) return '';
-    const { rows } = await this.o.pool.query<{ full_name: string }>(`SELECT full_name FROM app_user WHERE id = $1`, [
-      userId,
-    ]);
+    const { rows } = await this.o.pool.query<{ full_name: string }>(
+      `SELECT full_name FROM app_user WHERE id = $1`,
+      [userId],
+    );
     return rows[0]?.full_name ?? '';
   }
 
@@ -399,9 +402,10 @@ export class MediaNode {
     await this.o.ari.bridges.add(bridge, [c.client_channel, ext.id]);
     await this.o.ari.channels.mohStop(c.client_channel);
     await this.tx(async (tx) => {
-      await tx.query(`UPDATE call SET on_hold = false, version = version + 1, updated_at = now() WHERE id = $1`, [
-        callId,
-      ]);
+      await tx.query(
+        `UPDATE call SET on_hold = false, version = version + 1, updated_at = now() WHERE id = $1`,
+        [callId],
+      );
       await callEvent(tx, callId, 'external_connected');
       await emitCallState(tx, callId);
     });
@@ -472,7 +476,8 @@ export class MediaNode {
     await this.o.ari.channels.hangup(c.client_channel);
     await this.dropListeners(c.id);
     if (c.bridge_id) await this.o.ari.bridges.destroy(c.bridge_id);
-    const reason = c.state === 'dialing' ? 'agent_cancel' : c.state === 'external' ? 'external_hangup' : 'agent_hangup';
+    const reason =
+      c.state === 'dialing' ? 'agent_cancel' : c.state === 'external' ? 'external_hangup' : 'agent_hangup';
     await this.tx((tx) => endCall(tx, c.id, reason));
   }
 
@@ -544,7 +549,12 @@ export class MediaNode {
       } catch (err) {
         this.o.logger.warn({ err: String(err), callId: r.id }, 'не удалось вызвать софтфон оператора');
         await this.tx((tx) =>
-          agentLegFailed(tx, r.id, 'declined', 'Не удалось вызвать софтфон оператора — звонок возвращён в очередь'),
+          agentLegFailed(
+            tx,
+            r.id,
+            'declined',
+            'Не удалось вызвать софтфон оператора — звонок возвращён в очередь',
+          ),
         );
       }
     }
@@ -640,7 +650,8 @@ export class MediaNode {
       reply = { ok: true };
     } catch (err) {
       reply = { ok: false, error: err instanceof CommandError ? err.message : `ошибка: ${String(err)}` };
-      if (!(err instanceof CommandError)) this.o.logger.error({ err: String(err) }, 'ошибка команды call-control');
+      if (!(err instanceof CommandError))
+        this.o.logger.error({ err: String(err) }, 'ошибка команды call-control');
     }
     msg.respond(JSON.stringify(reply));
   }
@@ -686,7 +697,9 @@ export class MediaNode {
     if (t.kind === 'user') {
       if (t.userId === cmd.userId) throw new CommandError('Нельзя перевести звонок самому себе');
       const u = await this.o.pool.query<{ full_name: string }>(
-        `SELECT u.full_name FROM app_user u WHERE u.id = $1 AND u.is_active AND u.can_login`,
+        `SELECT u.full_name FROM app_user u WHERE u.id = $1 AND u.is_active AND u.can_login
+           AND EXISTS (SELECT 1 FROM user_role ur JOIN role r ON r.code = ur.role_code
+                        WHERE ur.user_id = u.id AND 'conversations.work' = ANY(r.permissions))`,
         [t.userId],
       );
       if (!u.rows[0]) throw new CommandError('Оператор не найден');
@@ -700,9 +713,10 @@ export class MediaNode {
       return detach();
     }
     if (t.kind === 'queue') {
-      const q = await this.o.pool.query<{ name: string }>(`SELECT name FROM queue WHERE id = $1 AND is_active`, [
-        t.queueId,
-      ]);
+      const q = await this.o.pool.query<{ name: string }>(
+        `SELECT name FROM queue WHERE id = $1 AND is_active`,
+        [t.queueId],
+      );
       if (!q.rows[0]) throw new CommandError('Очередь не найдена');
       await this.tx((tx) =>
         transferCallToQueue(tx, c.id, {
@@ -782,7 +796,11 @@ export class MediaNode {
     const sup = newId();
     this.listens.set(sup, { snoop, bridge: null, callId: c.id });
     try {
-      await this.o.ari.channels.snoop(c.client_channel, { snoopId: snoop, app: STASIS_APP, appArgs: `snoop,${c.id}` });
+      await this.o.ari.channels.snoop(c.client_channel, {
+        snoopId: snoop,
+        app: STASIS_APP,
+        appArgs: `snoop,${c.id}`,
+      });
       await this.o.ari.channels.originate({
         endpoint: `PJSIP/webrtc/sip:${sipUserOf(userId)}@${this.o.sipProxy}`,
         channelId: sup,
@@ -790,7 +808,10 @@ export class MediaNode {
         appArgs: `listen,${c.id},${snoop}`,
         callerId: '"Прослушивание разговора" <listen>',
         timeout: 30,
-        variables: { 'PJSIP_HEADER(add,X-CC-Listen)': c.id, 'PJSIP_HEADER(add,X-CC-Conversation)': c.conversation_id },
+        variables: {
+          'PJSIP_HEADER(add,X-CC-Listen)': c.id,
+          'PJSIP_HEADER(add,X-CC-Conversation)': c.conversation_id,
+        },
       });
     } catch (err) {
       this.listens.delete(sup);

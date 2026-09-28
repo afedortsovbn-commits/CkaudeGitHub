@@ -41,11 +41,19 @@ export class RecordingStore {
   }
 
   async failed(node: string, name: string): Promise<void> {
-    await this.o.pool.query(`UPDATE call_recording SET status = 'failed' WHERE node = $1 AND name = $2`, [node, name]);
+    await this.o.pool.query(`UPDATE call_recording SET status = 'failed' WHERE node = $1 AND name = $2`, [
+      node,
+      name,
+    ]);
   }
 
   async uploadPending(node: string, ari: Ari): Promise<void> {
-    const { rows } = await this.o.pool.query<{ id: string; name: string; conversation_id: string; created_at: Date }>(
+    const { rows } = await this.o.pool.query<{
+      id: string;
+      name: string;
+      conversation_id: string;
+      created_at: Date;
+    }>(
       `SELECT id, name, conversation_id, created_at FROM call_recording
         WHERE node = $1 AND status = 'pending_upload' ORDER BY created_at LIMIT 3`,
       [node],
@@ -65,10 +73,15 @@ export class RecordingStore {
             `UPDATE call_recording SET status = 'uploaded', storage_key = $2, size_bytes = $3, uploaded_at = now() WHERE id = $1`,
             [r.id, key, body.length],
           );
-          await emitConversation(client, CONVERSATION_EVENTS.updated, await loadRef(client, r.conversation_id), {
-            action: 'recording_ready',
-            recordingId: r.id,
-          });
+          await emitConversation(
+            client,
+            CONVERSATION_EVENTS.updated,
+            await loadRef(client, r.conversation_id),
+            {
+              action: 'recording_ready',
+              recordingId: r.id,
+            },
+          );
           await client.query('COMMIT');
         } catch (e) {
           await client.query('ROLLBACK').catch(() => undefined);

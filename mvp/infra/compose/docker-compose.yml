@@ -385,11 +385,39 @@ services:
   # перед каждым вызовом, поэтому экземпляр можно вывести из списка и обновить без обрыва (02-архитектура 6.5).
   coturn-1:
     <<: *coturn
-    command: ['-n', '--listening-port=3478', '--use-auth-secret', '--static-auth-secret=${TURN_SECRET:-dev-only-turn-secret-change-me}', '--realm=${SIP_DOMAIN:-cc.local}', '--min-port=49160', '--max-port=49199', '--no-cli', '--no-tls', '--no-dtls', '--log-file=stdout', '--simple-log']
+    command:
+      [
+        '-n',
+        '--listening-port=3478',
+        '--use-auth-secret',
+        '--static-auth-secret=${TURN_SECRET:-dev-only-turn-secret-change-me}',
+        '--realm=${SIP_DOMAIN:-cc.local}',
+        '--min-port=49160',
+        '--max-port=49199',
+        '--no-cli',
+        '--no-tls',
+        '--no-dtls',
+        '--log-file=stdout',
+        '--simple-log',
+      ]
     ports: ['${TURN1_PORT:-3478}:3478/udp', '${TURN1_PORT:-3478}:3478/tcp']
   coturn-2:
     <<: *coturn
-    command: ['-n', '--listening-port=3478', '--use-auth-secret', '--static-auth-secret=${TURN_SECRET:-dev-only-turn-secret-change-me}', '--realm=${SIP_DOMAIN:-cc.local}', '--min-port=49200', '--max-port=49239', '--no-cli', '--no-tls', '--no-dtls', '--log-file=stdout', '--simple-log']
+    command:
+      [
+        '-n',
+        '--listening-port=3478',
+        '--use-auth-secret',
+        '--static-auth-secret=${TURN_SECRET:-dev-only-turn-secret-change-me}',
+        '--realm=${SIP_DOMAIN:-cc.local}',
+        '--min-port=49200',
+        '--max-port=49239',
+        '--no-cli',
+        '--no-tls',
+        '--no-dtls',
+        '--log-file=stdout',
+        '--simple-log',
+      ]
     ports: ['${TURN2_PORT:-3479}:3478/udp', '${TURN2_PORT:-3479}:3478/tcp']
 
   # --- профиль test: заглушки внешних систем для e2e (в поставку не входят) ---

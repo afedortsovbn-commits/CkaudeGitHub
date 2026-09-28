@@ -18,7 +18,11 @@ import { one, rows, toApi, withTx } from '../lib/db';
 import { ApiError, badRequest, notFound, parse } from '../lib/errors';
 import { RateLimiter } from '../lib/rate-limit';
 
-const SCOPE_COLS = { enterprise: 'c.enterprise_id', department: 'c.department_id', topicPath: 'c.topic_path' };
+const SCOPE_COLS = {
+  enterprise: 'c.enterprise_id',
+  department: 'c.department_id',
+  topicPath: 'c.topic_path',
+};
 
 const uuid = z.string().uuid();
 const TransferBody = z
@@ -60,7 +64,9 @@ export class TelephonyController {
   constructor(@Inject(APP_CONTEXT) private readonly ctx: AppContext) {}
 
   private wsUri(req: Req): string {
-    return this.ctx.config.SIP_WSS_URL || `wss://${req.hostname.split(':')[0]}:${this.ctx.config.SIP_WSS_PORT}`;
+    return (
+      this.ctx.config.SIP_WSS_URL || `wss://${req.hostname.split(':')[0]}:${this.ctx.config.SIP_WSS_PORT}`
+    );
   }
 
   private iceServers(user: string) {
@@ -111,7 +117,8 @@ export class TelephonyController {
   @HttpCode(200)
   demoCaller(@Body() body: unknown, @Req() req: Req) {
     if (this.ctx.config.DEMO_CALLER_ENABLED !== 'true') throw notFound('Страница');
-    if (!this.demoLimiter.allow(req.ip)) throw new ApiError(429, 'rate_limited', 'Слишком часто, подождите немного');
+    if (!this.demoLimiter.allow(req.ip))
+      throw new ApiError(429, 'rate_limited', 'Слишком часто, подождите немного');
     const b = parse(DemoBody, body);
     const phone = b.phone ? normalizePhone(b.phone) : null;
     if (b.phone && !phone) throw badRequest('Некорректный номер телефона');
@@ -213,7 +220,9 @@ export class TelephonyController {
     if (!this.ctx.nc) throw new ApiError(503, 'call_control_down', 'Управление звонками недоступно');
     let reply: CallControlReply;
     try {
-      const m = await this.ctx.nc.request(callControlSubject(call.node), JSON.stringify(cmd), { timeout: 8000 });
+      const m = await this.ctx.nc.request(callControlSubject(call.node), JSON.stringify(cmd), {
+        timeout: 8000,
+      });
       reply = m.json<CallControlReply>();
     } catch {
       throw new ApiError(

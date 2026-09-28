@@ -54,7 +54,12 @@ export function SoftphoneStatus() {
       </Tooltip>
       <Popover position="bottom-end" withArrow>
         <Popover.Target>
-          <Button size="xs" variant="light" disabled={s.reg !== 'registered' || !!s.call} data-testid="dial-open">
+          <Button
+            size="xs"
+            variant="light"
+            disabled={s.reg !== 'registered' || !!s.call}
+            data-testid="dial-open"
+          >
             Набрать
           </Button>
         </Popover.Target>
@@ -111,7 +116,13 @@ function Transfer({ callId, onClose }: { callId: string | null; onClose(): void 
           data-testid="transfer-kind"
         />
         {kind === 'department' && (
-          <Select label="Предприятие" data={options(enterprises.data)} value={ent} onChange={setEnt} searchable />
+          <Select
+            label="Предприятие"
+            data={options(enterprises.data)}
+            value={ent}
+            onChange={setEnt}
+            searchable
+          />
         )}
         <Select
           label={kind === 'user' ? 'Оператор' : kind === 'queue' ? 'Очередь' : 'Подразделение'}
@@ -120,7 +131,10 @@ function Transfer({ callId, onClose }: { callId: string | null; onClose(): void 
               ? options(operators.data, 'fullName')
               : kind === 'queue'
                 ? options(queues.data)
-                : (deps.data ?? []).map((d) => ({ value: String(d.departmentId), label: String(d.departmentName) }))
+                : (deps.data ?? []).map((d) => ({
+                    value: String(d.departmentId),
+                    label: String(d.departmentName),
+                  }))
           }
           value={target}
           onChange={setTarget}
@@ -169,7 +183,9 @@ export function SoftphoneCall() {
       <Stack gap={6}>
         <Group justify="space-between">
           <Text fw={600}>{title}</Text>
-          <Badge color={talking ? (call.onHold ? 'yellow' : 'green') : call.state === 'ended' ? 'gray' : 'blue'}>
+          <Badge
+            color={talking ? (call.onHold ? 'yellow' : 'green') : call.state === 'ended' ? 'gray' : 'blue'}
+          >
             {call.state === 'ringing'
               ? 'звонит'
               : call.state === 'connecting'
@@ -190,7 +206,12 @@ export function SoftphoneCall() {
             <Button color="green" onClick={() => void softphone.answer()} data-testid="call-answer">
               Ответить
             </Button>
-            <Button color="red" variant="light" onClick={() => softphone.decline()} data-testid="call-decline">
+            <Button
+              color="red"
+              variant="light"
+              onClick={() => softphone.decline()}
+              data-testid="call-decline"
+            >
               Отклонить
             </Button>
           </Group>

@@ -23,7 +23,9 @@ describe('normalizePhone', () => {
 
 describe('userIdOfSip', () => {
   it('op-<uuid> → uuid, прочее → null', () => {
-    expect(userIdOfSip('op-01a0e808-1e07-7645-9aa9-425541aaa7c5')).toBe('01a0e808-1e07-7645-9aa9-425541aaa7c5');
+    expect(userIdOfSip('op-01a0e808-1e07-7645-9aa9-425541aaa7c5')).toBe(
+      '01a0e808-1e07-7645-9aa9-425541aaa7c5',
+    );
     expect(userIdOfSip('demo-123')).toBeNull();
   });
 });

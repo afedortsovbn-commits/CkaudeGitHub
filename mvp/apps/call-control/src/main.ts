@@ -44,7 +44,11 @@ const ConfigSchema = BaseConfigSchema.extend({
  */
 async function main(): Promise<void> {
   const config = loadConfig(ConfigSchema);
-  const logger = createLogger({ service: config.SERVICE_NAME, version: config.APP_VERSION, level: config.LOG_LEVEL });
+  const logger = createLogger({
+    service: config.SERVICE_NAME,
+    version: config.APP_VERSION,
+    level: config.LOG_LEVEL,
+  });
   const lifecycle = new Lifecycle({
     logger,
     drainDelayMs: config.SHUTDOWN_DRAIN_DELAY_MS,
@@ -63,7 +67,12 @@ async function main(): Promise<void> {
   pool.on('error', (err) => logger.error({ err: String(err) }, 'ошибка соединения с PostgreSQL'));
   const nc = await connectNats({ servers: natsServers(config), name: config.SERVICE_NAME, logger });
   const js = nc.jetstream();
-  const leases = await leaseBucket(js, 'cc_media_leases', config.MEDIA_LEASE_TTL_MS, config.NATS_STREAM_REPLICAS);
+  const leases = await leaseBucket(
+    js,
+    'cc_media_leases',
+    config.MEDIA_LEASE_TTL_MS,
+    config.NATS_STREAM_REPLICAS,
+  );
   const store = new RecordingStore({
     pool,
     logger,
@@ -95,7 +104,9 @@ async function main(): Promise<void> {
     });
   for (const n of nodes) n.start();
 
-  lifecycle.onShutdown('media-nodes', 20, () => Promise.all(nodes.map((n) => n.stop())).then(() => undefined));
+  lifecycle.onShutdown('media-nodes', 20, () =>
+    Promise.all(nodes.map((n) => n.stop())).then(() => undefined),
+  );
   lifecycle.onShutdown('nats', 30, () => nc.drain());
   lifecycle.onShutdown('postgres', 31, () => pool.end());
   lifecycle.onShutdown('http', 40, () => new Promise<void>((r) => server.close(() => r())));

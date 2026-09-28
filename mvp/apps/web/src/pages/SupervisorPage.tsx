@@ -1,6 +1,7 @@
-import { Badge, Group, Table, Text, Title } from '@mantine/core';
+import { Badge, Button, Group, Table, Text, Title } from '@mantine/core';
 import { useQuery } from '@tanstack/react-query';
-import { get } from '../lib/api';
+import { get, post } from '../lib/api';
+import { useAction } from '../lib/data';
 
 interface QueueRow {
   id: string;
@@ -16,6 +17,8 @@ interface OperatorRow {
   reasonName: string | null;
   sinceS: number;
   activeChats: number;
+  callId: string | null;
+  callNumber: string | null;
 }
 
 const STATUS_LABEL: Record<string, string> = {
@@ -35,6 +38,8 @@ const mins = (s: number) => `${Math.floor(s / 60)} мин ${s % 60} с`;
 
 /** Панель супервизора в реальном времени [УПР] (M-REP-02, M-RT-*): очереди и операторы. */
 export function SupervisorPage() {
+  // Прослушивание (M-TEL-10): звонок приходит в софтфон супервизора и отвечается автоматически.
+  const listen = useAction((id: string) => post(`/calls/${id}/listen`), 'Подключаем прослушивание…');
   const overview = useQuery({
     queryKey: ['/supervisor/overview'],
     queryFn: () => get<{ queues: QueueRow[]; operators: OperatorRow[] }>('/supervisor/overview'),
@@ -80,6 +85,7 @@ export function SupervisorPage() {
             <Table.Th>Статус</Table.Th>
             <Table.Th>В статусе</Table.Th>
             <Table.Th>Активных чатов</Table.Th>
+            <Table.Th>Звонок</Table.Th>
           </Table.Tr>
         </Table.Thead>
         <Table.Tbody>
@@ -94,6 +100,21 @@ export function SupervisorPage() {
               </Table.Td>
               <Table.Td>{mins(o.sinceS)}</Table.Td>
               <Table.Td>{o.activeChats}</Table.Td>
+              <Table.Td>
+                {o.callId && (
+                  <Group gap={4}>
+                    <Text size="xs">{o.callNumber}</Text>
+                    <Button
+                      size="xs"
+                      variant="light"
+                      onClick={() => listen.mutate(String(o.callId))}
+                      data-testid="supervisor-listen"
+                    >
+                      Прослушать
+                    </Button>
+                  </Group>
+                )}
+              </Table.Td>
             </Table.Tr>
           ))}
         </Table.Tbody>

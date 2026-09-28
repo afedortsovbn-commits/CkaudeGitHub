@@ -27,10 +27,12 @@ export function Layout() {
   const loc = useLocation();
   const phone = can('conversations.work', 'supervisor.monitor');
   // Софтфон работает на всех страницах, пока сотрудник в системе (входящий звонок не зависит от раздела).
+  // Зависимость — только id: перечитанный профиль не должен перезапускать софтфон посреди разговора.
+  const userId = me?.id;
   useEffect(() => {
-    if (phone && me) void softphone.start(me.id);
+    if (phone && userId) void softphone.start(userId);
     return () => softphone.stop();
-  }, [phone, me]);
+  }, [phone, userId]);
   return (
     <AppShell header={{ height: 56 }} navbar={{ width: 250, breakpoint: 'sm' }} padding="md">
       <AppShell.Header>

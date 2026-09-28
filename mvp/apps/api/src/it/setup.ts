@@ -14,6 +14,7 @@ import { withTx } from '../lib/db';
 import { createMemoryStorage } from '../lib/storage';
 
 export const TEST_SECRETS_KEY = 'test-secrets-key-0123456789';
+export const TEST_SIP_SECRET = 'test-sip-secret-0123';
 export const ADMIN_URL = process.env.TEST_DATABASE_URL;
 export const DEMO_PW = 'Demo12345!';
 
@@ -47,6 +48,9 @@ export async function createTestApp() {
     JWT_SECRET: 'x'.repeat(40),
     COOKIE_SECURE: 'false',
     SECRETS_KEY: TEST_SECRETS_KEY,
+    SIP_SECRET: TEST_SIP_SECRET,
+    TURN_SECRET: 'test-turn-secret',
+    TURN_URLS: 'turn:turn.test:3478',
   });
   const logger = pino({ level: 'silent' });
   const lifecycle = new Lifecycle({ logger, drainDelayMs: 0, timeoutMs: 1000, exit: () => undefined });

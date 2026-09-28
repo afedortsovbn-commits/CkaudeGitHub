@@ -53,13 +53,15 @@ jobs:
       COMPOSE_PROFILES: test
       MOCK_TELEGRAM_TAG: v1
       PUBLIC_BASE_URL: https://traefik
+      # Имитация SIP-транка (SIPp UAS) для исходящих вызовов в e2e Ф5.
+      TRUNK_HOST: trunk-sim:5060
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
         with: { package_json_file: mvp/package.json }
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: pnpm, cache-dependency-path: mvp/pnpm-lock.yaml }
-      - run: APPS="api worker router realtime connector-telegram connector-email web mock-telegram" ops/build-images.sh v1 && ops/build-images.sh v2
+      - run: APPS="api worker router realtime call-control connector-telegram connector-email web mock-telegram" ops/build-images.sh v1 && SKIP_MEDIA=1 ops/build-images.sh v2
       - run: API_TAG=v1 docker compose -f infra/compose/docker-compose.yml up -d --wait
       - name: Сквозные тесты в браузере (Playwright)
         run: |
@@ -72,6 +74,10 @@ jobs:
         run: API_TAG=v2 node ops/test/chat-under-rollout.mjs v2 60
       - name: Поток Telegram и email во время обновления коннекторов — без потерь и дублей
         run: API_TAG=v2 node ops/test/connectors-under-rollout.mjs v2 60
+      - name: Обновление Asterisk осушением узлов во время ~10 разговоров SIPp — 0 обрывов
+        run: API_TAG=v2 node ops/test/calls-under-update.mjs media
+      - name: Переключение call-control (активный → резервный) во время разговоров — 0 обрывов
+        run: API_TAG=v2 node ops/test/calls-under-update.mjs call-control v2
       - name: Распределение обращений во время обновления router — без потерь
         run: API_TAG=v2 node ops/test/route-under-rollout.mjs v2
       - name: Перезапуск узла NATS — без потерь

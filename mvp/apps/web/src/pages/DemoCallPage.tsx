@@ -36,7 +36,10 @@ export function DemoCallPage() {
     setInfo('');
     let c: DemoCreds;
     try {
-      c = await post<DemoCreds>('/telephony/demo-caller', { name: name || undefined, phone: phone || undefined });
+      c = await post<DemoCreds>('/telephony/demo-caller', {
+        name: name || undefined,
+        phone: phone || undefined,
+      });
     } catch (e) {
       setInfo(errorText(e));
       return;

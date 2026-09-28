@@ -6,7 +6,7 @@
 Требования, архитектура и план — в [`../Контакт-центр/planning/`](../Контакт-центр/planning/).
 Журнал выполненных фаз — [`docs/PROGRESS.md`](docs/PROGRESS.md).
 
-## Состав (выполнены фазы Ф0–Ф4)
+## Состав (выполнены фазы Ф0–Ф4 и Ф5a)
 
 | Каталог                   | Что это                                                                                                                                                                                 |
 | ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -71,6 +71,29 @@ curl -X POST http://127.0.0.1:8081/__test/<токен>/message -H 'content-type:
 # GreenMail: IMAP mail:3143, SMTP mail:3025 без TLS, пароль любой; снаружи — 127.0.0.1:3143/3025
 ```
 
+## Телефония (Ф5a)
+
+Звонки идут через Kamailio (SIP-периметр) на два узла Asterisk; логикой вызовов управляет `call-control`.
+Софтфон оператора (JsSIP) встроен в интерфейс и регистрируется сам после входа — нужны HTTPS и разрешение на
+микрофон. Проверить без SIP-транка:
+
+- демо-страница **https://localhost/demo-call** — «клиент звонит в КЦ» из браузера на номер 1000 (голосовой
+  канал «Телефон (демо)»); оператор в статусе «Готов» получает звонок в софтфон;
+- генератор вызовов SIPp: `docker run --rm --network cc -v $PWD/ops/test/sipp:/s ctaloi/sipp -sf /s/uac-call.xml kamailio:5060 -s 1000 -m 1 -d 30000`.
+
+Порты сервера: **8443/tcp** — WSS Kamailio для браузеров (в обход Traefik; на сервере смонтируйте сертификат
+домена в том `sipcerts`: `cert.pem`, `key.pem`; с самоподписанным сертификатом браузер один раз должен открыть
+https://<адрес>:8443 и принять его), **5060/udp** — SIP-транк, 3478/3479 — TURN. Переменные (`infra/compose/.env`):
+
+| Переменная                                  | Назначение                                                                                           |
+| ------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `SIP_SECRET`, `ARI_PASSWORD`, `TURN_SECRET` | Секреты SIP-учётных данных операторов (общий api и Kamailio), ARI узлов Asterisk, TURN — задать свои |
+| `SIP_DOMAIN`                                | SIP-домен (по умолчанию `cc.local`)                                                                  |
+| `TRUNK_HOST`                                | Адрес SIP-транка оператора связи для исходящих (`host:port`); пусто — исходящие наружу недоступны    |
+| `MEDIA_EXTERNAL_ADDRESS`, `TURN_URLS`       | Для удалённых операторов за NAT: внешний адрес медиа узлов и адреса TURN (`turn:<адрес>:3478,…`)     |
+
+Номера, на которые звонят клиенты (DID), задаются у голосового канала в «Администрирование → Каналы».
+
 ## Обновление без остановки
 
 ```bash
@@ -78,6 +101,8 @@ ops/build-images.sh v2
 API_TAG=v2 ops/rollout.sh api
 WEB_TAG=v2 ops/rollout.sh web
 CONNECTOR_TELEGRAM_TAG=v2 ops/rollout.sh connector-telegram
+CALL_CONTROL_TAG=v2 ops/rollout.sh call-control   # активный экземпляр узла передаёт его резервному
+MEDIA_TAG=v2 ops/update-media.sh                   # Asterisk: осушение узла → обновление → возврат, по очереди
 ```
 
 Маршруты Traefik заданы в `infra/traefik/dynamic.yml`, а не в метках контейнеров: во время обновления метки
@@ -91,6 +116,8 @@ SERVICE=web node ops/test/rollout-under-load.mjs v2 40 30
 node ops/test/chat-under-rollout.mjs v2 60     # переписка во время обновления worker, realtime, api — 0 потерь
 node ops/test/route-under-rollout.mjs v2         # распределение обращений во время обновления router — 0 потерь
 node ops/test/connectors-under-rollout.mjs v2 60 # Telegram и email во время обновления коннекторов (профиль test)
+node ops/test/calls-under-update.mjs media       # ~10 разговоров SIPp во время update-media.sh — 0 обрывов
+node ops/test/calls-under-update.mjs call-control v2  # то же во время переключения call-control
 node ops/test/nats-failover.mjs 2000             # перезапуск узла-лидера NATS — 0 потерь и дублей
 ```
 
