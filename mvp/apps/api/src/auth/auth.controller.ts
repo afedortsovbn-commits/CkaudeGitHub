@@ -8,8 +8,8 @@ import { one, withTx } from '../lib/db';
 import { ApiError, parse } from '../lib/errors';
 import { CurrentUser, Public } from './guard';
 import { hashPassword, PASSWORD_MIN_LENGTH, verifyPassword } from './passwords';
-import type { Principal } from './principal';
-import { hashToken, newRefreshToken } from './tokens';
+import type { Principal } from '@cc/auth';
+import { hashToken, newRefreshToken } from '@cc/auth';
 
 const COOKIE = 'cc_rt';
 const COOKIE_PATH = '/api/v1/auth';

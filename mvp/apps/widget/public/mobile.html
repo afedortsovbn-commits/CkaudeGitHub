@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>Чат</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- Страница для WebView мобильного приложения: /widget/mobile.html?key=<publicKey>[&appUserId=..&sig=..] -->
+    <script>
+      var p = new URLSearchParams(location.search);
+      var s = document.createElement('script');
+      s.src = './widget.js';
+      s.dataset.key = p.get('key') || 'demo-app';
+      s.dataset.mode = 'inline';
+      if (p.get('appUserId')) {
+        s.dataset.appUserId = p.get('appUserId');
+        s.dataset.appSig = p.get('sig') || '';
+      }
+      document.body.appendChild(s);
+    </script>
+  </body>
+</html>

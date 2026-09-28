@@ -21,6 +21,24 @@ export async function createApp(ctx: AppContext): Promise<NestFastifyApplication
   await app.register(fastifyCookie as never);
   app.useGlobalFilters(new ErrorFilter((err) => ctx.logger.error({ err }, 'необработанная ошибка')));
   const fastify = app.getHttpAdapter().getInstance();
+  // Файлы (вложения) — сырыми байтами (в т.ч. text/plain: текстовые файлы бывают не в UTF-8); JSON — как обычно.
+  const raw = { parseAs: 'buffer' as const, bodyLimit: (ctx.config.MAX_UPLOAD_MB + 1) * 1024 * 1024 };
+  fastify.removeContentTypeParser('text/plain');
+  fastify.addContentTypeParser('text/plain', raw, (_req, body, done) => done(null, body));
+  fastify.addContentTypeParser('*', raw, (_req, body, done) => done(null, body));
+  // CORS только для клиентского API виджета: он встраивается на сайты заказчика (разрешённые домены — в настройках канала).
+  fastify.addHook('onRequest', async (req, reply) => {
+    if (!req.url.startsWith('/api/v1/client/')) return;
+    const origin = req.headers.origin;
+    if (origin && (await ctx.allowedOrigins?.(origin))) {
+      reply.header('access-control-allow-origin', origin);
+      reply.header('vary', 'Origin');
+      reply.header('access-control-allow-headers', 'authorization, content-type, x-filename');
+      reply.header('access-control-allow-methods', 'GET, POST, OPTIONS');
+      reply.header('access-control-max-age', '600');
+    }
+    if (req.method === 'OPTIONS') return reply.status(204).send();
+  });
   fastify.addHook('onResponse', async (req, reply) => {
     const route = req.routeOptions?.url ?? 'unknown';
     ctx.metrics.httpRequests.inc({ method: req.method, route, status: String(reply.statusCode) });

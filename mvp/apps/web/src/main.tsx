@@ -14,6 +14,8 @@ import { MatrixPage } from './pages/MatrixPage';
 import { DepartmentsPage, DictionariesPage, EnterprisesPage, ObjectsPage } from './pages/OrgPages';
 import { TopicsPage } from './pages/TopicsPage';
 import { UsersPage } from './pages/UsersPage';
+import { WorkspacePage } from './pages/WorkspacePage';
+import { ChannelsPage } from './pages/ChannelsPage';
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } },
@@ -32,6 +34,8 @@ function App() {
     <Routes>
       <Route element={<Layout />}>
         <Route index element={<HomePage />} />
+        <Route path="workspace" element={<WorkspacePage />} />
+        <Route path="channels" element={<ChannelsPage />} />
         <Route path="enterprises" element={<EnterprisesPage />} />
         <Route path="departments" element={<DepartmentsPage />} />
         <Route path="topics" element={<TopicsPage />} />

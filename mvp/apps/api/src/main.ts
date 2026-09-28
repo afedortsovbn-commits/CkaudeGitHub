@@ -6,15 +6,18 @@ import {
   createMetrics,
   ensureStream,
   EVENTS_STREAM,
+  INBOUND_STREAM,
   Lifecycle,
   loadConfig,
   natsServers,
   OutboxRelay,
 } from '@cc/service-kit';
 import { createApp } from './app.factory';
-import { PrincipalLoader } from './auth/principal';
-import { TokenService } from './auth/tokens';
+import { PrincipalLoader } from '@cc/auth';
+import { TokenService } from '@cc/auth';
 import { ApiConfigSchema, type AppContext } from './context';
+import { originsCache } from './chat/origins';
+import { createS3Storage } from './lib/storage';
 
 async function bootstrap(): Promise<void> {
   const config = loadConfig(ApiConfigSchema);
@@ -42,6 +45,17 @@ async function bootstrap(): Promise<void> {
     ...EVENTS_STREAM,
     replicas: config.NATS_STREAM_REPLICAS,
   });
+  await ensureStream(await nc.jetstreamManager(), {
+    ...INBOUND_STREAM,
+    replicas: config.NATS_STREAM_REPLICAS,
+  });
+  const storage = createS3Storage({
+    endpoint: config.S3_ENDPOINT,
+    bucket: config.S3_BUCKET,
+    accessKey: config.S3_ACCESS_KEY,
+    secretKey: config.S3_SECRET_KEY,
+  });
+  await storage.ensureBucket();
   const relay = new OutboxRelay({ pool, js: nc.jetstream(), logger });
   if (config.OUTBOX_RELAY_ENABLED) relay.start();
 
@@ -53,6 +67,9 @@ async function bootstrap(): Promise<void> {
     pool,
     tokens: new TokenService(config.JWT_SECRET, config.ACCESS_TOKEN_TTL_SEC),
     principals: new PrincipalLoader(pool),
+    js: nc.jetstream(),
+    storage,
+    allowedOrigins: originsCache(pool),
   };
   const app = await createApp(ctx);
   const fastify = app.getHttpAdapter().getInstance();

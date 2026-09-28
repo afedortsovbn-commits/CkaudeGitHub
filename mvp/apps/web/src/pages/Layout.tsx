@@ -5,6 +5,8 @@ import { t } from '../lib/i18n';
 
 const MENU: { to: string; label: string; perms?: string[] }[] = [
   { to: '/', label: t.nav.home },
+  { to: '/workspace', label: 'Рабочее место оператора', perms: ['conversations.work'] },
+  { to: '/channels', label: 'Каналы', perms: ['admin.directories'] },
   { to: '/enterprises', label: t.nav.enterprises, perms: ['admin.directories'] },
   { to: '/departments', label: t.nav.departments, perms: ['admin.directories'] },
   { to: '/topics', label: t.nav.topics, perms: ['admin.directories'] },

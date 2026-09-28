@@ -263,6 +263,31 @@ export async function seedDemo(tx: PoolClient, demoPassword: string): Promise<bo
       ),
     ),
   });
+  await ins('channel', {
+    kind: 'webchat',
+    name: 'Чат на сайте (демо)',
+    queue_id: qGeneral,
+    config: JSON.stringify({
+      public_key: 'demo-webchat',
+      allowed_origins: ['*'],
+      consent_version: '1',
+      consent_text:
+        'Я согласен(на) на обработку персональных данных в соответствии с политикой конфиденциальности.',
+      greeting: 'Здравствуйте! Напишите ваш вопрос — оператор скоро ответит.',
+      max_file_mb: 10,
+    }),
+  });
+  await ins('channel', {
+    kind: 'app',
+    name: 'Чат в мобильном приложении (демо)',
+    queue_id: qGeneral,
+    config: JSON.stringify({
+      public_key: 'demo-app',
+      allowed_origins: ['*'],
+      consent_version: '1',
+      app_secret: 'demo-app-secret-change-me-0123456789',
+    }),
+  });
   await ins('scope_template', {
     name: 'Только предприятие «Север»',
     rules: JSON.stringify([{ enterpriseIds: [ent.E1], departmentIds: null, topicIds: null }]),

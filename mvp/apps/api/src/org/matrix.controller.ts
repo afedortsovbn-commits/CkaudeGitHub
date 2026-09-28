@@ -1,9 +1,9 @@
 import { Body, Controller, Get, HttpCode, Inject, Post, Query } from '@nestjs/common';
 import { newId } from '@cc/contracts';
 import { z } from 'zod';
-import { scopeFilter } from '../access/scope';
+import { scopeFilter } from '@cc/auth';
 import { CurrentUser, RequirePerm } from '../auth/guard';
-import type { Principal } from '../auth/principal';
+import type { Principal } from '@cc/auth';
 import { APP_CONTEXT, type AppContext } from '../context';
 import { audit } from '../lib/audit';
 import { one, rows, toApi, withTx } from '../lib/db';

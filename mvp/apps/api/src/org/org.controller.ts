@@ -2,9 +2,9 @@ import { Body, Controller, Get, HttpCode, Inject, Param, Patch, Post, Put, Query
 import { newId } from '@cc/contracts';
 import Papa from 'papaparse';
 import { z } from 'zod';
-import { scopeFilter } from '../access/scope';
+import { scopeFilter } from '@cc/auth';
 import { CurrentUser, RequirePerm } from '../auth/guard';
-import type { Principal } from '../auth/principal';
+import type { Principal } from '@cc/auth';
 import { APP_CONTEXT, type AppContext } from '../context';
 import { audit } from '../lib/audit';
 import { one, rows, toApi, withTx } from '../lib/db';
@@ -56,6 +56,7 @@ const SETTINGS: Record<string, z.ZodTypeAny> = {
   'ticket.daily_notification_time': z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
   'ticket.approval_mode': z.enum(['creator', 'supervisor']),
   'system.timezone': z.string().min(1),
+  'operator.max_chats': z.number().int().min(1).max(20),
 };
 
 const toCols = (data: Record<string, unknown>) => {

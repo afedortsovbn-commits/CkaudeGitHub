@@ -54,3 +54,6 @@ export async function ensureStream(jsm: JetStreamManager, spec: StreamSpec): Pro
 
 /** Поток событий домена: все `cc.events.>` */
 export const EVENTS_STREAM: StreamSpec = { name: 'CC_EVENTS', subjects: ['cc.events.>'] };
+
+/** Входящие сообщения каналов: сохраняются в R3 до подтверждения каналу, обрабатываются worker. */
+export const INBOUND_STREAM: StreamSpec = { name: 'CC_INBOUND', subjects: ['cc.inbound.>'] };

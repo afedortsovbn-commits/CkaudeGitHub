@@ -172,6 +172,8 @@ services:
       <<: *app-env
       SERVICE_NAME: api
       NATS_STREAM_REPLICAS: 3
+      S3_ENDPOINT: http://s3:8333
+      MAX_UPLOAD_MB: 10
     networks: [cc]
     stop_grace_period: 35s
     depends_on:
@@ -179,12 +181,49 @@ services:
       nats-1: { condition: service_healthy }
       nats-2: { condition: service_healthy }
       nats-3: { condition: service_healthy }
+      s3: { condition: service_healthy }
     labels:
       traefik.enable: 'true'
       traefik.http.services.api.loadbalancer.server.port: '3000'
       traefik.http.services.api.loadbalancer.healthcheck.path: /readyz
       traefik.http.services.api.loadbalancer.healthcheck.interval: 1s
       traefik.http.services.api.loadbalancer.healthcheck.timeout: 1s
+
+  worker:
+    image: cc/worker:${WORKER_TAG:-${API_TAG:-dev}}
+    restart: unless-stopped
+    deploy:
+      replicas: ${WORKER_REPLICAS:-2}
+    environment:
+      <<: *app-env
+      SERVICE_NAME: worker
+    networks: [cc]
+    stop_grace_period: 35s
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      nats-1: { condition: service_healthy }
+      nats-2: { condition: service_healthy }
+      nats-3: { condition: service_healthy }
+
+  realtime:
+    image: cc/realtime:${REALTIME_TAG:-${API_TAG:-dev}}
+    restart: unless-stopped
+    deploy:
+      replicas: ${REALTIME_REPLICAS:-2}
+    environment:
+      <<: *app-env
+      SERVICE_NAME: realtime
+    networks: [cc]
+    stop_grace_period: 35s
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      nats-1: { condition: service_healthy }
+    labels:
+      traefik.enable: 'true'
+      traefik.http.services.realtime.loadbalancer.server.port: '3000'
+      traefik.http.services.realtime.loadbalancer.healthcheck.path: /readyz
+      traefik.http.services.realtime.loadbalancer.healthcheck.interval: 1s
+      traefik.http.services.realtime.loadbalancer.healthcheck.timeout: 1s
 
   web:
     image: cc/web:${WEB_TAG:-${API_TAG:-dev}}
