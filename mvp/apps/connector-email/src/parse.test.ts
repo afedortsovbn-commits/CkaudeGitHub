@@ -7,9 +7,9 @@ const mail = (headers: string, body: string) =>
 
 describe('stripQuoted', () => {
   it('отсекает цитату после «... написал(а):»', () => {
-    expect(stripQuoted('Спасибо, всё работает.\n\n28.09.2026, Поддержка написал(а):\n> Попробуйте ещё раз')).toBe(
-      'Спасибо, всё работает.',
-    );
+    expect(
+      stripQuoted('Спасибо, всё работает.\n\n28.09.2026, Поддержка написал(а):\n> Попробуйте ещё раз'),
+    ).toBe('Спасибо, всё работает.');
   });
   it('отсекает «On ... wrote:» и хвост цитаты «>»', () => {
     expect(stripQuoted('Ok\r\n\r\nOn Mon, Sep 28 support wrote:\r\n> hi')).toBe('Ok');
@@ -39,7 +39,11 @@ References: <c1@example.by> <out1@cc.local>`,
       displayName: 'Иван Петров',
       body: 'Добрый день!\nКарта 1234.',
       automatic: false,
-      email: { subject: 'Re: Возврат средств', messageId: '<c2@example.by>', references: ['<c1@example.by>', '<out1@cc.local>'] },
+      email: {
+        subject: 'Re: Возврат средств',
+        messageId: '<c2@example.by>',
+        references: ['<c1@example.by>', '<out1@cc.local>'],
+      },
     });
   });
 
@@ -54,7 +58,9 @@ References: <c1@example.by> <out1@cc.local>`,
 
   it('HTML-письмо без текстовой части превращается в текст', async () => {
     const m = await simpleParser(
-      Buffer.from('From: a@b.by\r\nSubject: html\r\nContent-Type: text/html; charset=utf-8\r\n\r\n<p>Привет, <b>мир</b></p>'),
+      Buffer.from(
+        'From: a@b.by\r\nSubject: html\r\nContent-Type: text/html; charset=utf-8\r\n\r\n<p>Привет, <b>мир</b></p>',
+      ),
     );
     expect(parseEmail(m, 'support@cc.local')?.body).toContain('Привет, мир');
   });

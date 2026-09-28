@@ -20,7 +20,14 @@ interface Bot {
   nextMessage: number;
   queue: Update[];
   waiters: (() => void)[];
-  sent: { chat_id: string; text?: string; document?: string; caption?: string; message_id: number; at: number }[];
+  sent: {
+    chat_id: string;
+    text?: string;
+    document?: string;
+    caption?: string;
+    message_id: number;
+    at: number;
+  }[];
   webhook: { url: string; secret: string } | null;
   files: Map<string, { body: Buffer; mime: string; name: string }>;
 }
@@ -50,7 +57,11 @@ async function params(req: IncomingMessage): Promise<Record<string, unknown>> {
   const raw = await body(req);
   const type = String(req.headers['content-type'] ?? '');
   if (type.startsWith('multipart/form-data')) {
-    const form = await new Request('http://x', { method: 'POST', headers: { 'content-type': type }, body: new Uint8Array(raw) }).formData();
+    const form = await new Request('http://x', {
+      method: 'POST',
+      headers: { 'content-type': type },
+      body: new Uint8Array(raw),
+    }).formData();
     const out: Record<string, unknown> = {};
     for (const [k, v] of form) out[k] = typeof v === 'string' ? v : { name: v.name, size: v.size };
     return out;
@@ -90,7 +101,7 @@ async function botApi(token: string, method: string, req: IncomingMessage, res: 
       b.webhook = null;
       return ok(res, true);
     case 'getUpdates': {
-      if (b.webhook) return fail(res, 409, 'Conflict: can\'t use getUpdates method while webhook is active');
+      if (b.webhook) return fail(res, 409, "Conflict: can't use getUpdates method while webhook is active");
       const offset = Number(p.offset ?? 0);
       b.queue = b.queue.filter((u) => u.update_id >= offset);
       if (!b.queue.length) {
@@ -118,7 +129,9 @@ async function botApi(token: string, method: string, req: IncomingMessage, res: 
     }
     case 'getFile': {
       const f = b.files.get(String(p.file_id));
-      return f ? ok(res, { file_id: p.file_id, file_path: `docs/${String(p.file_id)}` }) : fail(res, 400, 'file not found');
+      return f
+        ? ok(res, { file_id: p.file_id, file_path: `docs/${String(p.file_id)}` })
+        : fail(res, 400, 'file not found');
     }
     default:
       return fail(res, 404, 'Not Found');
@@ -144,7 +157,11 @@ async function testApi(token: string, action: string, req: IncomingMessage, res:
   };
   if (p.document) {
     const fileId = `f${b.files.size + 1}_${Date.now()}`;
-    b.files.set(fileId, { body: Buffer.from(p.document.base64, 'base64'), mime: p.document.mime, name: p.document.filename });
+    b.files.set(fileId, {
+      body: Buffer.from(p.document.base64, 'base64'),
+      mime: p.document.mime,
+      name: p.document.filename,
+    });
     message.document = { file_id: fileId, file_name: p.document.filename, mime_type: p.document.mime };
     if (p.text) message.caption = p.text;
   } else message.text = p.text ?? '';

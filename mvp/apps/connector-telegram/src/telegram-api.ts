@@ -40,7 +40,11 @@ export class TelegramApi {
     private readonly root = 'https://api.telegram.org',
   ) {}
 
-  private async call<T>(method: string, body: Record<string, unknown> | FormData, signal?: AbortSignal): Promise<T> {
+  private async call<T>(
+    method: string,
+    body: Record<string, unknown> | FormData,
+    signal?: AbortSignal,
+  ): Promise<T> {
     const isForm = body instanceof FormData;
     const r = await fetch(`${this.root}/bot${this.token}/${method}`, {
       method: 'POST',
@@ -57,7 +61,8 @@ export class TelegramApi {
     if (!data.ok) {
       const code = data.error_code ?? r.status;
       // 400 (нет такого чата), 403 (бот заблокирован клиентом) — повтор не поможет.
-      if (code === 400 || code === 403) throw new PermanentError(`Telegram ${code}: ${data.description ?? ''}`);
+      if (code === 400 || code === 403)
+        throw new PermanentError(`Telegram ${code}: ${data.description ?? ''}`);
       throw new TelegramError(code, data.description ?? 'ошибка Bot API');
     }
     return data.result as T;
@@ -79,7 +84,11 @@ export class TelegramApi {
     return this.call<{ message_id: number }>('sendMessage', { chat_id: chatId, text });
   }
 
-  sendDocument(chatId: string, file: { filename: string; contentType: string; body: Buffer }, caption?: string) {
+  sendDocument(
+    chatId: string,
+    file: { filename: string; contentType: string; body: Buffer },
+    caption?: string,
+  ) {
     const form = new FormData();
     form.set('chat_id', chatId);
     if (caption) form.set('caption', caption);

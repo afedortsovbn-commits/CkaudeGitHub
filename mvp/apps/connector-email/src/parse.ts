@@ -45,7 +45,8 @@ export function stripQuoted(text: string): string {
   return result || text.trim();
 }
 
-const asArray = (v: string | string[] | undefined): string[] => (!v ? [] : Array.isArray(v) ? v : v.split(/\s+/));
+const asArray = (v: string | string[] | undefined): string[] =>
+  !v ? [] : Array.isArray(v) ? v : v.split(/\s+/);
 
 export function parseEmail(mail: ParsedMail, ownAddress: string): ParsedEmail | null {
   const sender = mail.from?.value[0];

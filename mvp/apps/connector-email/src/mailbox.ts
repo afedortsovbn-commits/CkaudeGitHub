@@ -52,6 +52,10 @@ export class MailboxRunner {
       secure: c.smtp_secure,
       auth: c.smtp_user ? { user: c.smtp_user, pass: c.smtp_password ?? '' } : undefined,
       tls: { rejectUnauthorized: !c.tls_insecure },
+      // Отправка должна уложиться в ack_wait потока исходящих (60 с), иначе письмо уйдёт повторно.
+      connectionTimeout: 15_000,
+      greetingTimeout: 15_000,
+      socketTimeout: 30_000,
     });
   }
 

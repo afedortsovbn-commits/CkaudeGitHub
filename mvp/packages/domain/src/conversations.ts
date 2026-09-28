@@ -326,7 +326,11 @@ const REPLY_PREFIX = /^\s*(re|ответ|отв)\s*:/i;
  * Ставит ответ оператора в исходящие коннектора (M-CH-08) той же транзакцией, что и само сообщение:
  * outbox → CC_OUTBOUND → коннектор канала → статус доставки. Возвращает начальный статус доставки.
  */
-async function queueOutbound(tx: PoolClient, msg: MessageDto, kind: ConnectorChannel): Promise<'pending' | 'failed'> {
+async function queueOutbound(
+  tx: PoolClient,
+  msg: MessageDto,
+  kind: ConnectorChannel,
+): Promise<'pending' | 'failed'> {
   const { rows } = await tx.query<{
     channel_id: string;
     contact_id: string;
@@ -345,7 +349,11 @@ async function queueOutbound(tx: PoolClient, msg: MessageDto, kind: ConnectorCha
     return 'failed';
   }
   const meta = c.channel_meta ?? {};
-  const subject = meta.subject ? (REPLY_PREFIX.test(meta.subject) ? meta.subject : `Re: ${meta.subject}`) : '';
+  const subject = meta.subject
+    ? REPLY_PREFIX.test(meta.subject)
+      ? meta.subject
+      : `Re: ${meta.subject}`
+    : '';
   const out: OutboundMessage = {
     messageId: msg.id,
     conversationId: msg.conversationId,
@@ -387,10 +395,15 @@ export async function applyDeliveryStatus(tx: PoolClient, s: DeliveryStatus): Pr
     [s.messageId, s.status, s.error, s.at, s.externalId],
   );
   if (!r.rows[0]) return false;
-  await emitConversation(tx, CONVERSATION_EVENTS.messageStatus, await loadRef(tx, r.rows[0].conversation_id), {
-    messageId: s.messageId,
-    deliveryStatus: s.status,
-    deliveryError: s.error,
-  });
+  await emitConversation(
+    tx,
+    CONVERSATION_EVENTS.messageStatus,
+    await loadRef(tx, r.rows[0].conversation_id),
+    {
+      messageId: s.messageId,
+      deliveryStatus: s.status,
+      deliveryError: s.error,
+    },
+  );
   return true;
 }

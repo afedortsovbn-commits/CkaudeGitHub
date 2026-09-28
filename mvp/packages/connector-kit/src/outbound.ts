@@ -32,7 +32,11 @@ export async function publishInbound(js: JetStreamClient, msg: InboundMessage): 
   const id = `${m.channelKind}:${m.externalId}`;
   const h = headers();
   h.set('Nats-Msg-Id', id);
-  await js.publish(inboundSubject(m.channelKind), JSON.stringify(m), { msgID: id, headers: h, timeout: 5000 });
+  await js.publish(inboundSubject(m.channelKind), JSON.stringify(m), {
+    msgID: id,
+    headers: h,
+    timeout: 5000,
+  });
 }
 
 /**
@@ -98,7 +102,12 @@ export class OutboundWorker {
   }
 
   private async status(msg: OutboundMessage, s: Omit<DeliveryStatus, 'messageId' | 'channelId' | 'at'>) {
-    const payload: DeliveryStatus = { ...s, messageId: msg.messageId, channelId: msg.channelId, at: Date.now() };
+    const payload: DeliveryStatus = {
+      ...s,
+      messageId: msg.messageId,
+      channelId: msg.channelId,
+      at: Date.now(),
+    };
     await this.o.js.publish(deliverySubject(this.o.kind), JSON.stringify(payload), {
       msgID: `${msg.messageId}:${s.status}`,
       timeout: 5000,
@@ -129,7 +138,10 @@ export class OutboundWorker {
     } catch (err) {
       const attempt = m.info.redeliveryCount;
       const final = err instanceof PermanentError || attempt >= this.o.maxAttempts;
-      this.o.logger.warn({ err: String(err), messageId: msg.messageId, attempt, final }, 'не удалось доставить');
+      this.o.logger.warn(
+        { err: String(err), messageId: msg.messageId, attempt, final },
+        'не удалось доставить',
+      );
       if (!final) {
         m.nak(Math.min(1000 * 2 ** attempt, 60_000));
         return;

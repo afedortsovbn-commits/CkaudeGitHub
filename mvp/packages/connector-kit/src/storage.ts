@@ -16,7 +16,13 @@ export class ConnectorStorage {
   private readonly s3: S3Client;
 
   constructor(
-    private readonly o: { endpoint: string; bucket: string; accessKey: string; secretKey: string; pool: Pool },
+    private readonly o: {
+      endpoint: string;
+      bucket: string;
+      accessKey: string;
+      secretKey: string;
+      pool: Pool;
+    },
   ) {
     this.s3 = new S3Client({
       endpoint: o.endpoint,
@@ -30,13 +36,22 @@ export class ConnectorStorage {
    * Вложение входящего сообщения: файл — в S3-хранилище, запись — в `attachment` (ещё не привязана к
    * обращению; привязку делает worker при сохранении сообщения). null — файл отклонён.
    */
-  async saveInbound(file: { filename: string; contentType: string; body: Buffer }): Promise<AttachmentRef | null> {
+  async saveInbound(file: {
+    filename: string;
+    contentType: string;
+    body: Buffer;
+  }): Promise<AttachmentRef | null> {
     const filename = file.filename.slice(0, 200).replace(/[\\/]/g, '_') || 'file';
     if (BLOCKED.test(filename)) return null;
     const id = newId();
     const key = `attachments/${new Date().toISOString().slice(0, 7)}/${id}`;
     await this.s3.send(
-      new PutObjectCommand({ Bucket: this.o.bucket, Key: key, Body: file.body, ContentType: file.contentType }),
+      new PutObjectCommand({
+        Bucket: this.o.bucket,
+        Key: key,
+        Body: file.body,
+        ContentType: file.contentType,
+      }),
     );
     await this.o.pool.query(
       `INSERT INTO attachment (id, filename, content_type, size_bytes, storage_key) VALUES ($1, $2, $3, $4, $5)`,

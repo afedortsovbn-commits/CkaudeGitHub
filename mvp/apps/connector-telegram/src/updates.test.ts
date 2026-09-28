@@ -8,13 +8,26 @@ const base = (message: Record<string, unknown>) => ({
 
 describe('parseUpdate', () => {
   it('текст личного сообщения → входящее с идентификатором чата и именем', () => {
-    const p = parseUpdate(base({ text: 'Здравствуйте', from: { id: 1001, first_name: 'Иван', last_name: 'Петров' } }), 'ch1');
-    expect(p).toEqual({ externalId: 'ch1:42', chatId: '1001', displayName: 'Иван Петров', body: 'Здравствуйте', files: [] });
+    const p = parseUpdate(
+      base({ text: 'Здравствуйте', from: { id: 1001, first_name: 'Иван', last_name: 'Петров' } }),
+      'ch1',
+    );
+    expect(p).toEqual({
+      externalId: 'ch1:42',
+      chatId: '1001',
+      displayName: 'Иван Петров',
+      body: 'Здравствуйте',
+      files: [],
+    });
   });
 
   it('фото: берётся самый крупный размер, подпись — текст сообщения', () => {
     const p = parseUpdate(
-      base({ caption: 'чек', photo: [{ file_id: 'small' }, { file_id: 'big' }], from: { id: 1, username: 'ivan' } }),
+      base({
+        caption: 'чек',
+        photo: [{ file_id: 'small' }, { file_id: 'big' }],
+        from: { id: 1, username: 'ivan' },
+      }),
       'ch1',
     );
     expect(p?.body).toBe('чек');
@@ -23,7 +36,10 @@ describe('parseUpdate', () => {
   });
 
   it('документ сохраняет имя и тип файла', () => {
-    const p = parseUpdate(base({ document: { file_id: 'd1', file_name: 'акт.pdf', mime_type: 'application/pdf' } }), 'ch1');
+    const p = parseUpdate(
+      base({ document: { file_id: 'd1', file_name: 'акт.pdf', mime_type: 'application/pdf' } }),
+      'ch1',
+    );
     expect(p?.files).toEqual([{ fileId: 'd1', filename: 'акт.pdf', contentType: 'application/pdf' }]);
   });
 
@@ -35,6 +51,8 @@ describe('parseUpdate', () => {
   });
 
   it('один и тот же update_id у разных ботов — разные externalId', () => {
-    expect(parseUpdate(base({ text: 'a' }), 'bot-A')?.externalId).not.toBe(parseUpdate(base({ text: 'a' }), 'bot-B')?.externalId);
+    expect(parseUpdate(base({ text: 'a' }), 'bot-A')?.externalId).not.toBe(
+      parseUpdate(base({ text: 'a' }), 'bot-B')?.externalId,
+    );
   });
 });

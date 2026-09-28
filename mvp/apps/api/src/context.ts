@@ -23,6 +23,8 @@ export const ApiConfigSchema = BaseConfigSchema.extend({
   S3_ACCESS_KEY: z.string().default('cc'),
   S3_SECRET_KEY: z.string().default('cc-secret'),
   MAX_UPLOAD_MB: z.coerce.number().int().min(1).max(100).default(10),
+  /** Ключ шифрования секретов интеграций в БД (токены ботов, пароли почты); тот же — у коннекторов. */
+  SECRETS_KEY: z.string().min(16, 'SECRETS_KEY должен быть не короче 16 символов').optional(),
 });
 export type ApiConfig = z.infer<typeof ApiConfigSchema>;
 

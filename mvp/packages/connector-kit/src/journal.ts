@@ -1,6 +1,8 @@
 import { newId } from '@cc/contracts';
 import type { Pool } from 'pg';
 
+const RETENTION_DAYS = 30;
+
 /**
  * Журнал обмена и состояние канала для админки (M-CH-07). Содержимое сообщений не пишется (ПДн) —
  * только факт и краткое описание. Ошибки записи журнала не должны мешать обмену — только логируются.
@@ -12,6 +14,7 @@ export class ChannelJournal {
   ) {}
 
   log(channelId: string, direction: 'in' | 'out' | 'system', summary: string, ok = true): void {
+    this.prune();
     this.pool
       .query(`INSERT INTO channel_log (id, channel_id, direction, ok, summary) VALUES ($1, $2, $3, $4, $5)`, [
         newId(),
@@ -20,6 +23,16 @@ export class ChannelJournal {
         ok,
         summary.slice(0, 500),
       ])
+      .catch(this.onError);
+  }
+
+  /** Журнал хранится RETENTION_DAYS дней; очистка — не чаще раза в час с каждого экземпляра. */
+  private prunedAt = 0;
+  private prune(): void {
+    if (Date.now() - this.prunedAt < 3600_000) return;
+    this.prunedAt = Date.now();
+    this.pool
+      .query(`DELETE FROM channel_log WHERE at < now() - make_interval(days => $1)`, [RETENTION_DAYS])
       .catch(this.onError);
   }
 

@@ -31,7 +31,11 @@ import { MailboxRunner } from './mailbox';
  */
 async function main(): Promise<void> {
   const config = loadConfig(ConnectorConfigSchema);
-  const logger = createLogger({ service: config.SERVICE_NAME, version: config.APP_VERSION, level: config.LOG_LEVEL });
+  const logger = createLogger({
+    service: config.SERVICE_NAME,
+    version: config.APP_VERSION,
+    level: config.LOG_LEVEL,
+  });
   const lifecycle = new Lifecycle({
     logger,
     drainDelayMs: config.SHUTDOWN_DRAIN_DELAY_MS,

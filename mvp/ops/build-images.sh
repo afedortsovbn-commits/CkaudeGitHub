@@ -6,7 +6,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 TAG="${1:-${API_TAG:-dev}}"
-APPS="${APPS:-api worker router realtime web}"
+APPS="${APPS:-api worker router realtime connector-telegram connector-email web}"
 pnpm install --frozen-lockfile ${PNPM_OFFLINE:+--offline} ${PNPM_STORE:+--store-dir "$PNPM_STORE"}
 pnpm build
 for app in $APPS; do

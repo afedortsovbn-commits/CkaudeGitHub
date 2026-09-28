@@ -57,7 +57,11 @@ const sameSecret = (a: string, b: string) =>
  */
 async function main(): Promise<void> {
   const config = loadConfig(ConfigSchema);
-  const logger = createLogger({ service: config.SERVICE_NAME, version: config.APP_VERSION, level: config.LOG_LEVEL });
+  const logger = createLogger({
+    service: config.SERVICE_NAME,
+    version: config.APP_VERSION,
+    level: config.LOG_LEVEL,
+  });
   const lifecycle = new Lifecycle({
     logger,
     drainDelayMs: config.SHUTDOWN_DRAIN_DELAY_MS,
@@ -183,6 +187,8 @@ async function main(): Promise<void> {
 
 main().catch((err: unknown) => {
   // eslint-disable-next-line no-console
-  console.error(JSON.stringify({ level: 'fatal', msg: 'ошибка запуска connector-telegram', err: String(err) }));
+  console.error(
+    JSON.stringify({ level: 'fatal', msg: 'ошибка запуска connector-telegram', err: String(err) }),
+  );
   process.exit(1);
 });

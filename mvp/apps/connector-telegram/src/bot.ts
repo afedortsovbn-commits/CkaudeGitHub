@@ -57,7 +57,11 @@ export class BotRunner {
     const attachments = [];
     for (const f of p.files) {
       const body = await this.api.download(f.fileId);
-      const saved = await this.o.storage.saveInbound({ filename: f.filename, contentType: f.contentType, body });
+      const saved = await this.o.storage.saveInbound({
+        filename: f.filename,
+        contentType: f.contentType,
+        body,
+      });
       if (saved) attachments.push(saved);
     }
     await publishInbound(this.o.js, {
@@ -71,7 +75,11 @@ export class BotRunner {
       attachments,
       receivedAt: Date.now(),
     });
-    this.o.journal.log(this.channel.id, 'in', attachments.length ? `сообщение, файлов: ${attachments.length}` : 'сообщение');
+    this.o.journal.log(
+      this.channel.id,
+      'in',
+      attachments.length ? `сообщение, файлов: ${attachments.length}` : 'сообщение',
+    );
   }
 
   private async run(): Promise<void> {

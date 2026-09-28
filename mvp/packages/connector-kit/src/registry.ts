@@ -94,7 +94,11 @@ export class ChannelRegistry<T> {
         for (const k of CHANNEL_SECRET_KEYS)
           if (typeof raw[k] === 'string') raw[k] = openSecret(raw[k] as string, this.o.secretsKey);
       } catch {
-        this.o.journal.status(r.id, 'error', 'не удалось расшифровать секреты канала (проверьте SECRETS_KEY)');
+        this.o.journal.status(
+          r.id,
+          'error',
+          'не удалось расшифровать секреты канала (проверьте SECRETS_KEY)',
+        );
         continue;
       }
       const parsed = this.o.schema.safeParse(raw);

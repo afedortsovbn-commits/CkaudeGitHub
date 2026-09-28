@@ -26,6 +26,9 @@ function values(s: DictSpec, data: Record<string, unknown>) {
   return { cols, vals };
 }
 
+const show = <T extends Record<string, unknown> | null>(s: DictSpec, row: T): T =>
+  s.present ? s.present(row) : row;
+
 /**
  * Единый CRUD простых справочников: /api/v1/dict/:kind.
  * Чтение — любой вошедший сотрудник (с учётом области видимости), изменение — по праву справочника.
@@ -67,7 +70,7 @@ export class DictController {
         ORDER BY ${s.orderBy} LIMIT ${limit}`,
       params,
     );
-    return list.map((r) => toApi(r));
+    return list.map((r) => toApi(show(s, r)));
   }
 
   @Get(':kind/:id')
@@ -79,14 +82,15 @@ export class DictController {
       ...sc.params,
     ]);
     if (!row) throw notFound(s.title); // вне области — такой же ответ, как «не существует»
-    return toApi(row);
+    return toApi(show(s, row ?? null));
   }
 
   @Post(':kind')
   async create(@CurrentUser() p: Principal, @Param('kind') kind: string, @Body() body: unknown) {
     const s = spec(kind);
     if (!hasPerm(p, s.writePerm)) throw forbidden();
-    const data = parse(createSchema(s), body) as Record<string, unknown>;
+    let data = parse(createSchema(s), body) as Record<string, unknown>;
+    if (s.prepare) data = s.prepare(data, null, this.ctx.config.SECRETS_KEY);
     const { cols, vals } = values(s, data);
     const id = newId();
     return withTx(this.ctx.pool, async (tx) => {
@@ -95,8 +99,8 @@ export class DictController {
         `INSERT INTO ${s.table} (id, ${cols.join(', ')}) VALUES ($1, ${cols.map((_, i) => `$${i + 2}`).join(', ')}) RETURNING *`,
         [id, ...vals],
       );
-      await audit(tx, p, 'create', s.table, id, null, row);
-      return toApi(row!);
+      await audit(tx, p, 'create', s.table, id, null, show(s, row ?? null));
+      return toApi(show(s, row!));
     });
   }
 
@@ -110,8 +114,7 @@ export class DictController {
     const s = spec(kind);
     if (!hasPerm(p, s.writePerm)) throw forbidden();
     const data = parse(updateSchema(s), body) as Record<string, unknown>;
-    const { cols, vals } = values(s, data);
-    return this.change(p, s, id, cols, vals, 'update');
+    return this.change(p, s, id, data, 'update');
   }
 
   @Post(':kind/:id/deactivate')
@@ -119,7 +122,7 @@ export class DictController {
   async deactivate(@CurrentUser() p: Principal, @Param('kind') kind: string, @Param('id') id: string) {
     const s = spec(kind);
     if (!hasPerm(p, s.writePerm)) throw forbidden();
-    return this.change(p, s, id, ['is_active'], [false], 'deactivate');
+    return this.change(p, s, id, { isActive: false }, 'deactivate');
   }
 
   @Post(':kind/:id/activate')
@@ -127,29 +130,30 @@ export class DictController {
   async activate(@CurrentUser() p: Principal, @Param('kind') kind: string, @Param('id') id: string) {
     const s = spec(kind);
     if (!hasPerm(p, s.writePerm)) throw forbidden();
-    return this.change(p, s, id, ['is_active'], [true], 'activate');
+    return this.change(p, s, id, { isActive: true }, 'activate');
   }
 
-  private async change(
-    p: Principal,
-    s: DictSpec,
-    id: string,
-    cols: string[],
-    vals: unknown[],
-    action: string,
-  ) {
+  private async change(p: Principal, s: DictSpec, id: string, data: Record<string, unknown>, action: string) {
     return withTx(this.ctx.pool, async (tx) => {
       const before = await one(tx, `SELECT * FROM ${s.table} WHERE id = $1 FOR UPDATE`, [id]);
       if (!before) throw notFound(s.title);
-      if (!cols.length) return toApi(before);
+      const { isActive, ...rest } = data;
+      const prepared =
+        s.prepare && action === 'update' ? s.prepare(rest, before, this.ctx.config.SECRETS_KEY) : rest;
+      const { cols, vals } = values(s, prepared);
+      if (isActive !== undefined) {
+        cols.push('is_active');
+        vals.push(isActive);
+      }
+      if (!cols.length) return toApi(show(s, before));
       const row = await one(
         tx,
         `UPDATE ${s.table} SET ${cols.map((c, i) => `${c} = $${i + 2}`).join(', ')}, updated_at = now()
           WHERE id = $1 RETURNING *`,
         [id, ...vals],
       );
-      await audit(tx, p, action, s.table, id, before, row);
-      return toApi(row!);
+      await audit(tx, p, action, s.table, id, show(s, before), show(s, row ?? null));
+      return toApi(show(s, row!));
     });
   }
 }

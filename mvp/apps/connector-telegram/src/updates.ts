@@ -20,7 +20,8 @@ export function parseUpdate(u: TgUpdate, channelId: string): ParsedUpdate | null
   if (/^\/start(\s|$)/.test(body)) return null;
   const files: ParsedUpdate['files'] = [];
   const photo = m.photo?.at(-1);
-  if (photo) files.push({ fileId: photo.file_id, filename: `photo_${m.message_id}.jpg`, contentType: 'image/jpeg' });
+  if (photo)
+    files.push({ fileId: photo.file_id, filename: `photo_${m.message_id}.jpg`, contentType: 'image/jpeg' });
   if (m.document)
     files.push({
       fileId: m.document.file_id,
@@ -29,7 +30,8 @@ export function parseUpdate(u: TgUpdate, channelId: string): ParsedUpdate | null
     });
   if (!body && !files.length) return null;
   const f = m.from;
-  const name = [f?.first_name, f?.last_name].filter(Boolean).join(' ') || (f?.username ? `@${f.username}` : null);
+  const name =
+    [f?.first_name, f?.last_name].filter(Boolean).join(' ') || (f?.username ? `@${f.username}` : null);
   return {
     externalId: `${channelId}:${u.update_id}`,
     chatId: String(m.chat.id),

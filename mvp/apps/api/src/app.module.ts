@@ -8,6 +8,7 @@ import { ClientChatController } from './chat/client.controller';
 import { ConversationsController } from './chat/conversations.controller';
 import { SupervisorController } from './chat/supervisor.controller';
 import { HealthController } from './health.controller';
+import { ChannelsController } from './org/channels.controller';
 import { DictController } from './org/dict.controller';
 import { MatrixController } from './org/matrix.controller';
 import { OrgController } from './org/org.controller';
@@ -24,6 +25,7 @@ export class AppModule {
         PingController,
         AuthController,
         DictController,
+        ChannelsController,
         OrgController,
         UsersController,
         MatrixController,

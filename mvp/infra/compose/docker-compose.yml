@@ -1,6 +1,6 @@
 # Контакт-центр MVP — локальное/серверное развёртывание одной командой:
 #   ops/build-images.sh && docker compose -f infra/compose/docker-compose.yml up -d
-# Профили: (по умолчанию) ядро; observability — Prometheus, Grafana, Loki.
+# Профили: (по умолчанию) ядро; observability — Prometheus, Grafana, Loki; test — заглушки Telegram и почты для e2e.
 # Прикладные сервисы НЕ имеют container_name и опубликованных портов — иначе невозможны
 # масштабирование и поэтапное обновление (ops/rollout.sh, 02-архитектура 6.2).
 name: cc
@@ -21,6 +21,9 @@ x-app-env: &app-env
   JWT_SECRET: ${JWT_SECRET:-dev-only-secret-change-me-0123456789abcdef}
   DATABASE_URL: postgres://cc:${POSTGRES_PASSWORD:-cc_dev_password}@postgres:5432/cc
   NATS_SERVERS: nats://nats-1:4222,nats://nats-2:4222,nats://nats-3:4222
+  # Ключ шифрования секретов каналов (токены ботов, пароли почты) в БД: на сервере задать свой в .env
+  # (не короче 16 символов). Смена ключа потребует повторного ввода секретов каналов в админке.
+  SECRETS_KEY: ${SECRETS_KEY:-dev-only-secrets-key-change-me}
 
 services:
   traefik:
@@ -251,6 +254,68 @@ services:
       traefik.http.services.web.loadbalancer.healthcheck.path: /healthz
       traefik.http.services.web.loadbalancer.healthcheck.interval: 1s
       traefik.http.services.web.loadbalancer.healthcheck.timeout: 1s
+
+  # --- коннекторы каналов (Ф4): ≥2 экземпляра; приём каждого бота/ящика ведёт владелец аренды в NATS KV ---
+  connector-telegram:
+    image: cc/connector-telegram:${CONNECTOR_TELEGRAM_TAG:-${API_TAG:-dev}}
+    restart: unless-stopped
+    deploy:
+      replicas: ${CONNECTOR_TELEGRAM_REPLICAS:-2}
+    environment:
+      <<: *app-env
+      SERVICE_NAME: connector-telegram
+      S3_ENDPOINT: http://s3:8333
+      # Внешний адрес КЦ для режима webhook (https://<адрес>/tg/<id канала>); для режима опроса не нужен.
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-}
+    networks: [cc]
+    stop_grace_period: 35s
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      nats-1: { condition: service_healthy }
+      nats-2: { condition: service_healthy }
+      nats-3: { condition: service_healthy }
+      s3: { condition: service_healthy }
+    labels:
+      traefik.enable: 'true'
+      traefik.http.services.connector-telegram.loadbalancer.server.port: '3000'
+      traefik.http.services.connector-telegram.loadbalancer.healthcheck.path: /readyz
+      traefik.http.services.connector-telegram.loadbalancer.healthcheck.interval: 1s
+      traefik.http.services.connector-telegram.loadbalancer.healthcheck.timeout: 1s
+
+  connector-email:
+    image: cc/connector-email:${CONNECTOR_EMAIL_TAG:-${API_TAG:-dev}}
+    restart: unless-stopped
+    deploy:
+      replicas: ${CONNECTOR_EMAIL_REPLICAS:-2}
+    environment:
+      <<: *app-env
+      SERVICE_NAME: connector-email
+      S3_ENDPOINT: http://s3:8333
+    networks: [cc]
+    stop_grace_period: 35s
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      nats-1: { condition: service_healthy }
+      nats-2: { condition: service_healthy }
+      nats-3: { condition: service_healthy }
+      s3: { condition: service_healthy }
+
+  # --- профиль test: заглушки внешних систем для e2e (в поставку не входят) ---
+  mock-telegram:
+    profiles: [test]
+    image: cc/mock-telegram:${MOCK_TELEGRAM_TAG:-dev}
+    restart: unless-stopped
+    networks: [cc]
+    ports: ['127.0.0.1:${MOCK_TELEGRAM_PORT:-8081}:3000']
+  mail:
+    profiles: [test]
+    # GreenMail: тестовый SMTP (3025) + IMAP (3143), ящики создаются при первом входе.
+    image: ${GREENMAIL_IMAGE:-greenmail/standalone:2.1.5}
+    restart: unless-stopped
+    environment:
+      GREENMAIL_OPTS: -Dgreenmail.setup.test.smtp -Dgreenmail.setup.test.imap -Dgreenmail.hostname=0.0.0.0 -Dgreenmail.auth.disabled -Dgreenmail.verbose=false
+    networks: [cc]
+    ports: ['127.0.0.1:${MAIL_SMTP_PORT:-3025}:3025', '127.0.0.1:${MAIL_IMAP_PORT:-3143}:3143']
 
   # --- профиль observability ---
   prometheus:
