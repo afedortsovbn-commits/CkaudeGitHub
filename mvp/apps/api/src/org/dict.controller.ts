@@ -1,0 +1,155 @@
+import { Body, Controller, Get, HttpCode, Inject, Param, Patch, Post, Query } from '@nestjs/common';
+import { newId } from '@cc/contracts';
+import { scopeFilter } from '../access/scope';
+import { CurrentUser, hasPerm } from '../auth/guard';
+import type { Principal } from '../auth/principal';
+import { APP_CONTEXT, type AppContext } from '../context';
+import { audit } from '../lib/audit';
+import { one, rows, toApi, withTx } from '../lib/db';
+import { forbidden, notFound, parse } from '../lib/errors';
+import { createSchema, DICTIONARIES, type DictSpec, updateSchema } from './dictionaries';
+
+function spec(kind: string): DictSpec {
+  const s = DICTIONARIES[kind];
+  if (!s) throw notFound('Справочник');
+  return s;
+}
+
+function values(s: DictSpec, data: Record<string, unknown>) {
+  const cols: string[] = [];
+  const vals: unknown[] = [];
+  for (const fld of s.fields) {
+    if (data[fld.api] === undefined) continue;
+    cols.push(fld.col);
+    vals.push(fld.json ? JSON.stringify(data[fld.api]) : data[fld.api]);
+  }
+  return { cols, vals };
+}
+
+/**
+ * Единый CRUD простых справочников: /api/v1/dict/:kind.
+ * Чтение — любой вошедший сотрудник (с учётом области видимости), изменение — по праву справочника.
+ */
+@Controller('api/v1/dict')
+export class DictController {
+  constructor(@Inject(APP_CONTEXT) private readonly ctx: AppContext) {}
+
+  @Get()
+  kinds() {
+    return Object.entries(DICTIONARIES).map(([kind, s]) => ({ kind, title: s.title }));
+  }
+
+  @Get(':kind')
+  async list(@CurrentUser() p: Principal, @Param('kind') kind: string, @Query() q: Record<string, string>) {
+    const s = spec(kind);
+    const where: string[] = [];
+    const params: unknown[] = [];
+    if (q.active !== 'all') where.push(q.active === 'false' ? 'NOT t.is_active' : 't.is_active');
+    if (q.q) {
+      params.push(`%${q.q}%`);
+      where.push(`(${s.search.map((c) => `t.${c} ILIKE $${params.length}`).join(' OR ')})`);
+    }
+    for (const fld of s.fields.filter((x) => x.filter)) {
+      if (q[fld.api]) {
+        params.push(q[fld.api]);
+        where.push(`t.${fld.col} = $${params.length}`);
+      }
+    }
+    if (s.scope) {
+      const sc = scopeFilter(p.scope, s.scope, params.length + 1);
+      where.push(sc.sql);
+      params.push(...sc.params);
+    }
+    const limit = Math.min(Number(q.limit) || 500, 2000);
+    const list = await rows(
+      this.ctx.pool,
+      `SELECT t.* FROM ${s.table} t ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
+        ORDER BY ${s.orderBy} LIMIT ${limit}`,
+      params,
+    );
+    return list.map((r) => toApi(r));
+  }
+
+  @Get(':kind/:id')
+  async get(@CurrentUser() p: Principal, @Param('kind') kind: string, @Param('id') id: string) {
+    const s = spec(kind);
+    const sc = s.scope ? scopeFilter(p.scope, s.scope, 2) : { sql: 'TRUE', params: [] };
+    const row = await one(this.ctx.pool, `SELECT t.* FROM ${s.table} t WHERE t.id = $1 AND ${sc.sql}`, [
+      id,
+      ...sc.params,
+    ]);
+    if (!row) throw notFound(s.title); // вне области — такой же ответ, как «не существует»
+    return toApi(row);
+  }
+
+  @Post(':kind')
+  async create(@CurrentUser() p: Principal, @Param('kind') kind: string, @Body() body: unknown) {
+    const s = spec(kind);
+    if (!hasPerm(p, s.writePerm)) throw forbidden();
+    const data = parse(createSchema(s), body) as Record<string, unknown>;
+    const { cols, vals } = values(s, data);
+    const id = newId();
+    return withTx(this.ctx.pool, async (tx) => {
+      const row = await one(
+        tx,
+        `INSERT INTO ${s.table} (id, ${cols.join(', ')}) VALUES ($1, ${cols.map((_, i) => `$${i + 2}`).join(', ')}) RETURNING *`,
+        [id, ...vals],
+      );
+      await audit(tx, p, 'create', s.table, id, null, row);
+      return toApi(row!);
+    });
+  }
+
+  @Patch(':kind/:id')
+  async update(
+    @CurrentUser() p: Principal,
+    @Param('kind') kind: string,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    const s = spec(kind);
+    if (!hasPerm(p, s.writePerm)) throw forbidden();
+    const data = parse(updateSchema(s), body) as Record<string, unknown>;
+    const { cols, vals } = values(s, data);
+    return this.change(p, s, id, cols, vals, 'update');
+  }
+
+  @Post(':kind/:id/deactivate')
+  @HttpCode(200)
+  async deactivate(@CurrentUser() p: Principal, @Param('kind') kind: string, @Param('id') id: string) {
+    const s = spec(kind);
+    if (!hasPerm(p, s.writePerm)) throw forbidden();
+    return this.change(p, s, id, ['is_active'], [false], 'deactivate');
+  }
+
+  @Post(':kind/:id/activate')
+  @HttpCode(200)
+  async activate(@CurrentUser() p: Principal, @Param('kind') kind: string, @Param('id') id: string) {
+    const s = spec(kind);
+    if (!hasPerm(p, s.writePerm)) throw forbidden();
+    return this.change(p, s, id, ['is_active'], [true], 'activate');
+  }
+
+  private async change(
+    p: Principal,
+    s: DictSpec,
+    id: string,
+    cols: string[],
+    vals: unknown[],
+    action: string,
+  ) {
+    return withTx(this.ctx.pool, async (tx) => {
+      const before = await one(tx, `SELECT * FROM ${s.table} WHERE id = $1 FOR UPDATE`, [id]);
+      if (!before) throw notFound(s.title);
+      if (!cols.length) return toApi(before);
+      const row = await one(
+        tx,
+        `UPDATE ${s.table} SET ${cols.map((c, i) => `${c} = $${i + 2}`).join(', ')}, updated_at = now()
+          WHERE id = $1 RETURNING *`,
+        [id, ...vals],
+      );
+      await audit(tx, p, action, s.table, id, before, row);
+      return toApi(row!);
+    });
+  }
+}

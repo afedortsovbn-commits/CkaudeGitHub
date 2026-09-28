@@ -6,7 +6,7 @@
 Требования, архитектура и план — в [`../Контакт-центр/planning/`](../Контакт-центр/planning/).
 Журнал выполненных фаз — [`docs/PROGRESS.md`](docs/PROGRESS.md).
 
-## Состав (текущая фаза — Ф0: каркас)
+## Состав (выполнены фазы Ф0–Ф1)
 
 | Каталог                | Что это                                                                                                    |
 | ---------------------- | ---------------------------------------------------------------------------------------------------------- |
@@ -23,25 +23,40 @@
 
 ```bash
 cd mvp
-ops/build-images.sh dev                                   # сборка кода и образа cc/api:dev
-docker compose -f infra/compose/docker-compose.yml up -d --wait
-curl -k https://localhost/api/v1/ping                     # ответы по очереди от двух экземпляров
+ops/build-images.sh dev                                   # сборка кода и образов cc/api:dev, cc/web:dev
+SEED_DEMO=true BOOTSTRAP_ADMIN_PASSWORD='Admin12345!' \
+  docker compose -f infra/compose/docker-compose.yml up -d --wait
+# интерфейс: https://localhost  (самоподписанный сертификат)
 docker compose -f infra/compose/docker-compose.yml --profile observability up -d   # Prometheus :9090, Grafana :3001
 ```
+
+Учётные записи демо-стенда (`SEED_DEMO=true`, пароль `Demo12345!`, задаётся `DEMO_PASSWORD`):
+
+| Вход                                                                                  | Роль                                             |
+| ------------------------------------------------------------------------------------- | ------------------------------------------------ |
+| `admin@cc.local` / `BOOTSTRAP_ADMIN_PASSWORD`                                         | Администратор                                    |
+| `supervisor@demo.local`                                                               | Супервизор, область — только предприятие «Север» |
+| `operator1@demo.local` … `operator3@demo.local`                                       | Операторы                                        |
+| `resp1@demo.local` … `resp4@demo.local`, `curator1@demo.local`, `curator2@demo.local` | Ответственные и кураторы 2-й линии               |
+
+На сервере обязательно задайте в `infra/compose/.env` свои `JWT_SECRET`, `POSTGRES_PASSWORD`, `BOOTSTRAP_ADMIN_PASSWORD`.
 
 ## Обновление без остановки
 
 ```bash
 ops/build-images.sh v2
 API_TAG=v2 ops/rollout.sh api
+WEB_TAG=v2 ops/rollout.sh web
 ```
 
-Скрипт поднимает новые экземпляры рядом со старыми, ждёт их готовности, затем корректно останавливает
+Маршруты Traefik заданы в `infra/traefik/dynamic.yml`, а не в метках контейнеров: во время обновления метки
+старых и новых экземпляров не должны различаться. Скрипт поднимает новые экземпляры рядом со старыми, ждёт их готовности, затем корректно останавливает
 старые: `readyz` → 503, пауза, пока балансировщик снимет экземпляр, завершение текущих запросов,
 закрытие соединений. Проверка под нагрузкой:
 
 ```bash
 node ops/test/rollout-under-load.mjs v2 50 60   # 50 запросов/с в течение 60 с, во время обновления — 0 ошибок
+SERVICE=web node ops/test/rollout-under-load.mjs v2 40 30
 node ops/test/nats-failover.mjs 2000             # перезапуск узла-лидера NATS — 0 потерь и дублей
 ```
 
@@ -63,6 +78,8 @@ ops/mirror/push-registry.sh registry.local:5000   # или опубликова�
 ```bash
 pnpm install && pnpm build
 pnpm lint && pnpm typecheck && pnpm test
+TEST_DATABASE_URL=postgres://cc:cc_dev_password@127.0.0.1:5432/postgres pnpm test   # + интеграционные тесты API
+cd e2e && pnpm exec playwright test                                                  # e2e против запущенного стека
 pnpm format:check && pnpm licenses:check && pnpm migrations:lint
 ```
 

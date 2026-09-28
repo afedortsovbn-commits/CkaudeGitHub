@@ -1,6 +1,4 @@
 import 'reflect-metadata';
-import { NestFactory } from '@nestjs/core';
-import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { createPool, migrate } from '@cc/db';
 import {
   connectNats,
@@ -13,7 +11,9 @@ import {
   natsServers,
   OutboxRelay,
 } from '@cc/service-kit';
-import { AppModule } from './app.module';
+import { createApp } from './app.factory';
+import { PrincipalLoader } from './auth/principal';
+import { TokenService } from './auth/tokens';
 import { ApiConfigSchema, type AppContext } from './context';
 
 async function bootstrap(): Promise<void> {
@@ -45,25 +45,19 @@ async function bootstrap(): Promise<void> {
   const relay = new OutboxRelay({ pool, js: nc.jetstream(), logger });
   if (config.OUTBOX_RELAY_ENABLED) relay.start();
 
-  const ctx: AppContext = { config, logger, lifecycle, metrics, pool };
-  // keepAliveTimeout больше idle-таймаута Traefik (90 с): соединение закрывает балансировщик, а не сервис.
-  const adapter = new FastifyAdapter({ keepAliveTimeout: 120_000, return503OnClosing: false });
-  const app = await NestFactory.create<NestFastifyApplication>(AppModule.register(ctx), adapter, {
-    logger: false,
-  });
-
+  const ctx: AppContext = {
+    config,
+    logger,
+    lifecycle,
+    metrics,
+    pool,
+    tokens: new TokenService(config.JWT_SECRET, config.ACCESS_TOKEN_TTL_SEC),
+    principals: new PrincipalLoader(pool),
+  };
+  const app = await createApp(ctx);
   const fastify = app.getHttpAdapter().getInstance();
-  fastify.addHook('onResponse', async (req, reply) => {
-    const route = req.routeOptions?.url ?? 'unknown';
-    metrics.httpRequests.inc({ method: req.method, route, status: String(reply.statusCode) });
-    metrics.httpDuration.observe({ method: req.method, route }, reply.elapsedTime / 1000);
-  });
 
-  // Во время остановки: просим клиента/балансировщик не переиспользовать соединение и закрываем
-  // освободившиеся keep-alive соединения, иначе закрытие ждало бы keepAliveTimeout.
-  fastify.addHook('onSend', async (_req, reply) => {
-    if (!lifecycle.isReady) reply.header('connection', 'close');
-  });
+  // Освободившиеся keep-alive соединения закрываем сами, иначе закрытие ждало бы keepAliveTimeout.
   lifecycle.onShutdown('http', 10, async () => {
     const t = setInterval(() => fastify.server.closeIdleConnections(), 250);
     try {

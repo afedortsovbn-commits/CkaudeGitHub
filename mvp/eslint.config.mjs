@@ -25,5 +25,7 @@ export default tseslint.config(
       'no-console': 'error',
     },
   },
-  { files: ['ops/**/*.mjs'], rules: { 'no-console': 'off' } },
+  { files: ['ops/**/*.mjs', 'e2e/**/*.ts'], rules: { 'no-console': 'off' } },
+  // В TypeScript необъявленные идентификаторы ловит компилятор (рекомендация typescript-eslint).
+  { files: ['**/*.ts', '**/*.tsx'], rules: { 'no-undef': 'off' } },
 );
