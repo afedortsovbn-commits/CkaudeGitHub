@@ -4,6 +4,7 @@ import {
   EmailChannelConfigSchema,
   SECRET_MASK,
   TelegramChannelConfigSchema,
+  VoiceChannelConfigSchema,
 } from '@cc/contracts';
 import { isSealed, openSecret, sealSecret } from '@cc/service-kit';
 import { z, type ZodTypeAny } from 'zod';
@@ -30,6 +31,7 @@ const SCHEMAS: Record<string, ZodTypeAny> = {
   api: ChatChannelConfigSchema,
   telegram: TelegramChannelConfigSchema,
   email: EmailChannelConfigSchema,
+  voice: VoiceChannelConfigSchema,
 };
 
 const SECRETS: readonly string[] = CHANNEL_SECRET_KEYS;

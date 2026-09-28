@@ -3,6 +3,13 @@ import type { Candidate } from './strategies';
 import { rows } from './db';
 
 /**
+ * Ёмкость голоса — один вызов (02-архитектура, Ф3 «голос 1, чаты N»): оператор занят, пока у него идёт или
+ * звонит вызов, либо ему уже предложено голосовое обращение. Чаты голос не блокируют и наоборот.
+ */
+export const VOICE_BUSY = `(EXISTS (SELECT 1 FROM call cl WHERE cl.agent_user_id = user_id AND cl.state IN ('dialing', 'talking'))
+  OR EXISTS (SELECT 1 FROM conversation cv WHERE cv.assignee_id = user_id AND cv.status = 'offered' AND cv.channel_kind = 'voice'))`;
+
+/**
  * Операторы, которым можно предложить обращение этой очереди (M-RT-02/03):
  * состоят в очереди (`user_queue`), активны, статус «Готов», не исчерпали ёмкость чатов,
  * ещё не отказывались от этого обращения. Навык, привязанный к теме, — только для ранжирования
@@ -11,7 +18,7 @@ import { rows } from './db';
  */
 export async function eligibleCandidates(
   tx: PoolClient,
-  opts: { queueId: string; topicPath: string[]; maxChats: number; excludeUserIds: string[] },
+  opts: { queueId: string; topicPath: string[]; maxChats: number; excludeUserIds: string[]; voice?: boolean },
 ): Promise<Candidate[]> {
   return rows<{
     user_id: string;
@@ -32,7 +39,7 @@ export async function eligibleCandidates(
        WHERE u.is_active AND u.can_login AND COALESCE(ag.status, 'offline') = 'ready'
          AND NOT (u.id = ANY($3::uuid[]))
      )
-     SELECT * FROM cand WHERE active_count < $2`,
+     SELECT * FROM cand WHERE ${opts.voice ? `$2::int >= 0 AND NOT ${VOICE_BUSY}` : 'active_count < $2'}`,
     [opts.queueId, opts.maxChats, opts.excludeUserIds, opts.topicPath],
   ).then((r) =>
     r.map((c) => ({

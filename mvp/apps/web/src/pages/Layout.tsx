@@ -1,5 +1,8 @@
 import { AppShell, Badge, Button, Group, NavLink, ScrollArea, Text } from '@mantine/core';
+import { useEffect } from 'react';
 import { NavLink as RouterLink, Outlet, useLocation } from 'react-router';
+import { SoftphoneCall, SoftphoneStatus } from '../components/Softphone';
+import { softphone } from '../lib/softphone';
 import { useAuth } from '../lib/auth';
 import { t } from '../lib/i18n';
 
@@ -22,12 +25,21 @@ const MENU: { to: string; label: string; perms?: string[] }[] = [
 export function Layout() {
   const { me, logout, can } = useAuth();
   const loc = useLocation();
+  const phone = can('conversations.work', 'supervisor.monitor');
+  // Софтфон работает на всех страницах, пока сотрудник в системе (входящий звонок не зависит от раздела).
+  // Зависимость — только id: перечитанный профиль не должен перезапускать софтфон посреди разговора.
+  const userId = me?.id;
+  useEffect(() => {
+    if (phone && userId) void softphone.start(userId);
+    return () => softphone.stop();
+  }, [phone, userId]);
   return (
     <AppShell header={{ height: 56 }} navbar={{ width: 250, breakpoint: 'sm' }} padding="md">
       <AppShell.Header>
         <Group h="100%" px="md" justify="space-between">
           <Text fw={700}>{t.appName}</Text>
           <Group>
+            {phone && <SoftphoneStatus />}
             <Text size="sm" data-testid="current-user">
               {me?.fullName}
             </Text>
@@ -57,6 +69,7 @@ export function Layout() {
       </AppShell.Navbar>
       <AppShell.Main>
         <Outlet />
+        {phone && <SoftphoneCall />}
       </AppShell.Main>
     </AppShell>
   );

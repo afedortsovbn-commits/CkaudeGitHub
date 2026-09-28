@@ -141,6 +141,8 @@ export const CONVERSATION_EVENTS = {
   message: 'conversation.message_created',
   /** Изменился статус доставки исходящего во внешний канал (payload — ConversationRef + messageId, status). */
   messageStatus: 'conversation.message_status',
+  /** Изменилось состояние голосового вызова обращения (payload — ConversationRef + CallStateEvent, Ф5). */
+  call: 'conversation.call',
 } as const;
 
 /** Ключи config канала, которые хранятся зашифрованными и никогда не отдаются в интерфейс. */

@@ -14,12 +14,14 @@ const KINDS = [
   { value: 'app', label: 'Чат в приложении' },
   { value: 'telegram', label: 'Telegram-бот' },
   { value: 'email', label: 'Электронная почта' },
+  { value: 'voice', label: 'Телефон' },
 ];
 const kindLabel = (k: unknown) => KINDS.find((x) => x.value === k)?.label ?? String(k ?? '');
 
 const isChat = (v: Record<string, unknown>) => v.kind === 'webchat' || v.kind === 'app';
 const isTg = (v: Record<string, unknown>) => v.kind === 'telegram';
 const isMail = (v: Record<string, unknown>) => v.kind === 'email';
+const isVoice = (v: Record<string, unknown>) => v.kind === 'voice';
 
 const STATUS: Record<string, { color: string; label: string }> = {
   connected: { color: 'green', label: 'Подключён' },
@@ -143,6 +145,15 @@ const FIELDS: FormField[] = [
     placeholder: 'https://api.telegram.org',
     show: isTg,
   },
+  // Телефон (Ф5)
+  {
+    key: 'dids',
+    label: 'Номера, на которые звонят клиенты (через запятую)',
+    description: 'Как их передаёт SIP-транк, например +375171234567; для демо-страницы и SIPp — 1000',
+    required: true,
+    show: isVoice,
+  },
+  { key: 'record', label: 'Записывать разговоры', type: 'switch', show: isVoice },
   // Email
   { key: 'address', label: 'Адрес ящика', required: true, show: isMail },
   { key: 'displayName', label: 'Имя отправителя в ответах', show: isMail },
@@ -193,6 +204,8 @@ const toForm = (r: Row) => {
     smtpSecure: c.smtp_secure,
     smtpUser: c.smtp_user,
     tlsInsecure: c.tls_insecure,
+    dids: ((c.dids as string[]) ?? []).join(', '),
+    record: c.record ?? true,
     // секреты не показываются: пустое поле — «не менять»
   };
 };
@@ -211,6 +224,17 @@ const fromForm = (v: Record<string, unknown>, editing: Row | null) => {
         bot_token: secret(v.botToken, isCreate),
         mode: v.tgMode ?? 'polling',
         ...(v.apiRoot ? { api_root: v.apiRoot } : {}),
+      },
+    };
+  if (k === 'voice')
+    return {
+      ...base,
+      config: {
+        dids: str(v.dids)
+          .split(',')
+          .map((x) => x.trim())
+          .filter(Boolean),
+        record: !!v.record,
       },
     };
   if (k === 'email')
@@ -259,6 +283,7 @@ const CREATE_DEFAULTS = {
   mailbox: 'INBOX',
   smtpPort: 465,
   smtpSecure: true,
+  record: true,
 };
 
 /** Экземпляры каналов: веб-чат, чат в приложении, Telegram-боты, почтовые ящики (M-CH-07). */
@@ -280,6 +305,7 @@ export function ChannelsPage() {
             render: (r) => {
               const c = cfg(r);
               if (r.kind === 'email') return str(c.address);
+              if (r.kind === 'voice') return ((c.dids as string[]) ?? []).join(', ');
               if (r.kind === 'telegram') return c.mode === 'webhook' ? 'webhook' : 'опрос';
               return <Code>{str(c.public_key)}</Code>;
             },

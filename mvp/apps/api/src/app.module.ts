@@ -7,6 +7,7 @@ import { AgentStatusController } from './chat/agent-status.controller';
 import { ClientChatController } from './chat/client.controller';
 import { ConversationsController } from './chat/conversations.controller';
 import { SupervisorController } from './chat/supervisor.controller';
+import { TelephonyController } from './chat/telephony.controller';
 import { HealthController } from './health.controller';
 import { ChannelsController } from './org/channels.controller';
 import { DictController } from './org/dict.controller';
@@ -33,6 +34,7 @@ export class AppModule {
         ConversationsController,
         AgentStatusController,
         SupervisorController,
+        TelephonyController,
       ],
       providers: [
         { provide: APP_CONTEXT, useValue: ctx },

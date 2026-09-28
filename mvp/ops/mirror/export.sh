@@ -13,6 +13,10 @@ mkdir -p "$OUT"
   docker compose -f infra/compose/docker-compose.yml --profile observability config --images
   echo "${NODE_IMAGE:-node:22-alpine}"
   echo "${NGINX_IMAGE:-nginx:1.29-alpine}"
+  # Базы образов медиа (infra/asterisk, infra/kamailio) — чтобы пересобирать их без интернета.
+  echo "${ASTERISK_IMAGE:-andrius/asterisk:22}"
+  echo "${KAMAILIO_RPMS_IMAGE:-kamailio/kamailio-store:6.0.5-centos-9.amd64}"
+  echo "${BASE_IMAGE:-almalinux:9}"
 } | sort -u > "$OUT/images.txt"
 echo "образов: $(wc -l < "$OUT/images.txt")"
 if [ -z "${SKIP_IMAGES:-}" ]; then

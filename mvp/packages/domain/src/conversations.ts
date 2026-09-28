@@ -138,7 +138,7 @@ export async function appendMessage(tx: PoolClient, m: AppendInput): Promise<Mes
   return msg;
 }
 
-interface Routing {
+export interface Routing {
   queueId: string | null;
   priority: number;
   isUrgent: boolean;
@@ -150,7 +150,7 @@ interface Routing {
  * приоритет = приоритет очереди + надбавка правила + приоритет сегмента клиента. Дальнейшая эскалация
  * по времени ожидания и перелив в резервную группу — задача router (Ф3).
  */
-async function resolveRouting(
+export async function resolveRouting(
   tx: PoolClient,
   contactId: string,
   channelId: string,

@@ -16,16 +16,16 @@
 
 ## Текущее состояние (28.09.2026)
 
-- **Выполнены Ф0–Ф4** (PR #1–#3, #5 и PR Ф4, см. `mvp/docs/PROGRESS.md`). Код — в `mvp/`, как запустить —
+- **Выполнены Ф0–Ф4 и Ф5a** (PR #1–#3, #5, #6 и PR Ф5a, см. `mvp/docs/PROGRESS.md`). Код — в `mvp/`, как запустить —
   `mvp/README.md`.
-- **Ф4** добавила `connector-telegram` и `connector-email` (по 2 экземпляра), `packages/connector-kit` (реестр
-  каналов без перезапуска, доставка исходящих, журнал/статус канала), поток `CC_OUTBOUND` (исходящие и статусы
-  доставки), аренды в NATS KV (`KvLease`), шифрование секретов каналов (`SECRETS_KEY`), профиль compose `test`
-  (мок Telegram Bot API, GreenMail). Отступления от 02 (коннекторы читают реестр каналов из БД, свой клиент
-  Bot API вместо grammY, режим бота webhook/опрос — явная настройка) — в «Решения и находки» Ф4.
-- **Следующая фаза — Ф5**: телефония (Asterisk×2, Kamailio, call-control, софтфон, гарнитуры, запись).
-- Ждём от заказчика: параметры SIP-транка МТС (к Ф5), описание API Rocket Data и источника справочника объектов (к Ф13).
-  Их отсутствие работу не блокирует — см. соответствующие фазы в плане.
+- **Ф5a** добавила телефонию: `infra/asterisk` (2 узла, образ на `andrius/asterisk:22`), `infra/kamailio` (Kamailio 6
+  из RPM на AlmaLinux 9, WSS 8443, auth_ephemeral, dispatcher), coturn ×2, сервис `call-control` (ARI, активный/
+  резервный на узел по аренде в NATS KV, сверка после переключения), голос в router (ёмкость 1), софтфон JsSIP в web,
+  запись через snoop-канал, прослушивание, демо-страница `/demo-call`, `ops/update-media.sh` (осушение узла).
+- **Следующая — Ф5b**: модуль аудиоустройств (выбор, горячая замена, тест), WebHID (Jabra), индикация качества,
+  интеграция софтфона со статусами, чек-лист ручной проверки гарнитур; затем Ф6 (IVR, flow-engine).
+- Ждём от заказчика: параметры SIP-транка МТС (подключается переменной `TRUNK_HOST`), описание API Rocket Data и
+  источника справочника объектов (к Ф13). Их отсутствие работу не блокирует — см. соответствующие фазы в плане.
 
 ## Порядок работы по фазе
 
@@ -65,7 +65,12 @@
 - Порядок сообщений — по `sent_at`, дедупликация — по `(channel_kind, external_id)`.
 - Бакеты NATS KV с одним именем (`cc_leases`, `cc_outbound_sent`) должны создаваться с одинаковыми параметрами
   во всех сервисах (TTL, реплики) — иначе второй сервис получит ошибку несовпадения конфигурации бакета.
-- Стек для e2e Ф4 и проверок коннекторов: `COMPOSE_PROFILES=test MOCK_TELEGRAM_TAG=<тег> PUBLIC_BASE_URL=https://traefik`,
+- Телефония: образы `cc/asterisk`, `cc/kamailio` собирает `ops/build-images.sh` (тег `MEDIA_TAG`, `SKIP_MEDIA=1` —
+  пропустить). Базы: `andrius/asterisk:22`, `kamailio/kamailio-store:6.0.5-centos-9.amd64`, `almalinux:9` (в облаке —
+  через `mirror.gcr.io/...` + `docker tag`). ARI: после `StasisEnd` приложению не приходит `ChannelDestroyed`.
+  Kamailio должен слушать адрес интерфейса (не 0.0.0.0 — иначе Record-Route ломает диалоги). Браузер в e2e —
+  Chromium с `--use-fake-device-for-media-stream`; Asterisk в docker-сети доступен браузеру на хосте напрямую.
+- Стек для e2e Ф4/Ф5 и проверок: `COMPOSE_PROFILES=test MOCK_TELEGRAM_TAG=<тег> PUBLIC_BASE_URL=https://traefik TRUNK_HOST=trunk-sim:5060`,
   образ мока — `APPS="mock-telegram" ops/build-images.sh <тег>`. Проверки, оставляющие операторов «Готов»
   (`route-under-rollout.mjs`), влияют на последующие: router сам предлагает новые обращения.
 

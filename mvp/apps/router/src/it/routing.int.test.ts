@@ -202,4 +202,35 @@ describe.skipIf(!ADMIN_URL)('Маршрутизация (ACD), Ф3', () => {
     for (const r of perOperator.rows) expect(r.n).toBeLessThanOrEqual(5);
     void ops;
   });
+
+  it('голос: ёмкость оператора — один звонок; чаты голос не блокируют и не расходуют', async () => {
+    await t.pool.query(`UPDATE system_setting SET value = '1' WHERE key = 'operator.max_chats'`);
+    const q = await t.queue({ name: 'Голос', channels: ['voice', 'webchat'] });
+    const ch = await t.channel(q);
+    const contact = await t.contact();
+    const op = await t.operator(q);
+    const chat = await t.queuedConversation(q, ch, contact, { ageS: 30 });
+    const v1 = await t.queuedConversation(q, ch, contact, { kind: 'voice', ageS: 20 });
+    const v2 = await t.queuedConversation(q, ch, contact, { kind: 'voice', ageS: 10 });
+    await assignQueued(t.pool, { maxChatsFallback: 5, batchSize: 10 }, noopOnOffer);
+    const st = async (id: string) =>
+      (await t.pool.query(`SELECT status, assignee_id FROM conversation WHERE id = $1`, [id])).rows[0];
+    // Чат (лимит 1) и первый звонок предложены одному оператору одновременно, второй звонок ждёт.
+    expect(await st(chat)).toMatchObject({ status: 'offered', assignee_id: op });
+    expect(await st(v1)).toMatchObject({ status: 'offered', assignee_id: op });
+    expect((await st(v2)).status).toBe('queued');
+
+    // Звонок принят и идёт — второй всё равно ждёт; после завершения звонка — предлагается.
+    await t.pool.query(`UPDATE conversation SET status = 'active' WHERE id = $1`, [v1]);
+    await t.pool.query(
+      `INSERT INTO call (id, conversation_id, direction, node, state, client_channel, agent_channel, agent_user_id)
+       VALUES (gen_random_uuid(), $1, 'in', 'asterisk-1', 'talking', 'c1', 'a1', $2)`,
+      [v1, op],
+    );
+    await assignQueued(t.pool, { maxChatsFallback: 5, batchSize: 10 }, noopOnOffer);
+    expect((await st(v2)).status).toBe('queued');
+    await t.pool.query(`UPDATE call SET state = 'ended' WHERE conversation_id = $1`, [v1]);
+    await assignQueued(t.pool, { maxChatsFallback: 5, batchSize: 10 }, noopOnOffer);
+    expect(await st(v2)).toMatchObject({ status: 'offered', assignee_id: op });
+  });
 });

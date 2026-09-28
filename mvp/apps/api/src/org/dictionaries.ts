@@ -199,7 +199,7 @@ export const DICTIONARIES: Record<string, DictSpec> = {
     table: 'channel',
     title: 'Канал',
     fields: [
-      f('kind', z.enum(['webchat', 'app', 'telegram', 'email', 'api'])),
+      f('kind', z.enum(['webchat', 'app', 'telegram', 'email', 'api', 'voice'])),
       f('name', name),
       f('queueId', uuid.nullable().optional()),
       // Проверка по типу канала и шифрование секретов — prepareChannelConfig (hooks.prepare).

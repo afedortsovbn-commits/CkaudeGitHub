@@ -79,8 +79,16 @@ export async function createTestDb() {
     const id = newId();
     await pool.query(
       `INSERT INTO conversation (id, channel_id, channel_kind, contact_id, status, queue_id, priority, queued_at)
-       VALUES ($1, $2, 'webchat', $3, 'queued', $4, $5, now() - ($6 || ' seconds')::interval)`,
-      [id, channelId, contactId, queueId, (over.priority as number) ?? 0, (over.ageS as number) ?? 0],
+       VALUES ($1, $2, $7, $3, 'queued', $4, $5, now() - ($6 || ' seconds')::interval)`,
+      [
+        id,
+        channelId,
+        contactId,
+        queueId,
+        (over.priority as number) ?? 0,
+        (over.ageS as number) ?? 0,
+        (over.kind as string) ?? 'webchat',
+      ],
     );
     return id;
   }
