@@ -227,6 +227,8 @@ export class MediaNode {
         return this.listenAnswered(a1, a2, ch);
       case 'snoop':
         return;
+      case 'recorder':
+        return this.recorderReady(a1, ch);
       case 'trunk':
       case 'webrtc':
         return this.newCall(ch, kind, a1);
@@ -312,8 +314,12 @@ export class MediaNode {
     return id;
   }
 
-  /** Запись разговора (M-TEL-04) — одна на вызов, по всему мосту; если в канале запись выключена — нет. */
-  private async startRecording(c: CallRow, bridgeId: string): Promise<void> {
+  /**
+   * Запись разговора (M-TEL-04) — одна на вызов: snoop-канал клиента в обе стороны (аналог MixMonitor) пишет
+   * всё, что клиент говорит и слышит, независимо от удержаний, переводов и смены моста. Запись завершается
+   * вместе с каналом клиента. Если в голосовом канале запись выключена — не пишется.
+   */
+  private async startRecording(c: CallRow): Promise<void> {
     const { rows } = await this.o.pool.query<{ record: boolean; exists: boolean }>(
       `SELECT COALESCE((ch.config ->> 'record')::boolean, true) AS record,
               EXISTS (SELECT 1 FROM call_recording r WHERE r.call_id = $1) AS exists
@@ -321,13 +327,26 @@ export class MediaNode {
       [c.id, c.conversation_id],
     );
     if (!rows[0]?.record || rows[0].exists) return;
-    const name = `cc-${c.id}`;
-    await this.o.ari.bridges.record(bridgeId, name);
     await this.o.pool.query(
       `INSERT INTO call_recording (id, call_id, conversation_id, node, name) VALUES ($1, $2, $3, $4, $5)
        ON CONFLICT (node, name) DO NOTHING`,
-      [newId(), c.id, c.conversation_id, this.o.name, name],
+      [newId(), c.id, c.conversation_id, this.o.name, `cc-${c.id}`],
     );
+    await this.o.ari.channels.snoop(c.client_channel, {
+      snoopId: newId(),
+      app: STASIS_APP,
+      appArgs: `recorder,${c.id}`,
+    });
+  }
+
+  /** Snoop-канал записи вошёл в Stasis — начинаем запись в файл на узле. */
+  private async recorderReady(callId: string, ch: AriChannel): Promise<void> {
+    try {
+      await this.o.ari.channels.record(ch.id, `cc-${callId}`);
+    } catch (err) {
+      this.o.logger.warn({ err: String(err), callId }, 'не удалось начать запись разговора');
+      await this.o.store.failed(this.o.name, `cc-${callId}`);
+    }
   }
 
   private async userName(userId: string | null): Promise<string> {
@@ -348,7 +367,7 @@ export class MediaNode {
     const bridge = await this.ensureBridge(c);
     await this.o.ari.bridges.add(bridge, [c.client_channel, agent.id]);
     await this.o.ari.channels.mohStop(c.client_channel);
-    await this.startRecording(c, bridge);
+    await this.startRecording(c);
     const name = await this.userName(c.agent_user_id);
     await this.tx((tx) => connectAgent(tx, callId, { bridgeId: bridge, userName: name }));
   }
@@ -363,7 +382,7 @@ export class MediaNode {
     await this.o.ari.channels.answer(c.agent_channel);
     const bridge = await this.ensureBridge(c);
     await this.o.ari.bridges.add(bridge, [c.client_channel, c.agent_channel]);
-    await this.startRecording(c, bridge);
+    await this.startRecording(c);
     await this.tx((tx) =>
       connectAgent(tx, callId, { bridgeId: bridge, userName: '', message: 'Абонент ответил' }),
     );
@@ -607,7 +626,7 @@ export class MediaNode {
       if (app !== 'Stasis' || !data.startsWith(`${STASIS_APP},`)) continue;
       const args = data.split(',').slice(1);
       if (args[0] === 'trunk' || args[0] === 'webrtc') await this.newCall(ch, args[0], args[1] ?? '');
-      else if (args[0] !== 'snoop') await this.o.ari.channels.hangup(ch.id);
+      else if (args[0] !== 'snoop' && args[0] !== 'recorder') await this.o.ari.channels.hangup(ch.id);
     }
   }
 

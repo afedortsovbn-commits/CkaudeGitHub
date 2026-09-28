@@ -1,5 +1,5 @@
 import { type Browser, expect, type Page, test } from '@playwright/test';
-import { DEMO_PASSWORD, login, nav } from './helpers';
+import { ADMIN, DEMO_PASSWORD, login, nav } from './helpers';
 
 /**
  * Ф5: телефония. Браузеры с фейковым микрофоном (Chromium --use-fake-device-for-media-stream):
@@ -13,19 +13,20 @@ test.use({
 const stamp = Date.now().toString().slice(-6);
 const clientPhone = `+37529${stamp}1`;
 
-async function operator(browser: Browser, email: string): Promise<Page> {
+async function operator(browser: Browser, email: string, password = DEMO_PASSWORD): Promise<Page> {
   const ctx = await browser.newContext({ ignoreHTTPSErrors: true, locale: 'ru-RU', permissions: ['microphone'] });
   const page = await ctx.newPage();
-  await login(page, email, DEMO_PASSWORD);
+  await login(page, email, password);
   await nav(page, 'Рабочее место оператора');
   await expect(page.getByTestId('softphone-status')).toHaveText('Телефон готов', { timeout: 20_000 });
   return page;
 }
 
-async function demoCall(browser: Browser, phone: string): Promise<Page> {
+async function demoCall(browser: Browser, phone: string, name = `Клиент ${stamp}`): Promise<Page> {
   const ctx = await browser.newContext({ ignoreHTTPSErrors: true, locale: 'ru-RU', permissions: ['microphone'] });
   const page = await ctx.newPage();
   await page.goto('/demo-call');
+  await page.getByLabel('Ваше имя').fill(name);
   await page.getByTestId('demo-phone').fill(phone);
   await page.getByTestId('demo-call').click();
   await expect(page.getByTestId('demo-state')).toBeVisible();
@@ -83,5 +84,50 @@ test.describe.serial('Ф5: телефония', () => {
     }).toPass({ timeout: 30_000 });
     await item.getByTestId('recording-play').click();
     await expect(item.getByTestId('recording-audio')).toBeVisible();
+  });
+
+  test('исходящий звонок с нормализацией номера: абонент (транк) отвечает, обращение с журналом вызова', async ({
+    browser,
+  }) => {
+    const op = await operator(browser, 'operator3@demo.local');
+    await op.getByTestId('dial-open').click();
+    await op.getByTestId('dial-number').fill(`8 029 ${stamp.slice(0, 3)}-${stamp.slice(3)}-2`);
+    await op.getByTestId('dial-call').click();
+    const call = op.getByTestId('softphone-call');
+    await expect(call).toHaveAttribute('data-state', 'active', { timeout: 20_000 });
+    await op.waitForTimeout(1500);
+    await call.getByTestId('call-hangup').click();
+    await expect(call).toHaveCount(0, { timeout: 10_000 });
+    await op.getByTestId('tabs').getByText('Мои').click();
+    const item = op.getByTestId('conv-item').filter({ hasText: `+37529${stamp}2` });
+    await expect(item).toBeVisible({ timeout: 10_000 });
+    await item.click();
+    await op.getByTestId('tab-calls').click();
+    await expect(op.getByTestId('call-item').first()).toContainText(`Исходящий +37529${stamp}2`);
+    await expect(op.getByTestId('call-item').first().getByTestId('call-state')).toHaveText('завершён');
+  });
+
+  test('супервизор прослушивает идущий разговор (M-TEL-10)', async ({ browser }) => {
+    const op = await operator(browser, 'operator1@demo.local');
+    const sup = await operator(browser, ADMIN.email, ADMIN.password);
+    await op.getByTestId('agent-status').getByText('Готов').click();
+    const client = await demoCall(browser, `+37529${stamp}3`, `Слушаемый ${stamp}`);
+    const call = op.getByTestId('softphone-call');
+    await expect(call).toHaveAttribute('data-state', 'ringing', { timeout: 20_000 });
+    await call.getByTestId('call-answer').click();
+    await expect(call).toHaveAttribute('data-state', 'active', { timeout: 15_000 });
+
+    await sup.getByTestId('tabs').getByText('Все открытые').click();
+    await sup.getByTestId('conv-item').filter({ hasText: `Слушаемый ${stamp}` }).click();
+    await sup.getByTestId('tab-calls').click();
+    await sup.getByTestId('call-listen').click();
+    const listen = sup.getByTestId('softphone-call');
+    await expect(listen).toContainText('Прослушивание разговора', { timeout: 15_000 });
+    await expect(listen).toHaveAttribute('data-state', 'active', { timeout: 15_000 });
+    // Прослушивание не мешает разговору; по окончании разговора завершается и у супервизора.
+    await client.getByTestId('demo-hangup').click();
+    await expect(call).toHaveCount(0, { timeout: 15_000 });
+    await expect(listen).toHaveCount(0, { timeout: 15_000 });
+    await op.getByTestId('agent-status').getByText('Офлайн').click();
   });
 });

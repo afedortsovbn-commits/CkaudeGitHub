@@ -105,6 +105,14 @@ export class Ari {
         { endpoint: o.endpoint, app: o.app, appArgs: o.appArgs, callerId: o.callerId, timeout: o.timeout },
         { variables: o.variables ?? {} },
       ),
+    record: (id: string, name: string) =>
+      this.req('POST', `/channels/${id}/record`, {
+        name,
+        format: 'wav',
+        ifExists: 'overwrite',
+        beep: false,
+        terminateOn: 'none',
+      }),
     snoop: (id: string, o: { snoopId: string; app: string; appArgs: string }) =>
       this.req<AriChannel>('POST', `/channels/${id}/snoop`, {
         spy: 'both',
