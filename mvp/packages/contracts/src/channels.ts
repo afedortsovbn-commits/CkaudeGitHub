@@ -84,6 +84,11 @@ export const OutboundMessageSchema = z.object({
       references: z.array(z.string()),
     })
     .optional(),
+  /**
+   * Кнопки бота (Ф7, M-AUTO-04): Telegram — клавиатура ответа (нажатие приходит текстом кнопки),
+   * email — нумерованный список в тексте письма.
+   */
+  buttons: z.array(z.string().max(64)).max(10).optional(),
 });
 export type OutboundMessage = z.infer<typeof OutboundMessageSchema>;
 export const outboundSubject = (kind: string) => `cc.outbound.${kind}`;
@@ -132,6 +137,17 @@ export interface MessageDto {
   externalId?: string | null;
   /** Доставка исходящего во внешний канал (Telegram, email): pending → sent | failed. */
   deliveryStatus?: 'pending' | 'sent' | 'failed' | null;
+  /** Служебные признаки (Ф7): автоответ/бот, кнопки бота, запрос оценки чата. */
+  meta?: MessageMeta;
+}
+
+export interface MessageMeta {
+  /** Сообщение отправлено автоматически: правило автоответа (вид правила) или бот. */
+  auto?: 'greeting' | 'queued' | 'after_hours' | 'keyword' | 'inactivity' | 'bot';
+  /** Кнопки бота — клиент нажимает (в виджете) или пишет текст кнопки. */
+  buttons?: { id: string; label: string }[];
+  /** Запрос оценки обслуживания после закрытия чата (виджет показывает 1–5). */
+  csat?: boolean;
 }
 
 /** Типы событий обращений (payload — ConversationRef [+ message]). */

@@ -15,15 +15,18 @@ import {
   startHealthServer,
 } from '@cc/service-kit';
 import { z } from 'zod';
+import { Automation } from './automation';
 import { DeliveryProcessor } from './delivery';
 import { InboundProcessor } from './inbound';
 
 const ConfigSchema = BaseConfigSchema.extend({
   DATABASE_URL: z.string().url(),
   NATS_STREAM_REPLICAS: z.coerce.number().int().min(1).max(5).default(3),
+  /** Период обхода дедлайнов автоматизации (автозакрытие, зависшие шаги бота). */
+  AUTOMATION_SWEEP_MS: z.coerce.number().int().min(200).default(2000),
 });
 
-/** worker: фоновая обработка — входящие сообщения каналов, outbox-relay; далее автоответы, боты, уведомления. */
+/** worker: фоновая обработка — входящие сообщения каналов, автоответы и боты (Ф7), статусы доставки, outbox-relay. */
 async function main(): Promise<void> {
   const config = loadConfig(ConfigSchema);
   const logger = createLogger({
@@ -48,15 +51,25 @@ async function main(): Promise<void> {
   await ensureStream(jsm, { ...INBOUND_STREAM, replicas: config.NATS_STREAM_REPLICAS });
   await ensureStream(jsm, { ...OUTBOUND_STREAM, replicas: config.NATS_STREAM_REPLICAS });
 
-  const inbound = new InboundProcessor({ pool, js: nc.jetstream(), jsm, logger, registry: metrics.registry });
+  const automation = new Automation({ pool, nc, logger, sweepMs: config.AUTOMATION_SWEEP_MS });
+  const inbound = new InboundProcessor({
+    pool,
+    js: nc.jetstream(),
+    jsm,
+    logger,
+    registry: metrics.registry,
+    onBotHttp: automation.runHttp,
+  });
   await inbound.start();
   const delivery = new DeliveryProcessor({ pool, js: nc.jetstream(), jsm, logger });
   await delivery.start();
   const relay = new OutboxRelay({ pool, js: nc.jetstream(), logger });
   if (config.OUTBOX_RELAY_ENABLED) relay.start();
+  automation.start();
 
   lifecycle.onShutdown('inbound', 20, () => inbound.stop());
   lifecycle.onShutdown('delivery', 20, () => delivery.stop());
+  lifecycle.onShutdown('automation', 21, () => automation.stop());
   lifecycle.onShutdown('outbox-relay', 21, () => relay.stop());
   lifecycle.onShutdown('nats', 30, () => nc.drain());
   lifecycle.onShutdown('postgres', 31, () => pool.end());

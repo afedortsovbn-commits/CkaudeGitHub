@@ -119,6 +119,10 @@ export class ConversationsController {
       case 'closed':
         add(`c.status = 'closed'`);
         break;
+      case 'bot':
+        // «У бота» (M-OP-02): текстовые диалоги с ботом и звонки в IVR — до перевода на оператора.
+        add(`c.status = 'bot'`);
+        break;
       default:
         throw badRequest('Неизвестная вкладка');
     }
@@ -184,7 +188,10 @@ export class ConversationsController {
     const c = await one(this.ctx.pool, `${LIST_SQL} WHERE c.id = $1`, [id]);
     const full = await one(
       this.ctx.pool,
-      'SELECT fields, topic_path, department_id, object_id, disposition_id, important_manual, version, channel_id FROM conversation WHERE id = $1',
+      `SELECT fields, topic_path, department_id, object_id, disposition_id, important_manual, version, channel_id,
+              (SELECT r.score FROM csat_rating r WHERE r.conversation_id = conversation.id AND r.call_id IS NULL
+                ORDER BY r.created_at DESC LIMIT 1) AS chat_csat
+         FROM conversation WHERE id = $1`,
       [id],
     );
     const tags = await rows<{ tag_id: string }>(
@@ -490,6 +497,10 @@ export class ConversationsController {
             : 'Диалог завершён. Спасибо за обращение!',
         channelKind: c.channel_kind,
         authorUserId: p.id,
+        // Оценка чата (Ф7): виджет и чат в приложении показывают клиенту кнопки 1–5.
+        ...(['webchat', 'app'].includes(c.channel_kind) && d.behavior !== 'postponed'
+          ? { meta: { csat: true } }
+          : {}),
       });
       await emitConversation(tx, CONVERSATION_EVENTS.updated, await loadRef(tx, id), {
         action: 'closed',

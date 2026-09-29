@@ -458,6 +458,9 @@ importers:
       '@cc/contracts':
         specifier: workspace:*
         version: link:../contracts
+      '@cc/flow-engine':
+        specifier: workspace:*
+        version: link:../flow-engine
       '@cc/service-kit':
         specifier: workspace:*
         version: link:../service-kit

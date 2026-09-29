@@ -83,7 +83,10 @@ export class MailboxRunner {
       from: { name: c.display_name ?? '', address: c.address },
       to: msg.to,
       subject: msg.email?.subject ?? 'Ответ на ваше обращение',
-      text: msg.body,
+      // Кнопки бота (Ф7) — нумерованным списком: клиент отвечает номером или текстом варианта.
+      text: msg.buttons?.length
+        ? `${msg.body}\n\n${msg.buttons.map((b, i) => `${i + 1}. ${b}`).join('\n')}`
+        : msg.body,
       messageId,
       inReplyTo: msg.email?.inReplyTo ?? undefined,
       references: msg.email?.references.length ? msg.email.references : undefined,

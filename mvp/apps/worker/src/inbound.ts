@@ -1,5 +1,5 @@
 import { InboundMessageSchema } from '@cc/contracts';
-import { ingestInbound } from '@cc/domain';
+import { afterInbound, type BotHttp, ingestInbound } from '@cc/domain';
 import type { Logger } from '@cc/service-kit';
 import { AckPolicy, type Consumer, type JetStreamClient, type JetStreamManager, type JsMsg } from 'nats';
 import type { Pool } from 'pg';
@@ -26,6 +26,8 @@ export class InboundProcessor {
       jsm: JetStreamManager;
       logger: Logger;
       registry: import('prom-client').Registry;
+      /** Запрос бота во внешнюю систему — выполняется после фиксации транзакции (Ф7). */
+      onBotHttp?: (h: BotHttp) => void;
     },
   ) {
     this.processed = new Counter({
@@ -89,8 +91,18 @@ export class InboundProcessor {
     try {
       await client.query('BEGIN');
       const r = await ingestInbound(client, parsed);
+      // Автоответы и бот (Ф7) — в той же транзакции: повторная доставка не даст ни дубля сообщения,
+      // ни повторного ответа бота.
+      const http = r.duplicate
+        ? null
+        : await afterInbound(client, {
+            conversationId: r.conversationId,
+            created: r.created,
+            body: parsed.body,
+          });
       await client.query('COMMIT');
       m.ack();
+      if (http) this.o.onBotHttp?.(http);
       this.processed.inc({ result: r.duplicate ? 'duplicate' : 'ok' });
     } catch (err) {
       await client.query('ROLLBACK').catch(() => undefined);

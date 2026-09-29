@@ -29,6 +29,7 @@ import { useAuth } from '../lib/auth';
 import { type Row, options, useAction, useList } from '../lib/data';
 import { notify, onRealtime, useRealtime } from '../lib/realtime';
 import { ExternalDataPanel } from './IvrAdminPages';
+import { AssistPanel, renderTemplate, SlashList, useSlashTemplates } from '../components/AssistPanel';
 import { softphone, useSoftphone } from '../lib/softphone';
 
 const CHANNEL: Record<string, string> = {
@@ -39,7 +40,7 @@ const CHANNEL: Record<string, string> = {
   voice: 'Звонок',
 };
 const STATUS: Record<string, string> = {
-  bot: 'В IVR',
+  bot: 'У бота / в IVR',
   offered: 'Предложено',
   queued: 'В очереди',
   active: 'В работе',
@@ -265,6 +266,13 @@ function List({
   );
 }
 
+/** Подпись автоматического сообщения (Ф7): бот или правило автоответа. */
+function autoLabel(m: Row): string {
+  const auto = (m.meta as { auto?: string } | undefined)?.auto;
+  if (!auto) return '';
+  return auto === 'bot' ? 'Бот' : 'Автоответ';
+}
+
 /** Доставка ответа во внешний канал (Telegram, email): ставится в очередь → отправлено / ошибка. */
 function Delivery({ m }: { m: Row }) {
   if (m.deliveryStatus === 'sent')
@@ -298,6 +306,15 @@ function Messages({ conv, typing, onTyping }: { conv: Row; typing: boolean; onTy
   const canWrite = note
     ? conv.status !== 'closed'
     : conv.assigneeId === me?.id && ['active', 'hold'].includes(String(conv.status));
+  const slash = useSlashTemplates(text, String(conv.channelKind));
+  const lastInSeq = Math.max(
+    0,
+    ...(msgs.data ?? []).filter((m) => m.direction === 'in').map((m) => Number(m.seq)),
+  );
+  const pickTemplate = (r: Row) => {
+    setText(renderTemplate(String(r.body), conv, me?.fullName ?? ''));
+    void post(`/templates/${r.id}/used`).catch(() => undefined);
+  };
   const send = async () => {
     if (!text.trim() && !files.length) return;
     setBusy(true);
@@ -345,7 +362,7 @@ function Messages({ conv, typing, onTyping }: { conv: Row; typing: boolean; onTy
                       ? String(conv.contactName)
                       : dir === 'note'
                         ? `Заметка · ${String(m.authorName ?? 'система')}`
-                        : String(m.authorName ?? '')}{' '}
+                        : autoLabel(m) || String(m.authorName ?? '')}{' '}
                     · {time(m.sentAt)}
                     {dir === 'out' && <Delivery m={m} />}
                   </Text>
@@ -357,6 +374,16 @@ function Messages({ conv, typing, onTyping }: { conv: Row; typing: boolean; onTy
                 >
                   {String(m.body)}
                 </Text>
+                {((m.meta as { buttons?: { id: string; label: string }[] } | undefined)?.buttons ?? [])
+                  .length > 0 && (
+                  <Group gap={4} mt={4}>
+                    {(m.meta as { buttons: { id: string; label: string }[] }).buttons.map((b) => (
+                      <Badge key={b.id} variant="outline" size="sm">
+                        {b.label}
+                      </Badge>
+                    ))}
+                  </Group>
+                )}
                 {(m.attachments as Att[]).map((a) => (
                   <Text
                     key={a.id}
@@ -391,6 +418,18 @@ function Messages({ conv, typing, onTyping }: { conv: Row; typing: boolean; onTy
           Возьмите обращение, чтобы ответить клиенту (заметку можно оставить всегда).
         </Text>
       ) : null}
+      {!note && canWrite && conv.channelKind !== 'voice' && (
+        <AssistPanel
+          conv={conv}
+          lastInSeq={lastInSeq}
+          onInsert={(t, sg) => {
+            setText(t);
+            if (sg?.type === 'template' && sg.refId)
+              void post(`/templates/${sg.refId}/used`).catch(() => undefined);
+          }}
+        />
+      )}
+      {slash.open && <SlashList items={slash.items} onPick={pickTemplate} />}
       <Group gap={4}>
         {files.map((f) => (
           <Badge
@@ -418,7 +457,7 @@ function Messages({ conv, typing, onTyping }: { conv: Row; typing: boolean; onTy
           placeholder={
             note
               ? 'Внутренняя заметка (клиент её не увидит)'
-              : 'Ответ клиенту… (Enter — отправить, Shift+Enter — новая строка)'
+              : 'Ответ клиенту… («/» — шаблоны, Enter — отправить, Shift+Enter — новая строка)'
           }
           value={text}
           data-testid="reply"
@@ -429,6 +468,11 @@ function Messages({ conv, typing, onTyping }: { conv: Row; typing: boolean; onTy
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
               e.preventDefault();
+              // «/код» + Enter — подставить первый найденный шаблон, а не отправлять.
+              if (slash.open) {
+                if (slash.items[0]) pickTemplate(slash.items[0]);
+                return;
+              }
               if (canWrite) void send();
             }
           }}
@@ -599,6 +643,11 @@ function ConversationCard({ conv }: { conv: Row }) {
   const closed = conv.status === 'closed';
   return (
     <Stack gap="xs">
+      {conv.chatCsat ? (
+        <Badge color="yellow" variant="light" data-testid="chat-csat">
+          Оценка клиента: {String(conv.chatCsat)} из 5
+        </Badge>
+      ) : null}
       <Select
         size="xs"
         label="Тема"
@@ -973,6 +1022,8 @@ export function WorkspacePage() {
         // Звонок в IVR (статус «bot») ещё не в очереди — уведомим, когда сценарий поставит его в очередь.
         if (e.event === 'conversation.created' && e.data.status !== 'bot')
           notify('Новое обращение в очереди', 'Откройте вкладку «Очередь»');
+        if (e.event === 'conversation.updated' && e.data.action === 'bot_handoff')
+          notify('Новое обращение в очереди', 'Бот передал диалог оператору');
         if (e.event === 'conversation.updated' && e.data.action === 'offered' && e.data.assigneeId === me?.id)
           notify('Вам предложено обращение', 'Примите или отклоните во вкладке «Мои»');
       }),
@@ -983,6 +1034,7 @@ export function WorkspacePage() {
     () => [
       { value: 'mine', label: 'Мои' },
       { value: 'queue', label: 'Очередь' },
+      { value: 'bot', label: 'У бота' },
       ...(can('supervisor.monitor') ? [{ value: 'active', label: 'Все открытые' }] : []),
       { value: 'closed', label: 'Закрытые' },
     ],

@@ -5,6 +5,11 @@
  *   GET /history?phone=+375…  → {phone, operations: [{date, station, fuel, liters, amount, bonus}]}
  * Для проверки ветки «ошибка»: номер, оканчивающийся на 0000, — ответ 500; на 9999 — ответ через 10 с.
  * Авторизация: заголовок Authorization: Bearer <MOCK_TOKEN> (если MOCK_TOKEN задан).
+ *
+ * Ф7 — мок OpenAI-совместимого сервера LLM (проверка адаптера подсказок, M-AI-01), без авторизации:
+ *   POST /v1/chat/completions  → черновик ответа по последнему сообщению клиента
+ *   GET  /v1/models            → список «моделей»
+ *   /slow/v1/… — ответ через 10 с (таймаут), /down/v1/… — 503 (провайдер упал).
  */
 import { createServer } from 'node:http';
 
@@ -49,11 +54,65 @@ function history(phone: string) {
   };
 }
 
+interface ChatMessage {
+  role: string;
+  content: string;
+}
+
+/** «Модель»: вежливый черновик по последнему сообщению клиента; упоминает справку из системного промпта. */
+function completion(messages: ChatMessage[]): string {
+  const last = [...messages].reverse().find((m) => m.role === 'user')?.content ?? '';
+  const kb = /Справка из базы знаний:\n— ([^:]+):/.exec(messages[0]?.content ?? '')?.[1];
+  return (
+    `Здравствуйте! Спасибо за обращение. По вашему вопросу «${last.slice(0, 80)}» ` +
+    (kb ? `подскажу по статье «${kb}». ` : '') +
+    'Уточните, пожалуйста, номер карты или телефона — проверю и отвечу.'
+  );
+}
+
+function llm(req: import('node:http').IncomingMessage, url: URL, send: (s: number, b: unknown) => void) {
+  const mode = url.pathname.startsWith('/slow/') ? 'slow' : url.pathname.startsWith('/down/') ? 'down' : 'ok';
+  const path = url.pathname.replace(/^\/(slow|down)/, '');
+  if (mode === 'down') return send(503, { error: { message: 'model is loading' } });
+  const reply = (fn: () => void) => (mode === 'slow' ? setTimeout(fn, 10_000) : fn());
+  if (path === '/v1/models' && req.method === 'GET')
+    return reply(() => send(200, { object: 'list', data: [{ id: 'mock-llm', object: 'model' }] }));
+  if (path === '/v1/chat/completions' && req.method === 'POST') {
+    let raw = '';
+    req.on('data', (c: Buffer) => (raw += c.toString('utf8')));
+    req.on('end', () => {
+      let body: { model?: string; messages?: ChatMessage[] } = {};
+      try {
+        body = JSON.parse(raw) as typeof body;
+      } catch {
+        return send(400, { error: { message: 'invalid json' } });
+      }
+      reply(() =>
+        send(200, {
+          id: `chatcmpl-${Date.now()}`,
+          object: 'chat.completion',
+          model: body.model ?? 'mock-llm',
+          choices: [
+            {
+              index: 0,
+              finish_reason: 'stop',
+              message: { role: 'assistant', content: completion(body.messages ?? []) },
+            },
+          ],
+        }),
+      );
+    });
+    return;
+  }
+  return send(404, { error: { message: 'not found' } });
+}
+
 const server = createServer((req, res) => {
   const url = new URL(req.url ?? '/', 'http://x');
   const send = (status: number, body: unknown) =>
     res.writeHead(status, { 'content-type': 'application/json; charset=utf-8' }).end(JSON.stringify(body));
   if (url.pathname === '/healthz' || url.pathname === '/readyz') return send(200, { status: 'ok' });
+  if (/^\/((slow|down)\/)?v1\//.test(url.pathname)) return llm(req, url, send);
   if (TOKEN && req.headers.authorization !== `Bearer ${TOKEN}`) return send(401, { error: 'unauthorized' });
   const phone = url.searchParams.get('phone') ?? '';
   if (!/^\+?\d{5,15}$/.test(phone)) return send(400, { error: 'phone' });

@@ -1,6 +1,7 @@
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { Body, Controller, Get, HttpCode, Inject, Param, Post, Query, Req, Res } from '@nestjs/common';
-import { inboundSubject, type InboundMessage, newId } from '@cc/contracts';
+import { CONVERSATION_EVENTS, inboundSubject, type InboundMessage, newId } from '@cc/contracts';
+import { appendMessage, emitConversation, loadRef } from '@cc/domain';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { headers } from 'nats';
 import { z } from 'zod';
@@ -49,6 +50,10 @@ const MessageBody = z
   })
   .strict()
   .refine((m) => m.body.trim() || m.attachmentIds.length, 'Пустое сообщение');
+
+const CsatBody = z
+  .object({ conversationId: z.string().uuid(), score: z.number().int().min(1).max(5) })
+  .strict();
 
 export function originAllowed(channel: ChannelRow, origin: string | undefined): boolean {
   const list = channel.config.allowed_origins ?? [];
@@ -193,7 +198,9 @@ export class ClientChatController {
     const { contactId, channel } = await this.auth(req);
     const list = await rows(
       this.ctx.pool,
-      `SELECT m.id, m.conversation_id, m.seq, m.direction, m.body, m.attachments, m.sent_at, m.external_id,
+      `SELECT m.id, m.conversation_id, m.seq, m.direction, m.body, m.attachments, m.sent_at, m.external_id, m.meta,
+              (m.meta ? 'csat' AND EXISTS (SELECT 1 FROM csat_rating r WHERE r.conversation_id = m.conversation_id
+                 AND r.call_id IS NULL)) AS rated,
               CASE WHEN m.direction = 'out' THEN split_part(u.full_name, ' ', 2) END AS author_name
          FROM message m JOIN conversation c ON c.id = m.conversation_id
          LEFT JOIN app_user u ON u.id = m.author_user_id
@@ -242,6 +249,44 @@ export class ClientChatController {
       timeout: 5000,
     });
     return { accepted: true, clientMessageId: b.clientMessageId };
+  }
+
+  /**
+   * Оценка чата клиентом (Ф7, CSAT): одна на обращение, только после запроса оценки (закрытие оператором).
+   * Оценка привязывается к оператору, который вёл диалог.
+   */
+  @Post('csat')
+  @HttpCode(200)
+  async csat(@Req() req: ClientReq, @Body() body: unknown) {
+    const { contactId, channel } = await this.auth(req);
+    const b = parse(CsatBody, body);
+    return withTx(this.ctx.pool, async (tx) => {
+      const c = await one<{ id: string; assignee_id: string | null; closed_by: string | null }>(
+        tx,
+        `SELECT c.id, c.assignee_id, c.closed_by FROM conversation c
+          WHERE c.id = $1 AND c.contact_id = $2 AND c.channel_id = $3
+            AND EXISTS (SELECT 1 FROM message m WHERE m.conversation_id = c.id AND m.meta ? 'csat')
+          FOR UPDATE`,
+        [b.conversationId, contactId, channel.id],
+      );
+      if (!c) throw new ApiError(404, 'not_found', 'Оценка для этого диалога не запрашивалась');
+      const r = await tx.query(
+        `INSERT INTO csat_rating (id, conversation_id, channel_kind, agent_user_id, score)
+         VALUES ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING`,
+        [newId(), c.id, channel.kind, c.assignee_id ?? c.closed_by, b.score],
+      );
+      if (r.rowCount) {
+        const ref = await loadRef(tx, c.id);
+        await appendMessage(tx, {
+          conversationId: c.id,
+          direction: 'note',
+          body: `Клиент оценил обслуживание: ${b.score} из 5`,
+          channelKind: channel.kind,
+        });
+        await emitConversation(tx, CONVERSATION_EVENTS.updated, ref, { action: 'csat', score: b.score });
+      }
+      return { ok: true, duplicate: !r.rowCount };
+    });
   }
 
   @Post('attachments')

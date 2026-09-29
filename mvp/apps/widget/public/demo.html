@@ -20,6 +20,16 @@
     <pre>
 &lt;script src="https://&lt;адрес-кц&gt;/widget/widget.js" data-key="demo-webchat" async&gt;&lt;/script&gt;</pre
     >
-    <script src="./widget.js" data-key="demo-webchat" async></script>
+    <p>
+      Другой канал — параметр <code>?key=</code>, например
+      <a href="?key=demo-webchat-bot">чат с ботом (demo-webchat-bot)</a>.
+    </p>
+    <script>
+      // Ключ канала из адреса страницы (?key=…), по умолчанию — demo-webchat.
+      const s = document.createElement('script');
+      s.src = './widget.js';
+      s.dataset.key = new URLSearchParams(location.search).get('key') || 'demo-webchat';
+      document.body.appendChild(s);
+    </script>
   </body>
 </html>

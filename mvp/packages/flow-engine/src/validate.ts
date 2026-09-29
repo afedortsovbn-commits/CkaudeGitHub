@@ -92,7 +92,7 @@ function checkParams(n: FlowNode, err: (m: string) => void) {
         err('неизвестная операция');
       return;
     case 'setVariable':
-      if (!isStr(p.variable) || !/^[\w.-]+$/.test(p.variable))
+      if (!isStr(p.variable) || !/^[\p{L}\p{N}_.-]+$/u.test(p.variable))
         err('Укажите имя переменной (буквы, цифры, _ . -)');
       if (typeof p.value !== 'string') err('Укажите значение');
       return;
@@ -136,7 +136,52 @@ function checkParams(n: FlowNode, err: (m: string) => void) {
       if (!isNum(p.retries, 0, 5)) err('повторов — от 0 до 5');
       return;
     case 'hangup':
+      if (p.text !== undefined && typeof p.text !== 'string') err('некорректный текст сообщения');
       return audioList('audio', false, 'Прощальная фраза');
+    case 'message':
+      if (!isStr(p.text)) err('Введите текст сообщения');
+      else if (p.text.length > 4000) err('Сообщение длиннее 4000 символов');
+      return;
+    case 'buttons': {
+      if (!isStr(p.text)) err('Введите вопрос');
+      const b = p.buttons;
+      if (!Array.isArray(b) || !b.length) return err('Добавьте кнопки');
+      if (b.length > 10) err('Не больше 10 кнопок');
+      const ids = new Set<string>();
+      const labels = new Set<string>();
+      for (const x of b as { id?: unknown; label?: unknown }[]) {
+        if (!x || !isStr(x.id) || !isStr(x.label)) {
+          err('У кнопки нет текста');
+          continue;
+        }
+        if (x.label.length > 64) err(`Текст кнопки «${x.label.slice(0, 20)}…» длиннее 64 символов`);
+        if (ids.has(x.id) || labels.has(x.label.toLowerCase())) err('Повторяющиеся кнопки');
+        ids.add(x.id);
+        labels.add(x.label.toLowerCase());
+      }
+      if (!isNum(p.retries, 0, 10)) err('повторов — от 0 до 10');
+      if (p.variable !== undefined && p.variable !== '' && !/^[\p{L}\p{N}_.-]+$/u.test(String(p.variable)))
+        err('Имя переменной — буквы, цифры, _ . -');
+      return;
+    }
+    case 'ask':
+      if (!isStr(p.text)) err('Введите вопрос');
+      if (!isStr(p.variable) || !/^[\p{L}\p{N}_.-]+$/u.test(p.variable))
+        err('Укажите переменную для ответа (буквы, цифры, _ . -)');
+      if (!['text', 'phone', 'email', 'number'].includes(String(p.validation))) err('Выберите формат ответа');
+      if (!isNum(p.retries, 0, 10)) err('повторов — от 0 до 10');
+      if (
+        p.saveTo !== undefined &&
+        p.saveTo !== null &&
+        !['phone', 'email', 'name'].includes(String(p.saveTo))
+      )
+        err('Неизвестное поле карточки');
+      return;
+    case 'handoff':
+      if (p.text !== undefined && typeof p.text !== 'string') err('некорректный текст сообщения');
+      if (p.priority !== undefined && p.priority !== null && !isNum(p.priority, 0, 10000))
+        err('Надбавка приоритета — от 0 до 10000');
+      return;
     default:
       return;
   }
@@ -189,13 +234,19 @@ export function validateGraph(graph: FlowGraph, kind: FlowKind = graph.kind): Va
     const label = n.name || NODE_SPECS[n.type].label;
     for (const x of exitsOf(n).filter((v, i, a) => a.findIndex((y) => y.id === v.id) === i)) {
       if (used.has(`${n.id}|${x.id}`)) continue;
-      if (n.type === 'start' || (n.type === 'menu' && x.id.startsWith('digit:')))
+      if (
+        n.type === 'start' ||
+        (n.type === 'menu' && x.id.startsWith('digit:')) ||
+        (n.type === 'buttons' && x.id.startsWith('btn:'))
+      )
         errors.push({ nodeId: n.id, message: `«${label}»: не подключён выход «${x.label}»` });
       // У очереди выходы необязательны: без них клиент просто ждёт оператора, а после разговора — отбой.
       else if (n.type !== 'queue')
         warnings.push({
           nodeId: n.id,
-          message: `«${label}»: выход «${x.label}» не подключён — звонок завершится`,
+          message: `«${label}»: выход «${x.label}» не подключён — ${
+            graph.kind === 'text' ? 'бот передаст диалог оператору' : 'звонок завершится'
+          }`,
         });
     }
   }

@@ -20,7 +20,12 @@ export type NodeType =
   | 'sayNumber'
   | 'transfer'
   | 'csat'
-  | 'hangup';
+  | 'hangup'
+  // Текстовые узлы ботов (Ф7, M-AUTO-04).
+  | 'message'
+  | 'buttons'
+  | 'ask'
+  | 'handoff';
 
 export interface FlowNode {
   id: string;
@@ -131,6 +136,49 @@ export interface CsatParams {
 }
 export interface HangupParams {
   audio?: string[];
+  /** Текстовый сценарий: прощальное сообщение перед закрытием диалога. */
+  text?: string;
+}
+
+// ---- текстовые узлы ботов (Ф7)
+
+export interface MessageParams {
+  /** Текст сообщения клиенту — шаблон {{переменная}}. */
+  text: string;
+}
+export interface BotButton {
+  /** Идентификатор кнопки — выход узла `btn:<id>`. */
+  id: string;
+  label: string;
+}
+export interface ButtonsParams {
+  text: string;
+  buttons: BotButton[];
+  /** Ответ клиента не совпал ни с одной кнопкой: текст перед повтором вопроса. */
+  retryText?: string;
+  /** Сколько раз повторить вопрос, прежде чем уйти по выходу «другое». */
+  retries: number;
+  /** Переменная, в которую сохраняется текст выбранной кнопки (необязательно). */
+  variable?: string;
+}
+export type AskValidation = 'text' | 'phone' | 'email' | 'number';
+export interface AskParams {
+  text: string;
+  /** Переменная, в которую сохраняется ответ. */
+  variable: string;
+  validation: AskValidation;
+  retryText?: string;
+  retries: number;
+  /** Сохранить ответ в карточку клиента (телефон/email — ещё и как идентификатор для узнавания). */
+  saveTo?: 'phone' | 'email' | 'name' | null;
+}
+export interface HandoffParams {
+  /** Очередь; пусто — очередь канала по умолчанию. */
+  queueId?: string | null;
+  topicId?: string | null;
+  priority?: number;
+  /** Сообщение клиенту при переводе («Соединяю с оператором…»). */
+  text?: string;
 }
 
 // ---------------------------------------------------------------- каталог узлов
@@ -148,12 +196,13 @@ export interface NodeSpec {
 
 const both: FlowKind[] = ['voice', 'text'];
 const voice: FlowKind[] = ['voice'];
+const text: FlowKind[] = ['text'];
 
 export const NODE_SPECS: Record<NodeType, NodeSpec> = {
   start: {
     type: 'start',
     label: 'Начало',
-    description: 'Точка входа сценария',
+    description: 'Точка входа сценария (звонок поступил / клиент написал)',
     kinds: both,
     instant: true,
     exits: [{ id: 'next', label: 'далее' }],
@@ -283,18 +332,76 @@ export const NODE_SPECS: Record<NodeType, NodeSpec> = {
   hangup: {
     type: 'hangup',
     label: 'Завершить',
-    description: 'Завершить звонок (можно с прощальной фразой)',
+    description: 'Завершить звонок или диалог (можно с прощальной фразой/сообщением)',
     kinds: both,
     instant: false,
     exits: [],
     defaults: { audio: [] },
   },
+  message: {
+    type: 'message',
+    label: 'Отправить сообщение',
+    description: 'Сообщение клиенту (шаблон {{переменная}})',
+    kinds: text,
+    instant: false,
+    exits: [{ id: 'next', label: 'далее' }],
+    defaults: { text: '' },
+  },
+  buttons: {
+    type: 'buttons',
+    label: 'Меню кнопками',
+    description: 'Вопрос с кнопками; клиент нажимает кнопку или пишет её текст/номер',
+    kinds: text,
+    instant: false,
+    exits: [{ id: 'other', label: 'другое' }],
+    defaults: {
+      text: '',
+      buttons: [
+        { id: 'b1', label: 'Вариант 1' },
+        { id: 'b2', label: 'Вариант 2' },
+      ],
+      retries: 1,
+    },
+  },
+  ask: {
+    type: 'ask',
+    label: 'Сбор поля',
+    description: 'Вопрос клиенту; ответ (с проверкой формата) сохраняется в переменную и карточку клиента',
+    kinds: text,
+    instant: false,
+    exits: [
+      { id: 'next', label: 'получено' },
+      { id: 'invalid', label: 'не получено' },
+    ],
+    defaults: { text: '', variable: '', validation: 'text', retries: 2 },
+  },
+  handoff: {
+    type: 'handoff',
+    label: 'Перевод на оператора',
+    description: 'Поставить диалог в очередь к оператору; вся переписка с ботом видна оператору',
+    kinds: text,
+    instant: false,
+    exits: [],
+    defaults: { queueId: '', text: 'Соединяю вас с оператором, пожалуйста, подождите.' },
+  },
 };
 
 export const MENU_DIGITS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '*', '#'];
 export const digitExit = (d: string) => `digit:${d}`;
+export const buttonExit = (id: string) => `btn:${id}`;
 
-/** Выходы узла (у меню — по цифре на пункт + «нет ввода»). */
+/** Кнопки узла «Меню кнопками» (некорректные записи отбрасываются). */
+export function buttonsOf(node: Pick<FlowNode, 'params'>): BotButton[] {
+  const b = node.params.buttons;
+  return Array.isArray(b)
+    ? b.filter(
+        (x): x is BotButton =>
+          !!x && typeof x === 'object' && typeof x.id === 'string' && typeof x.label === 'string',
+      )
+    : [];
+}
+
+/** Выходы узла (у меню — по цифре на пункт + «нет ввода», у кнопок — по кнопке + «другое»). */
 export function exitsOf(node: FlowNode): { id: string; label: string }[] {
   const spec = NODE_SPECS[node.type];
   if (!spec) return [];
@@ -302,6 +409,8 @@ export function exitsOf(node: FlowNode): { id: string; label: string }[] {
     const digits = Array.isArray(node.params.digits) ? (node.params.digits as string[]) : [];
     return [...digits.map((d) => ({ id: digitExit(d), label: d })), ...spec.exits];
   }
+  if (node.type === 'buttons')
+    return [...buttonsOf(node).map((b) => ({ id: buttonExit(b.id), label: b.label })), ...spec.exits];
   return spec.exits;
 }
 
@@ -334,8 +443,9 @@ export function collectRefs(graph: FlowGraph): FlowRefs {
     r.audio.push(...strs(p.thanksAudio), ...strs(p.before), ...strs(p.after));
     for (const u of [p.unit, p.fraction] as (UnitAudio | undefined)[])
       if (u && typeof u === 'object') r.audio.push(...str(u.one), ...str(u.few), ...str(u.many));
-    if (n.type === 'queue' || n.type === 'voicemail') r.queues.push(...str(p.queueId));
-    if (n.type === 'queue') r.topics.push(...str(p.topicId));
+    if (n.type === 'queue' || n.type === 'voicemail' || n.type === 'handoff')
+      r.queues.push(...str(p.queueId));
+    if (n.type === 'queue' || n.type === 'handoff') r.topics.push(...str(p.topicId));
     if (n.type === 'schedule') r.schedules.push(...str(p.scheduleId));
     if (n.type === 'http') r.operations.push(...str(p.operationId));
   }

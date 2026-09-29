@@ -184,6 +184,7 @@ const toForm = (r: Row) => {
     kind: r.kind,
     name: r.name,
     queueId: r.queueId,
+    botFlowId: r.botFlowId,
     publicKey: c.public_key,
     allowedOrigins: ((c.allowed_origins as string[]) ?? []).join(', '),
     consentText: c.consent_text,
@@ -216,7 +217,12 @@ const fromForm = (v: Record<string, unknown>, editing: Row | null) => {
   const { name, queueId } = v;
   // Тип при изменении берётся из редактируемой записи (поле «Тип» показывается только при создании).
   const k = editing ? editing.kind : v.kind;
-  const base = { ...(isCreate ? { kind: k } : {}), name, queueId };
+  const base = {
+    ...(isCreate ? { kind: k } : {}),
+    name,
+    queueId,
+    ...(k !== 'voice' ? { botFlowId: v.botFlowId ?? null } : {}),
+  };
   if (k === 'telegram')
     return {
       ...base,
@@ -289,6 +295,7 @@ const CREATE_DEFAULTS = {
 /** Экземпляры каналов: веб-чат, чат в приложении, Telegram-боты, почтовые ящики (M-CH-07). */
 export function ChannelsPage() {
   const queues = useList('/dict/queues');
+  const bots = useList('/flows?kind=text');
   const [logOf, setLogOf] = useState<Row | null>(null);
 
   return (
@@ -310,6 +317,11 @@ export function ChannelsPage() {
               return <Code>{str(c.public_key)}</Code>;
             },
           },
+          {
+            key: 'bot',
+            label: 'Бот',
+            render: (r) => String(bots.data?.find((b) => b.id === r.botFlowId)?.name ?? '—'),
+          },
           { key: 'conn', label: 'Подключение', render: (r) => <ChannelStatus row={r} /> },
         ]}
         rowActions={(r) =>
@@ -325,6 +337,14 @@ export function ChannelsPage() {
         fields={[
           ...FIELDS.slice(0, 2),
           { key: 'queueId', label: 'Очередь по умолчанию', type: 'select', options: options(queues.data) },
+          {
+            key: 'botFlowId',
+            label: 'Бот',
+            type: 'select',
+            options: options(bots.data),
+            description: 'Новые обращения сначала ведёт бот (опубликованная версия), затем — оператор',
+            show: (v) => v.kind !== 'voice',
+          },
           ...FIELDS.slice(2),
         ]}
       />
