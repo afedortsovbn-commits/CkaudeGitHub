@@ -12,7 +12,8 @@ import { ADMIN, DEMO_PASSWORD, login, nav } from './helpers';
 function toneFile(): string {
   const rate = 16000;
   const pcm = Buffer.alloc(rate * 2 * 2);
-  for (let i = 0; i < rate * 2; i++) pcm.writeInt16LE(Math.round(Math.sin((2 * Math.PI * 440 * i) / rate) * 8000), i * 2);
+  for (let i = 0; i < rate * 2; i++)
+    pcm.writeInt16LE(Math.round(Math.sin((2 * Math.PI * 440 * i) / rate) * 8000), i * 2);
   const h = Buffer.alloc(44);
   h.write('RIFF', 0);
   h.writeUInt32LE(36 + pcm.length, 4);
