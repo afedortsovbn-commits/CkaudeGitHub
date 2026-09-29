@@ -1,4 +1,4 @@
-import { type Browser, expect, type Page, test } from '@playwright/test';
+import { type Browser, type BrowserContext, expect, type Page, test } from '@playwright/test';
 import { DEMO_PASSWORD, login, nav } from './helpers';
 import { readMailbox } from './mail';
 
@@ -7,6 +7,7 @@ const CLIENT = `Клиент 2Л ${stamp}`;
 
 async function openWidget(browser: Browser) {
   const ctx = await browser.newContext({ ignoreHTTPSErrors: true });
+  contexts.push(ctx);
   const page = await ctx.newPage();
   await page.goto('/widget/demo.html');
   const w = page.locator('#cc-widget');
@@ -17,9 +18,19 @@ async function openWidget(browser: Browser) {
   return { page, w, ctx };
 }
 
+/**
+ * Контексты сотрудников закрываются после каждого теста: иначе зарегистрированный софтфон оператора остаётся
+ * в системе, и звонки последующих e2e (Ф5, Ф6) уходят на эту регистрацию, а не на страницу теста.
+ */
+const contexts: BrowserContext[] = [];
+test.afterEach(async () => {
+  await Promise.all(contexts.splice(0).map((c) => c.close()));
+});
+
 /** Отдельный браузерный контекст для каждого сотрудника: у каждого своя сессия. */
 async function as(browser: Browser, email: string): Promise<Page> {
   const ctx = await browser.newContext({ ignoreHTTPSErrors: true });
+  contexts.push(ctx);
   const page = await ctx.newPage();
   await login(page, email, DEMO_PASSWORD);
   return page;
@@ -209,7 +220,6 @@ test.describe.serial('Ф8: вторая линия', () => {
     await op.goto('/workspace');
     await op.getByTestId('tabs').getByText('Закрытые').click();
     await expect(op.getByTestId('conv-item').filter({ hasText: CLIENT })).toBeVisible();
-    await client.ctx.close();
   });
 
   test('колокольчик: уведомление о новом тикете в реальном времени и переход в тикет', async ({
