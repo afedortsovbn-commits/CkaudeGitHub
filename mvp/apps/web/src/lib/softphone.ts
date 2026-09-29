@@ -3,6 +3,8 @@ import type { RTCSession } from 'jssip/lib/RTCSession';
 import type { RTCSessionEvent, UA } from 'jssip/lib/UA';
 import { useSyncExternalStore } from 'react';
 import { get } from './api';
+import { applySink, audioDevices, toneUrl } from './audio-devices';
+import { connectHeadset, type HeadsetAction, type HidHeadset, onHeadsetDisconnect } from './headset';
 import { onRealtime } from './realtime';
 
 /**
@@ -27,12 +29,35 @@ export interface CallView {
   muted: boolean;
   onHold: boolean;
   endReason?: string;
+  /** Качество связи по статистике WebRTC (раз в 2 с). */
+  quality: QualitySample | null;
+  /** Медиа прервалось (смена сети) — идёт восстановление (ICE restart). */
+  reconnecting: boolean;
 }
 
 export interface SoftphoneState {
   reg: RegState;
   error: string | null;
   call: CallView | null;
+  /** Подключённая гарнитура с кнопками (WebHID). */
+  headset: string | null;
+}
+
+export interface QualitySample {
+  level: 'good' | 'fair' | 'poor';
+  rttMs: number | null;
+  jitterMs: number | null;
+  lossPct: number | null;
+}
+
+/** Оценка качества разговора по задержке, джиттеру и потерям (пороги — рекомендации ITU-T G.114/G.107). */
+export function qualityLevel(s: Omit<QualitySample, 'level'>): QualitySample['level'] {
+  const rtt = s.rttMs ?? 0;
+  const jitter = s.jitterMs ?? 0;
+  const loss = s.lossPct ?? 0;
+  if (loss > 5 || rtt > 400 || jitter > 60) return 'poor';
+  if (loss > 1 || rtt > 250 || jitter > 30) return 'fair';
+  return 'good';
 }
 
 interface SoftphoneConfig {
@@ -54,6 +79,7 @@ interface CallStateEvent {
   agentUserId: string | null;
 }
 
+/** Ограничения микрофона по умолчанию (демо-страница); софтфон берёт выбранное устройство и обработку. */
 export const AUDIO_CONSTRAINTS: MediaTrackConstraints = {
   echoCancellation: true,
   noiseSuppression: true,
@@ -67,10 +93,18 @@ class Softphone {
   private userId: string | null = null;
   private readonly listeners = new Set<() => void>();
   private readonly audio: HTMLAudioElement | null = typeof Audio !== 'undefined' ? new Audio() : null;
-  private ring: { ctx: AudioContext; timer: ReturnType<typeof setInterval> } | null = null;
+  private ringer: HTMLAudioElement | null = null;
   private renew: ReturnType<typeof setTimeout> | null = null;
   private stopRealtime: (() => void) | null = null;
-  private state: SoftphoneState = { reg: 'off', error: null, call: null };
+  private stopDevices: (() => void) | null = null;
+  private stats: ReturnType<typeof setInterval> | null = null;
+  private lastLoss: { lost: number; recv: number } | null = null;
+  private iceTimer: ReturnType<typeof setTimeout> | null = null;
+  private micId: string | null = null;
+  private speakerId: string | null = null;
+  private headset: HidHeadset | null = null;
+  private visibilityHooked = false;
+  private state: SoftphoneState = { reg: 'off', error: null, call: null, headset: null };
 
   subscribe = (fn: () => void) => {
     this.listeners.add(fn);
@@ -80,6 +114,7 @@ class Softphone {
 
   private set(patch: Partial<SoftphoneState>) {
     this.state = { ...this.state, ...patch };
+    this.syncHeadset();
     this.listeners.forEach((l) => l());
   }
   private setCall(patch: Partial<CallView>) {
@@ -92,6 +127,10 @@ class Softphone {
     this.stop();
     this.userId = userId;
     this.set({ reg: 'connecting', error: null });
+    audioDevices.start();
+    this.stopDevices = audioDevices.subscribe(() => void this.devicesChanged());
+    this.hookVisibility();
+    void this.attachHeadset(false);
     try {
       this.cfg = await get<SoftphoneConfig>('/telephony/softphone');
     } catch (e) {
@@ -149,6 +188,9 @@ class Softphone {
     if (this.renew) clearTimeout(this.renew);
     this.stopRealtime?.();
     this.stopRealtime = null;
+    this.stopDevices?.();
+    this.stopDevices = null;
+    this.stopMonitoring();
     this.stopRinging();
     this.session?.terminate();
     this.session = null;
@@ -179,29 +221,24 @@ class Softphone {
         startedAt: null,
         muted: false,
         onHold: false,
+        quality: null,
+        reconnecting: false,
       },
     });
     this.pendingConversation = null;
-    session.on('peerconnection', (ev: { peerconnection: RTCPeerConnection }) => {
-      ev.peerconnection.addEventListener('track', (t) => {
-        if (!this.audio) return;
-        this.audio.srcObject = t.streams[0] ?? new MediaStream([t.track]);
-        void this.audio.play().catch(() => undefined);
-      });
-    });
-    if (!incoming) {
-      session.connection?.addEventListener('track', (t: RTCTrackEvent) => {
-        if (!this.audio) return;
-        this.audio.srcObject = t.streams[0] ?? new MediaStream([t.track]);
-        void this.audio.play().catch(() => undefined);
-      });
-    }
+    session.on('peerconnection', (ev: { peerconnection: RTCPeerConnection }) =>
+      this.watchPc(ev.peerconnection),
+    );
+    if (!incoming && session.connection) this.watchPc(session.connection);
     session.on('accepted', () => {
       this.stopRinging();
+      this.micId = audioDevices.getSnapshot().effective.mic?.id ?? null;
       this.setCall({ state: 'active', startedAt: Date.now() });
+      this.startMonitoring(session);
     });
     const done = (ev: { cause?: string }) => {
       this.stopRinging();
+      this.stopMonitoring();
       if (this.session === session) this.session = null;
       this.setCall({ state: 'ended', endReason: ev?.cause });
       setTimeout(() => {
@@ -218,22 +255,15 @@ class Softphone {
 
   private pendingConversation: string | null = null;
 
+  /** Звонок — на отдельном устройстве (например, динамик компьютера, пока гарнитура на столе). */
   private startRinging() {
-    try {
-      const ctx = new AudioContext();
-      const beep = () => {
-        const o = ctx.createOscillator();
-        const g = ctx.createGain();
-        o.frequency.value = 480;
-        g.gain.value = 0.08;
-        o.connect(g).connect(ctx.destination);
-        o.start();
-        o.stop(ctx.currentTime + 0.8);
-      };
-      beep();
-      this.ring = { ctx, timer: setInterval(beep, 3000) };
-    } catch {
-      /* без звука вызова — индикация в интерфейсе остаётся */
+    if (typeof Audio !== 'undefined') {
+      this.ringer ??= new Audio(toneUrl('ring'));
+      this.ringer.loop = true;
+      this.ringer.currentTime = 0;
+      void applySink(this.ringer, audioDevices.sinkId('ringer')).then(() =>
+        this.ringer?.play().catch(() => undefined),
+      );
     }
     if ('Notification' in window && Notification.permission === 'granted')
       new Notification('Входящий звонок', {
@@ -242,10 +272,157 @@ class Softphone {
   }
 
   private stopRinging() {
-    if (!this.ring) return;
-    clearInterval(this.ring.timer);
-    void this.ring.ctx.close();
-    this.ring = null;
+    this.ringer?.pause();
+  }
+
+  /** Звук собеседника — на выбранный динамик разговора; при обрыве медиа — восстановление (ICE restart). */
+  private watchPc(pc: RTCPeerConnection) {
+    pc.addEventListener('track', (t) => {
+      if (!this.audio) return;
+      this.audio.srcObject = t.streams[0] ?? new MediaStream([t.track]);
+      this.speakerId = audioDevices.sinkId('speaker');
+      void applySink(this.audio, this.speakerId).then(() => this.audio?.play().catch(() => undefined));
+    });
+    pc.addEventListener('iceconnectionstatechange', () => {
+      const st = pc.iceConnectionState;
+      if (st === 'connected' || st === 'completed') {
+        if (this.iceTimer) clearTimeout(this.iceTimer);
+        this.iceTimer = null;
+        if (this.state.call?.reconnecting) this.setCall({ reconnecting: false });
+        return;
+      }
+      if (
+        (st === 'disconnected' || st === 'failed') &&
+        !this.iceTimer &&
+        this.state.call?.state === 'active'
+      ) {
+        this.setCall({ reconnecting: true });
+        // Смена сети оператора: пробуем восстановить медиа без разрыва звонка (best effort, 02-архитектура 8.1).
+        this.iceTimer = setTimeout(() => {
+          this.iceTimer = null;
+          if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') return;
+          try {
+            this.session?.renegotiate({ rtcOfferConstraints: { iceRestart: true } });
+          } catch {
+            /* повторная попытка — при следующем изменении состояния */
+          }
+        }, 3000);
+      }
+    });
+  }
+
+  private startMonitoring(session: RTCSession) {
+    this.stopMonitoring();
+    this.stats = setInterval(() => void this.sample(session), 2000);
+  }
+
+  private stopMonitoring() {
+    if (this.stats) clearInterval(this.stats);
+    this.stats = null;
+    this.lastLoss = null;
+    if (this.iceTimer) clearTimeout(this.iceTimer);
+    this.iceTimer = null;
+  }
+
+  private async sample(session: RTCSession) {
+    const pc = session.connection;
+    if (!pc || this.session !== session) return;
+    let rtt: number | null = null;
+    let jitter: number | null = null;
+    let lost = 0;
+    let recv = 0;
+    (await pc.getStats()).forEach((r: Record<string, unknown>) => {
+      if (
+        r.type === 'candidate-pair' &&
+        r.state === 'succeeded' &&
+        typeof r.currentRoundTripTime === 'number'
+      )
+        rtt = r.currentRoundTripTime * 1000;
+      if (r.type === 'inbound-rtp' && r.kind === 'audio') {
+        jitter = typeof r.jitter === 'number' ? r.jitter * 1000 : null;
+        lost = Number(r.packetsLost ?? 0);
+        recv = Number(r.packetsReceived ?? 0);
+      }
+    });
+    const prev = this.lastLoss;
+    this.lastLoss = { lost, recv };
+    const dLost = prev ? lost - prev.lost : 0;
+    const dRecv = prev ? recv - prev.recv : 0;
+    const lossPct = prev && dLost + dRecv > 0 ? (100 * Math.max(0, dLost)) / (dLost + dRecv) : null;
+    const q = { rttMs: rtt, jitterMs: jitter, lossPct };
+    this.setCall({ quality: { ...q, level: qualityLevel(q) } });
+  }
+
+  /** Сменилось устройство (выбор оператора или горячее подключение/отключение гарнитуры). */
+  private async devicesChanged() {
+    const eff = audioDevices.getSnapshot().effective;
+    const pc = this.session?.connection;
+    if (this.audio && this.speakerId !== null && eff.speaker && eff.speaker.id !== this.speakerId) {
+      this.speakerId = eff.speaker.id;
+      await applySink(this.audio, eff.speaker.id);
+    }
+    if (this.ringer && !this.ringer.paused) await applySink(this.ringer, audioDevices.sinkId('ringer'));
+    if (!pc || this.state.call?.state !== 'active' || !eff.mic || eff.mic.id === this.micId) return;
+    // Горячая замена микрофона без разрыва звонка: новый трек в тот же отправитель (replaceTrack).
+    const sender = pc.getSenders().find((x) => x.track?.kind === 'audio');
+    if (!sender) return;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: audioDevices.micConstraints() });
+      const track = stream.getAudioTracks()[0]!;
+      track.enabled = !this.state.call?.muted;
+      const old = sender.track;
+      await sender.replaceTrack(track);
+      old?.stop();
+      this.micId = eff.mic.id;
+    } catch {
+      /* устройство недоступно — остаётся прежний трек */
+    }
+  }
+
+  /** Возврат во вкладку (Chrome мог «заморозить» фоновую): проверяем регистрацию и восстанавливаем. */
+  private hookVisibility() {
+    if (this.visibilityHooked || typeof document === 'undefined') return;
+    this.visibilityHooked = true;
+    const check = () => {
+      if (document.visibilityState !== 'visible' || !this.ua) return;
+      if (this.ua.isConnected() && !this.ua.isRegistered()) this.ua.register();
+    };
+    document.addEventListener('visibilitychange', check);
+    document.addEventListener('resume', check);
+  }
+
+  // ------------------------------------------------------------------ гарнитура (WebHID)
+
+  /** Подключить гарнитуру с кнопками: request=true — по действию пользователя (выбор устройства). */
+  async attachHeadset(request: boolean): Promise<boolean> {
+    const h = await connectHeadset((a) => this.headsetAction(a), request).catch(() => null);
+    if (!h) return false;
+    await this.headset?.close();
+    this.headset = h;
+    onHeadsetDisconnect(() => {
+      this.headset = null;
+      this.set({ headset: null });
+    });
+    this.set({ headset: h.name });
+    return true;
+  }
+
+  private headsetAction(a: HeadsetAction) {
+    const c = this.state.call;
+    if (a === 'answer' && c?.state === 'ringing' && c.direction === 'incoming') void this.answer();
+    else if (a === 'hangup' && c && c.state !== 'ended') {
+      if (c.state === 'ringing' && c.direction === 'incoming') this.decline();
+      else this.hangup();
+    } else if (a === 'mute' && c?.state === 'active') this.toggleMute();
+  }
+
+  private syncHeadset() {
+    const c = this.state.call;
+    this.headset?.setState({
+      ring: c?.state === 'ringing' && c.direction === 'incoming',
+      offHook: !!c && (c.state === 'active' || c.state === 'connecting'),
+      mute: !!c?.muted,
+    });
   }
 
   private async iceServers(): Promise<RTCIceServer[]> {
@@ -262,7 +439,7 @@ class Softphone {
     this.stopRinging();
     this.setCall({ state: 'connecting' });
     s.answer({
-      mediaConstraints: { audio: AUDIO_CONSTRAINTS, video: false },
+      mediaConstraints: { audio: audioDevices.micConstraints(), video: false },
       pcConfig: { iceServers: await this.iceServers() },
     });
   }
@@ -275,12 +452,13 @@ class Softphone {
     this.session?.terminate();
   }
 
+  /** Микрофон — через текущий трек отправителя: после горячей замены устройства трек уже другой. */
   toggleMute(): void {
-    const s = this.session;
-    if (!s) return;
-    if (this.state.call?.muted) s.unmute({ audio: true });
-    else s.mute({ audio: true });
-    this.setCall({ muted: !this.state.call?.muted });
+    const pc = this.session?.connection;
+    if (!pc) return;
+    const muted = !this.state.call?.muted;
+    for (const sender of pc.getSenders()) if (sender.track?.kind === 'audio') sender.track.enabled = !muted;
+    this.setCall({ muted });
   }
 
   dtmf(tone: string): void {
@@ -294,7 +472,7 @@ class Softphone {
     if (!target) return;
     this.pendingConversation = conversationId ?? null;
     this.ua.call(`sip:${target}@${this.cfg.domain}`, {
-      mediaConstraints: { audio: AUDIO_CONSTRAINTS, video: false },
+      mediaConstraints: { audio: audioDevices.micConstraints(), video: false },
       pcConfig: { iceServers: await this.iceServers() },
       extraHeaders: conversationId ? [`X-CC-Conversation: ${conversationId}`] : [],
     });

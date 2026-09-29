@@ -1,3 +1,6 @@
+import { writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { type Browser, expect, type Page, test } from '@playwright/test';
 import { ADMIN, DEMO_PASSWORD, login, nav } from './helpers';
 
@@ -5,8 +8,37 @@ import { ADMIN, DEMO_PASSWORD, login, nav } from './helpers';
  * Ф5: телефония. Браузеры с фейковым микрофоном (Chromium --use-fake-device-for-media-stream):
  * демо-абонент звонит в КЦ по WebRTC → Kamailio → Asterisk → call-control → router → софтфон оператора.
  */
+/** Тон 440 Гц для фейкового микрофона: без файла Chromium в безголовом режиме отдаёт тишину. */
+function toneFile(): string {
+  const rate = 16000;
+  const pcm = Buffer.alloc(rate * 2 * 2);
+  for (let i = 0; i < rate * 2; i++) pcm.writeInt16LE(Math.round(Math.sin((2 * Math.PI * 440 * i) / rate) * 8000), i * 2);
+  const h = Buffer.alloc(44);
+  h.write('RIFF', 0);
+  h.writeUInt32LE(36 + pcm.length, 4);
+  h.write('WAVEfmt ', 8);
+  h.writeUInt32LE(16, 16);
+  h.writeUInt16LE(1, 20);
+  h.writeUInt16LE(1, 22);
+  h.writeUInt32LE(rate, 24);
+  h.writeUInt32LE(rate * 2, 28);
+  h.writeUInt16LE(2, 32);
+  h.writeUInt16LE(16, 34);
+  h.write('data', 36);
+  h.writeUInt32LE(pcm.length, 40);
+  const file = join(tmpdir(), 'cc-e2e-tone.wav');
+  writeFileSync(file, Buffer.concat([h, pcm]));
+  return file;
+}
+
 test.use({
-  launchOptions: { args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'] },
+  launchOptions: {
+    args: [
+      '--use-fake-ui-for-media-stream',
+      '--use-fake-device-for-media-stream',
+      `--use-file-for-fake-audio-capture=${toneFile()}`,
+    ],
+  },
   permissions: ['microphone'],
 });
 
@@ -141,6 +173,58 @@ test.describe.serial('Ф5: телефония', () => {
     await client.getByTestId('demo-hangup').click();
     await expect(call).toHaveCount(0, { timeout: 15_000 });
     await expect(listen).toHaveCount(0, { timeout: 15_000 });
+    await op.getByTestId('agent-status').getByText('Офлайн').click();
+  });
+
+  test('5b: устройства и тест микрофона, выбор сохраняется; качество связи; замена микрофона во время звонка; горячие клавиши', async ({
+    browser,
+  }) => {
+    const op = await operator(browser, 'operator2@demo.local');
+    await op.getByTestId('audio-settings').click();
+    const dlg = op.getByRole('dialog', { name: 'Настройки звука и гарнитуры' });
+    // Фейковое устройство Chromium издаёт звук — индикатор уровня микрофона движется.
+    await expect(async () => {
+      expect(Number(await dlg.getByTestId('mic-level').getAttribute('data-level'))).toBeGreaterThan(5);
+    }).toPass({ timeout: 10_000 });
+    await dlg.getByTestId('device-mic').click();
+    await op.getByRole('option', { name: 'Fake Audio Input 1' }).click();
+    await expect(dlg.getByTestId('device-mic')).toHaveValue('Fake Audio Input 1');
+    await expect(dlg.getByTestId('device-speaker')).toBeVisible();
+    await dlg.getByTestId('test-speaker').click();
+    await op.keyboard.press('Escape');
+
+    // Выбор сохраняется после перезагрузки страницы.
+    await op.reload();
+    await expect(op.getByTestId('softphone-status')).toHaveText('Телефон готов', { timeout: 20_000 });
+    await op.getByTestId('audio-settings').click();
+    await expect(op.getByTestId('device-mic')).toHaveValue('Fake Audio Input 1');
+    await op.keyboard.press('Escape');
+
+    await op.getByTestId('agent-status').getByText('Готов').click();
+    const client = await demoCall(browser, `+37529${stamp}4`, `Гарнитура ${stamp}`);
+    const call = op.getByTestId('softphone-call');
+    await expect(call).toHaveAttribute('data-state', 'ringing', { timeout: 20_000 });
+    await op.keyboard.press('Control+Alt+KeyA'); // ответ горячей клавишей
+    await expect(call).toHaveAttribute('data-state', 'active', { timeout: 15_000 });
+    await expect(call.getByTestId('call-quality')).toHaveText('Связь: хорошая', { timeout: 10_000 });
+
+    // «Разрядилась гарнитура»: выбранный микрофон пропал из системы — звонок продолжается на другом устройстве.
+    await op.evaluate(() => {
+      const md = navigator.mediaDevices;
+      const orig = md.enumerateDevices.bind(md);
+      md.enumerateDevices = async () => (await orig()).filter((d) => d.label !== 'Fake Audio Input 1');
+      md.dispatchEvent(new Event('devicechange'));
+    });
+    await expect(op.getByText(/Микрофон «Fake Audio Input 1» отключён — переключено на/)).toBeVisible();
+    await op.waitForTimeout(2000);
+    await expect(call).toHaveAttribute('data-state', 'active');
+    await expect(client.getByTestId('demo-state')).toHaveText('Идёт разговор');
+
+    await op.keyboard.press('Control+Alt+KeyM');
+    await expect(call.getByTestId('call-mute')).toHaveText('Микрофон выкл.');
+    await op.keyboard.press('Control+Alt+KeyH');
+    await expect(call).toHaveCount(0, { timeout: 15_000 });
+    await expect(client.getByTestId('demo-info')).toContainText('Звонок завершён', { timeout: 15_000 });
     await op.getByTestId('agent-status').getByText('Офлайн').click();
   });
 });

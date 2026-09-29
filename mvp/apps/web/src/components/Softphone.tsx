@@ -15,6 +15,8 @@ import {
 } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { useEffect, useState } from 'react';
+import { audioDevices, type DeviceNotice } from '../lib/audio-devices';
+import { AudioSettings } from './AudioSettings';
 import { errorText, post } from '../lib/api';
 import { options, type Row, useList } from '../lib/data';
 import { softphone, useSoftphone } from '../lib/softphone';
@@ -24,6 +26,12 @@ const REG = {
   connecting: { color: 'yellow', label: 'Телефон: подключение…' },
   registered: { color: 'green', label: 'Телефон готов' },
   error: { color: 'red', label: 'Телефон: ошибка' },
+} as const;
+
+const QUALITY = {
+  good: { color: 'green', label: 'хорошая' },
+  fair: { color: 'yellow', label: 'удовлетворительная' },
+  poor: { color: 'red', label: 'плохая' },
 } as const;
 
 const fmt = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
@@ -41,12 +49,57 @@ async function command(callId: string | null, op: string, body?: unknown) {
 }
 
 /** Индикатор регистрации и набор номера — в шапке. */
+const KIND_LABEL = { mic: 'Микрофон', speaker: 'Динамик', ringer: 'Устройство звонка' } as const;
+
+function noticeText(n: DeviceNotice): string {
+  if (n.type === 'returned') return `${KIND_LABEL[n.kind]}: снова используется «${n.device.label}»`;
+  return `${KIND_LABEL[n.kind]} «${n.lost.label}» отключён — переключено на «${n.now?.label ?? 'нет устройства'}»`;
+}
+
+/** Горячие клавиши (M-OP-07 — если у гарнитуры нет кнопок): Ctrl+Alt+A / H / M. */
+function useHotkeys() {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!e.ctrlKey || !e.altKey) return;
+      const c = softphone.getSnapshot().call;
+      const k = e.code;
+      if (k === 'KeyA' && c?.state === 'ringing' && c.direction === 'incoming') void softphone.answer();
+      else if (k === 'KeyH' && c) {
+        if (c.state === 'ringing' && c.direction === 'incoming') softphone.decline();
+        else softphone.hangup();
+      } else if (k === 'KeyM' && c?.state === 'active') softphone.toggleMute();
+      else return;
+      e.preventDefault();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+}
+
 export function SoftphoneStatus() {
   const s = useSoftphone();
   const [number, setNumber] = useState('');
+  const [settings, setSettings] = useState(false);
   const r = REG[s.reg];
+  useHotkeys();
+  // Горячее подключение/отключение гарнитуры — уведомление (разговор продолжается на другом устройстве).
+  useEffect(
+    () =>
+      audioDevices.onNotice((n) =>
+        notifications.show({
+          color: n.type === 'fallback' ? 'yellow' : 'blue',
+          message: noticeText(n),
+          autoClose: 8000,
+        }),
+      ),
+    [],
+  );
   return (
     <Group gap="xs">
+      <Button size="xs" variant="subtle" onClick={() => setSettings(true)} data-testid="audio-settings">
+        Звук{s.headset ? ' · гарнитура' : ''}
+      </Button>
+      {settings && <AudioSettings onClose={() => setSettings(false)} />}
       <Tooltip label={s.error ?? r.label} disabled={!s.error}>
         <Badge color={r.color} variant="dot" data-testid="softphone-status">
           {r.label}
@@ -197,6 +250,22 @@ export function SoftphoneCall() {
                     : `разговор ${call.startedAt ? fmt(Math.floor((now - call.startedAt) / 1000)) : ''}`}
           </Badge>
         </Group>
+        {talking && (call.reconnecting || call.quality) && (
+          <Badge
+            variant="light"
+            color={call.reconnecting ? 'orange' : QUALITY[call.quality!.level].color}
+            data-testid="call-quality"
+            title={
+              call.quality
+                ? `Задержка ${Math.round(call.quality.rttMs ?? 0)} мс, джиттер ${Math.round(call.quality.jitterMs ?? 0)} мс, потери ${(call.quality.lossPct ?? 0).toFixed(1)} %`
+                : ''
+            }
+          >
+            {call.reconnecting
+              ? 'Связь прервалась — восстанавливаем…'
+              : `Связь: ${QUALITY[call.quality!.level].label}`}
+          </Badge>
+        )}
         <Text size="sm" data-testid="softphone-remote">
           {call.remoteName || call.remote}
           {call.remoteName && call.remote && call.remoteName !== call.remote ? ` · ${call.remote}` : ''}
