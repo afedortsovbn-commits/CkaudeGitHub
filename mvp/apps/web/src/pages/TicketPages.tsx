@@ -94,10 +94,10 @@ export function Deadline({ t }: { t: Row }) {
   );
 }
 
-export function StatusBadge({ status }: { status: string }) {
+export function StatusBadge({ status, testId = 'ticket-status' }: { status: string; testId?: string }) {
   const s = TICKET_STATUS[status] ?? { label: status, color: 'gray' };
   return (
-    <Badge color={s.color} variant="light" data-testid="ticket-status">
+    <Badge color={s.color} variant="light" data-testid={testId}>
       {s.label}
     </Badge>
   );
@@ -358,7 +358,7 @@ function TicketCard({ t, selected, onOpen }: { t: Row; selected?: boolean; onOpe
             </Badge>
           ) : null}
         </Group>
-        <StatusBadge status={String(t.status)} />
+        <StatusBadge status={String(t.status)} testId="ticket-item-status" />
       </Group>
       <Text size="xs" lineClamp={1}>
         {String(t.topicName)} · {String(t.enterpriseName)} / {String(t.departmentName)}
@@ -519,7 +519,7 @@ export function CabinetPage() {
           <Paper withBorder p="md" data-testid="ticket-preview">
             <Group justify="space-between" mb="xs">
               <Title order={4}>Тикет №{String(preview.data.number)}</Title>
-              <StatusBadge status={String(preview.data.status)} />
+              <StatusBadge status={String(preview.data.status)} testId="ticket-preview-status" />
             </Group>
             <TicketFacts t={preview.data} />
             <Divider my="xs" />
