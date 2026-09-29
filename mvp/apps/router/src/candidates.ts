@@ -5,9 +5,12 @@ import { rows } from './db';
 /**
  * Ёмкость голоса — один вызов (02-архитектура, Ф3 «голос 1, чаты N»): оператор занят, пока у него идёт или
  * звонит вызов, либо ему уже предложено голосовое обращение. Чаты голос не блокируют и наоборот.
+ * Предложенная задача «перезвонить» из IVR (Ф6, без живого вызова) голос не занимает — иначе оператор, не
+ * успевший её принять, не получал бы входящие звонки.
  */
 export const VOICE_BUSY = `(EXISTS (SELECT 1 FROM call cl WHERE cl.agent_user_id = user_id AND cl.state IN ('dialing', 'talking'))
-  OR EXISTS (SELECT 1 FROM conversation cv WHERE cv.assignee_id = user_id AND cv.status = 'offered' AND cv.channel_kind = 'voice'))`;
+  OR EXISTS (SELECT 1 FROM conversation cv WHERE cv.assignee_id = user_id AND cv.status = 'offered' AND cv.channel_kind = 'voice'
+               AND NOT cv.callback_requested))`;
 
 /**
  * Операторы, которым можно предложить обращение этой очереди (M-RT-02/03):

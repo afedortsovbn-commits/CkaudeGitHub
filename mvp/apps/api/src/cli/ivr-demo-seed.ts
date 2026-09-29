@@ -59,7 +59,7 @@ export async function seedIvrDemo(
   // Очередь задач «перезвонить» (M-TEL-08) — те же операторы, что и в основной очереди.
   const cbQueue = newId();
   await tx.query(
-    `INSERT INTO queue (id, name, channels, priority) VALUES ($1, 'Перезвонить', '{voice}', 5)`,
+    `INSERT INTO queue (id, name, channels, priority) VALUES ($1, 'Перезвонить', '{voice}', 0)`,
     [cbQueue],
   );
   await tx.query(

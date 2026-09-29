@@ -28,6 +28,7 @@ import { errorText, get, openAttachment, patch, post, recordingUrl, upload } fro
 import { useAuth } from '../lib/auth';
 import { type Row, options, useAction, useList } from '../lib/data';
 import { notify, onRealtime, useRealtime } from '../lib/realtime';
+import { ExternalDataPanel } from './IvrAdminPages';
 import { softphone, useSoftphone } from '../lib/softphone';
 
 const CHANNEL: Record<string, string> = {
@@ -38,6 +39,8 @@ const CHANNEL: Record<string, string> = {
   voice: 'Звонок',
 };
 const STATUS: Record<string, string> = {
+  bot: 'В IVR',
+  offered: 'Предложено',
   queued: 'В очереди',
   active: 'В работе',
   closed: 'Закрыто',
@@ -130,7 +133,10 @@ function List({
 }) {
   const { me } = useAuth();
   const [important, setImportant] = useState(false);
-  const list = useList(`/conversations?tab=${tab}${important ? '&important=true' : ''}`);
+  const [callback, setCallback] = useState(false);
+  const list = useList(
+    `/conversations?tab=${tab}${important ? '&important=true' : ''}${callback ? '&callback=true' : ''}`,
+  );
   const take = useAction((id: string) => post(`/conversations/${id}/take`), 'Диалог взят в работу');
   const accept = useAction((id: string) => post(`/conversations/${id}/accept`), 'Обращение принято');
   const decline = useAction((id: string) => post(`/conversations/${id}/decline`), 'Обращение отклонено');
@@ -141,6 +147,13 @@ function List({
         label="Только особо важные"
         checked={important}
         onChange={(e) => setImportant(e.currentTarget.checked)}
+      />
+      <Checkbox
+        size="xs"
+        label="Только «перезвонить»"
+        checked={callback}
+        onChange={(e) => setCallback(e.currentTarget.checked)}
+        data-testid="filter-callback"
       />
       {(list.data ?? []).length === 0 && (
         <Text c="dimmed" size="sm">
@@ -183,6 +196,11 @@ function List({
             {c.isUrgent ? (
               <Badge size="xs" color="orange">
                 срочное
+              </Badge>
+            ) : null}
+            {c.callbackRequested ? (
+              <Badge size="xs" color="grape" data-testid="badge-callback">
+                перезвонить
               </Badge>
             ) : null}
             {c.topicName ? (
@@ -510,6 +528,7 @@ function ContactCard({ conv, onOpen }: { conv: Row; onOpen(id: string): void }) 
       <Button size="xs" variant="light" onClick={() => save.mutate(undefined)}>
         Сохранить клиента
       </Button>
+      <ExternalDataPanel contactId={String(conv.contactId)} conversationId={String(conv.id)} />
       <Title order={6} mt="sm">
         История обращений ({history.data?.length ?? 0})
       </Title>
@@ -739,6 +758,7 @@ function ConversationCard({ conv }: { conv: Row }) {
 }
 
 const CALL_STATE: Record<string, string> = {
+  ivr: 'в IVR',
   queued: 'ожидает оператора',
   dialing: 'вызов',
   talking: 'разговор',
@@ -760,7 +780,29 @@ const CALL_EVENT: Record<string, string> = {
   listen: 'прослушивание супервизором',
   dialing_out: 'исходящий вызов',
   ended: 'завершён',
+  ivr_start: 'IVR',
+  queue_left: 'ушёл из очереди по сценарию',
+  agent_done: 'оператор завершил, клиент в IVR',
+  csat: 'оценка',
+  voicemail: 'голосовое сообщение',
+  callback_requested: 'заказ перезвона',
+  transfer_failed: 'перевод не состоялся',
+  ivr_resumed: 'продолжен после переключения',
 };
+/** В кратком журнале стадий — без шагов IVR (они — отдельной строкой «Путь по IVR»). */
+const IVR_STEP = new Set(['ivr', 'ivr_dtmf', 'ivr_http']);
+
+/** Путь клиента по IVR: узлы с выходами, нажатые цифры, результат запросов во внешние системы. */
+function ivrPath(events: CallRow['events']): string {
+  const out: string[] = [];
+  for (const e of events) {
+    const d = e.data ?? {};
+    if (e.type === 'ivr' && !d.exit && d.name) out.push(String(d.name));
+    else if (e.type === 'ivr_dtmf') out.push(`[${String(d.digit)}]`);
+    else if (e.type === 'ivr_http') out.push(d.ok ? '(ответ получен)' : `(ошибка: ${String(d.error ?? '')})`);
+  }
+  return out.join(' → ');
+}
 
 interface CallRow {
   id: string;
@@ -773,8 +815,8 @@ interface CallRow {
   waitS: number;
   talkS: number;
   endReason: string | null;
-  recordings: { id: string; status: string; durationS: number | null }[];
-  events: { at: string; type: string; userName: string | null }[];
+  recordings: { id: string; kind?: string; status: string; durationS: number | null }[];
+  events: { at: string; type: string; userName: string | null; data?: Record<string, unknown> }[];
 }
 
 function Recording({ id }: { id: string }) {
@@ -828,8 +870,26 @@ function CallsPanel({ conv }: { conv: Row }) {
             {c.agentName ? ` · ${c.agentName}` : ''}
           </Text>
           <Text size="xs" c="dimmed">
-            {c.events.map((e) => `${time(e.at)} ${CALL_EVENT[e.type] ?? e.type}`).join(' → ')}
+            {c.events
+              .filter((e) => !IVR_STEP.has(e.type))
+              .map(
+                (e) =>
+                  `${time(e.at)} ${CALL_EVENT[e.type] ?? e.type}${e.type === 'csat' ? ` ${String(e.data?.score)} из 5` : ''}`,
+              )
+              .join(' → ')}
           </Text>
+          {c.events.some((e) => e.type === 'ivr') && (
+            <Text size="xs" data-testid="call-ivr-path">
+              Путь по IVR: {ivrPath(c.events)}
+            </Text>
+          )}
+          {c.events
+            .filter((e) => e.type === 'csat')
+            .map((e) => (
+              <Badge key={e.at} color="yellow" variant="light" data-testid="call-csat">
+                Оценка клиента: {String(e.data?.score)} из 5
+              </Badge>
+            ))}
           {c.state === 'talking' && can('supervisor.monitor') && (
             <Button
               size="xs"
@@ -843,7 +903,14 @@ function CallsPanel({ conv }: { conv: Row }) {
           )}
           {c.recordings.map((r) =>
             r.status === 'uploaded' ? (
-              <Recording key={r.id} id={r.id} />
+              <Box key={r.id}>
+                {r.kind === 'voicemail' && (
+                  <Text size="xs" fw={600}>
+                    Голосовое сообщение клиента
+                  </Text>
+                )}
+                <Recording id={r.id} />
+              </Box>
             ) : (
               <Text key={r.id} size="xs" c="dimmed">
                 Запись: {r.status === 'failed' ? 'не сохранилась' : 'обрабатывается…'}
@@ -903,7 +970,8 @@ export function WorkspacePage() {
           if (e.data.assigneeId === me?.id) notify('Новое сообщение', String(m.body ?? '').slice(0, 100));
           if (id === selected) setTypingContact(null);
         }
-        if (e.event === 'conversation.created')
+        // Звонок в IVR (статус «bot») ещё не в очереди — уведомим, когда сценарий поставит его в очередь.
+        if (e.event === 'conversation.created' && e.data.status !== 'bot')
           notify('Новое обращение в очереди', 'Откройте вкладку «Очередь»');
         if (e.event === 'conversation.updated' && e.data.action === 'offered' && e.data.assigneeId === me?.id)
           notify('Вам предложено обращение', 'Примите или отклоните во вкладке «Мои»');

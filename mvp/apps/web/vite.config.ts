@@ -1,8 +1,15 @@
 import react from '@vitejs/plugin-react';
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vite';
 
 export default defineConfig({
   plugins: [react()],
+  // flow-engine — общий с сервером исполнитель сценариев (тестовый прогон в редакторе); берём исходники TS.
+  resolve: {
+    alias: {
+      '@cc/flow-engine': fileURLToPath(new URL('../../packages/flow-engine/src/index.ts', import.meta.url)),
+    },
+  },
   define: { __APP_VERSION__: JSON.stringify(process.env.APP_VERSION ?? 'dev') },
   server: {
     port: 5173,

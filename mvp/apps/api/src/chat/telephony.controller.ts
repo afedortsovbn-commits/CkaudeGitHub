@@ -158,7 +158,7 @@ export class TelephonyController {
               EXTRACT(EPOCH FROM (COALESCE(c.connected_at, c.ended_at, now()) - c.started_at))::int AS wait_s,
               CASE WHEN c.connected_at IS NULL THEN 0
                    ELSE EXTRACT(EPOCH FROM (COALESCE(c.ended_at, now()) - c.connected_at))::int END AS talk_s,
-              COALESCE((SELECT json_agg(json_build_object('id', r.id, 'status', r.status, 'durationS', r.duration_s,
+              COALESCE((SELECT json_agg(json_build_object('id', r.id, 'kind', r.kind, 'status', r.status, 'durationS', r.duration_s,
                           'sizeBytes', r.size_bytes) ORDER BY r.created_at)
                           FROM call_recording r WHERE r.call_id = c.id), '[]') AS recordings,
               COALESCE((SELECT json_agg(json_build_object('at', e.at, 'type', e.type, 'userName', eu.full_name,
