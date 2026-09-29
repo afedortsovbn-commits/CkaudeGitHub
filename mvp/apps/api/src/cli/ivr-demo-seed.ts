@@ -153,7 +153,7 @@ export async function seedIvrDemo(
     n(
       'bonus',
       'menu',
-      -320,
+      -448,
       640,
       {
         audio: [a.bonus],
@@ -168,7 +168,7 @@ export async function seedIvrDemo(
     n(
       'balance',
       'http',
-      -520,
+      -728,
       820,
       { operationId: opBalance, input: { phone: '{{caller}}' } },
       'Запрос баланса',
@@ -176,7 +176,7 @@ export async function seedIvrDemo(
     n(
       'say',
       'sayNumber',
-      -620,
+      -868,
       990,
       {
         variable: 'balance',
@@ -186,11 +186,11 @@ export async function seedIvrDemo(
       },
       'Озвучить баланс',
     ),
-    n('sorry', 'play', -360, 990, { audio: [a.sorry] }, 'Сервис недоступен'),
+    n('sorry', 'play', -504, 990, { audio: [a.sorry] }, 'Сервис недоступен'),
     n(
       'cards',
       'menu',
-      40,
+      56,
       640,
       {
         audio: [a.cards],
@@ -205,7 +205,7 @@ export async function seedIvrDemo(
     n(
       'cardblock',
       'menu',
-      40,
+      56,
       820,
       {
         audio: [a.cardblock],
@@ -220,7 +220,7 @@ export async function seedIvrDemo(
     n(
       'queue',
       'queue',
-      420,
+      588,
       820,
       {
         queueId: mainQueue,
@@ -235,7 +235,7 @@ export async function seedIvrDemo(
     n(
       'csat',
       'csat',
-      420,
+      588,
       1000,
       { audio: [a.rate], timeoutSec: 7, retries: 1, thanksAudio: [a.ratethanks] },
       'Оценка',
@@ -243,14 +243,14 @@ export async function seedIvrDemo(
     n(
       'vm',
       'voicemail',
-      760,
+      1064,
       1000,
       { mode: 'voicemail', audio: [a.vm], maxSec: 60, queueId: cbQueue },
       'Голосовое сообщение',
     ),
-    n('vmthanks', 'play', 760, 1150, { audio: [a.vmthanks] }, 'Сообщение принято'),
-    n('closed', 'play', 760, 230, { audio: [a.closed] }, 'Нерабочее время'),
-    n('bye', 'hangup', 420, 1300, { audio: [a.bye] }, 'До свидания'),
+    n('vmthanks', 'play', 1064, 1150, { audio: [a.vmthanks] }, 'Сообщение принято'),
+    n('closed', 'play', 1064, 230, { audio: [a.closed] }, 'Нерабочее время'),
+    n('bye', 'hangup', 588, 1300, { audio: [a.bye] }, 'До свидания'),
   ];
   const e = (source: string, exit: string, target: string): FlowEdge => ({
     id: `${source}-${exit}`,
