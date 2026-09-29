@@ -418,7 +418,7 @@ function Messages({ conv, typing, onTyping }: { conv: Row; typing: boolean; onTy
           Возьмите обращение, чтобы ответить клиенту (заметку можно оставить всегда).
         </Text>
       ) : null}
-      {!note && canWrite && (
+      {!note && canWrite && conv.channelKind !== 'voice' && (
         <AssistPanel
           conv={conv}
           lastInSeq={lastInSeq}

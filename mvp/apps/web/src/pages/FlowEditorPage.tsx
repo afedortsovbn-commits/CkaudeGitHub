@@ -537,7 +537,7 @@ function NodeParams({
           />
         </>
       )}
-      {t === 'http' && <HttpParamsEditor p={p} refs={refs} set={set} />}
+      {t === 'http' && <HttpParamsEditor p={p} refs={refs} set={set} kind={kind} />}
       {t === 'sayNumber' && (
         <>
           <TextInput
@@ -756,11 +756,15 @@ function HttpParamsEditor({
   p,
   refs,
   set,
+  kind,
 }: {
   p: Record<string, unknown>;
   refs: Refs;
   set(k: string, v: unknown): void;
+  kind: FlowKind;
 }) {
+  // Номер клиента: в IVR — АОН ({{caller}}), в боте — телефон из карточки или собранный ботом ({{phone}}).
+  const phoneVar = kind === 'text' ? '{{phone}}' : '{{caller}}';
   const op = refs.operations.find((o) => o.id === p.operationId);
   const inputs = (op?.inputs as { name: string; label: string }[]) ?? [];
   const outputs = (op?.outputs as { name: string; label: string }[]) ?? [];
@@ -776,7 +780,7 @@ function HttpParamsEditor({
           const defaults = Object.fromEntries(
             ((next?.inputs as { name: string }[]) ?? []).map((i) => [
               i.name,
-              i.name === 'phone' ? '{{caller}}' : '',
+              i.name === 'phone' ? phoneVar : '',
             ]),
           );
           set('operationId', v ?? '');
@@ -788,7 +792,11 @@ function HttpParamsEditor({
         <TextInput
           key={i.name}
           label={`${i.label || i.name} (${i.name})`}
-          description="Шаблон: {{caller}} — номер звонящего, {{переменная}}"
+          description={
+            kind === 'text'
+              ? 'Шаблон: {{phone}} — телефон клиента, {{переменная}} — например, ответ «Сбора поля»'
+              : 'Шаблон: {{caller}} — номер звонящего, {{переменная}}'
+          }
           value={input[i.name] ?? ''}
           onChange={(e) => set('input', { ...input, [i.name]: e.currentTarget.value })}
         />
