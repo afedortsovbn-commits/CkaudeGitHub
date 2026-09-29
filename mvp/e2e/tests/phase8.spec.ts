@@ -89,12 +89,15 @@ test.describe.serial('Ф8: вторая линия', () => {
     await expect(form.getByTestId('esc-responsible').locator('..')).toContainText('Васильев Андрей');
     await expect(form.getByTestId('esc-curators').locator('..')).toContainText('Козлов Дмитрий');
     const due = await form.getByTestId('esc-due').inputValue();
-    const expected = new Date(Date.now() + 10 * 86_400_000).toLocaleDateString('en-CA', { timeZone: 'Europe/Minsk' });
+    const expected = new Date(Date.now() + 10 * 86_400_000).toLocaleDateString('en-CA', {
+      timeZone: 'Europe/Minsk',
+    });
     expect(due).toBe(expected);
     // Оператор меняет ответственного на другого.
     await form.getByTestId('esc-responsible').click();
     await form.getByTestId('esc-responsible').press('Backspace');
     await op.getByRole('option', { name: 'Новиков Игорь (ответственный)' }).click();
+    await op.keyboard.press('Escape');
     await form.getByTestId('esc-summary').click();
     await form.getByTestId('esc-summary').fill('Клиент жалуется на грубость оператора АЗС №12');
     await form.getByTestId('esc-submit').click();
@@ -103,7 +106,9 @@ test.describe.serial('Ф8: вторая линия', () => {
     await expect(badge).toBeVisible();
     const number = /№(\d+)/.exec((await badge.textContent()) ?? '')![1]!;
     // Клиенту — автосообщение о передаче; обращение ушло из «Моих».
-    await expect(client.w.getByTestId('cc-msg-out').filter({ hasText: 'передано специалисту' })).toBeVisible();
+    await expect(
+      client.w.getByTestId('cc-msg-out').filter({ hasText: 'передано специалисту' }),
+    ).toBeVisible();
     await expect(op.getByTestId('conv-item').filter({ hasText: CLIENT })).toHaveCount(0);
 
     // Назначенным — письмо «Важно!» с высоким приоритетом.
@@ -136,6 +141,7 @@ test.describe.serial('Ф8: вторая линия', () => {
     await select(r3, 'redirect-department', 'Служба эксплуатации АЗС', rf);
     await rf.getByTestId('redirect-responsible').click();
     await r3.getByRole('option', { name: 'Васильев Андрей (ответственный)' }).click();
+    await r3.keyboard.press('Escape');
     await rf.getByTestId('redirect-comment').click();
     await rf.getByTestId('redirect-comment').fill('Вопрос к службе эксплуатации АЗС');
     await rf.getByTestId('redirect-submit').click();
@@ -156,7 +162,10 @@ test.describe.serial('Ф8: вторая линия', () => {
     // Оператор во вкладке «На согласовании» возвращает на доработку.
     await op.goto('/workspace');
     await op.getByTestId('tabs-2nd-line').getByText('На согласовании').click();
-    await op.getByTestId('ticket-item').filter({ hasText: `№${number}` }).click();
+    await op
+      .getByTestId('ticket-item')
+      .filter({ hasText: `№${number}` })
+      .click();
     await expect(op.getByTestId('ticket-title')).toHaveText(`Тикет №${number}`);
     await op.getByRole('tab', { name: 'Комментарии и документы' }).click();
     await expect(op.getByTestId('ticket-comments')).toContainText('письмо.pdf');
@@ -195,7 +204,9 @@ test.describe.serial('Ф8: вторая линия', () => {
     await client.ctx.close();
   });
 
-  test('колокольчик: уведомление о новом тикете в реальном времени и переход в тикет', async ({ browser }) => {
+  test('колокольчик: уведомление о новом тикете в реальном времени и переход в тикет', async ({
+    browser,
+  }) => {
     const r1 = await as(browser, 'resp1@demo.local');
     await r1.getByTestId('bell').click();
     const list = r1.getByTestId('bell-list');

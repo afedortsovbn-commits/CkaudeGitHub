@@ -26,7 +26,7 @@ import {
 } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import { api, authBlobUrl, errorText, get, post, upload } from '../lib/api';
 import { useAuth } from '../lib/auth';
@@ -715,10 +715,15 @@ export function TicketPage() {
   const t = q.data;
   const can = (t?.can as Record<string, boolean> | undefined) ?? {};
   const open = useTicketAction(() => post(`/tickets/${id}/open`), 'Тикет взят в работу');
-  // Ответственный или куратор открыл «Новый» тикет — он переходит «В работе» (M-TKT-03).
+  // Ответственный или куратор открыл «Новый» (или возвращённый) тикет — он переходит «В работе» (M-TKT-03).
+  // Только при открытии страницы: фоновое обновление по событию (например, возврат на доработку, пока страница
+  // открыта) не должно само брать тикет в работу.
+  const autoOpened = useRef<string | null>(null);
   useEffect(() => {
-    if (can.open && !open.isPending) open.mutate(undefined);
-  }, [can.open, t?.version]);
+    if (!t || autoOpened.current === id) return;
+    autoOpened.current = id ?? null;
+    if (can.open) open.mutate(undefined);
+  }, [t, id, can.open, open]);
   const send = useTicketAction(
     () => post(`/tickets/${id}/comments`, { body: comment, attachmentIds: files.map((f) => f.id) }),
     'Комментарий добавлен',
