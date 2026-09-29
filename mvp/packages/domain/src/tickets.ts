@@ -130,6 +130,21 @@ async function emitTicket(
   notifyUserIds: string[],
   extra: Record<string, unknown> = {},
 ): Promise<void> {
+  // Измерения для отчётов по 2-й линии (Ф10): текущие назначенные, объект обращения, способ и время ответа.
+  const dims = await tx.query<{
+    responsible_ids: string[];
+    curator_ids: string[];
+    object_id: string | null;
+    channel_kind: string | null;
+  }>(
+    `SELECT COALESCE(array_agg(a.user_id ORDER BY a.added_at) FILTER (WHERE a.kind = 'responsible'), '{}') AS responsible_ids,
+            COALESCE(array_agg(a.user_id ORDER BY a.added_at) FILTER (WHERE a.kind = 'curator'), '{}') AS curator_ids,
+            (SELECT c.object_id FROM conversation c WHERE c.id = $2) AS object_id,
+            (SELECT c.channel_kind FROM conversation c WHERE c.id = $2) AS channel_kind
+       FROM ticket_assignee a WHERE a.ticket_id = $1 AND a.is_active`,
+    [t.id, t.conversation_id],
+  );
+  const d = dims.rows[0];
   const data: TicketEventData & Record<string, unknown> = {
     ticketId: t.id,
     number: Number(t.number),
@@ -142,6 +157,13 @@ async function emitTicket(
     isImportant: t.is_important,
     dueDate: t.due,
     createdBy: t.created_by,
+    objectId: d?.object_id ?? null,
+    channelKind: d?.channel_kind ?? null,
+    responsibleIds: d?.responsible_ids ?? [],
+    curatorIds: d?.curator_ids ?? [],
+    answerMethodId: t.answer_method_id ?? null,
+    answeredAt: t.answered_at ? new Date(t.answered_at).toISOString() : null,
+    returnsCount: t.returns_count,
     actorId,
     notifyUserIds: [...new Set(notifyUserIds)].filter((u) => u !== actorId),
     ...extra,
@@ -690,6 +712,7 @@ export async function approveTicket(
   await emitConversation(tx, CONVERSATION_EVENTS.updated, await loadRef(tx, t.conversation_id), {
     action: 'closed',
     disposition: 'Передать на 2-ю линию',
+    dispositionKind: 'escalate',
     ticketId: id,
   });
   const next = await reload(tx, id);

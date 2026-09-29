@@ -11,7 +11,17 @@ export function SettingsPage() {
   useEffect(() => {
     if (s.data) setV(s.data);
   }, [s.data]);
-  const save = useAction(() => patch('/settings', v));
+  // Только изменённые значения: в system_setting есть и служебные ключи (например, отметка дня рассылки),
+  // которые сервер не принимает на запись.
+  const save = useAction(() =>
+    patch(
+      '/settings',
+      Object.fromEntries(
+        Object.entries(v).filter(([k, x]) => JSON.stringify(x) !== JSON.stringify(s.data?.[k])),
+      ),
+    ),
+  );
+  const thresholds = (v['supervisor.thresholds'] ?? {}) as Record<string, number>;
   return (
     <Stack maw={520}>
       <Title order={3}>{t.nav.settings}</Title>
@@ -52,6 +62,44 @@ export function SettingsPage() {
         value={String(v['ticket.transfer_message'] ?? '')}
         onChange={(e) => setV({ ...v, 'ticket.transfer_message': e.currentTarget.value })}
       />
+      <Title order={5} mt="md">
+        Панель супервизора и отчёты
+      </Title>
+      {(
+        [
+          ['waitWarnS', 'Ожидание в очереди — внимание, с', 60],
+          ['waitCritS', 'Ожидание в очереди — критично, с', 180],
+          ['queueWarn', 'Ожидающих в очереди — внимание', 5],
+          ['queueCrit', 'Ожидающих в очереди — критично', 15],
+          ['breakWarnS', 'Подсвечивать перерыв оператора дольше, с', 900],
+          ['slTargetPct', 'Цель SL за сегодня, %', 80],
+        ] as const
+      ).map(([k, label, def]) => (
+        <NumberInput
+          key={k}
+          label={label}
+          min={1}
+          value={Number(thresholds[k] ?? def)}
+          onChange={(x) => setV({ ...v, 'supervisor.thresholds': { ...thresholds, [k]: Number(x) } })}
+          data-testid={`setting-${k}`}
+        />
+      ))}
+      {(
+        [
+          ['report.sl_voice_s', 'SL: ответ на звонок в пределах, с', 20],
+          ['report.sl_text_s', 'SL: ответ в текстовом канале в пределах, с', 60],
+          ['report.short_abandon_s', 'Короткий сброс (не считается пропущенным), с', 5],
+          ['report.first_response_s', 'Первый ответ в чате вовремя, с', 120],
+        ] as const
+      ).map(([k, label, def]) => (
+        <NumberInput
+          key={k}
+          label={label}
+          min={0}
+          value={Number(v[k] ?? def)}
+          onChange={(x) => setV({ ...v, [k]: Number(x) })}
+        />
+      ))}
       <Button onClick={() => save.mutate(undefined)} loading={save.isPending}>
         {t.save}
       </Button>

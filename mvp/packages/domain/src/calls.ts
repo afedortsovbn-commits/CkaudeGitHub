@@ -323,6 +323,7 @@ export async function agentLegFailed(
   });
   await emitConversation(tx, CONVERSATION_EVENTS.updated, await loadRef(tx, c.conversation_id), {
     action: outcome === 'declined' ? 'declined' : 'offer_timeout',
+    userId: c.agent_user_id,
   });
   await emitCallState(tx, callId);
 }
@@ -363,6 +364,7 @@ export async function endCall(tx: PoolClient, callId: string, reason: string): P
     await emitConversation(tx, CONVERSATION_EVENTS.updated, await loadRef(tx, c.conversation_id), {
       action: 'closed',
       disposition: 'IVR',
+      dispositionKind: 'self_service',
     });
   } else if (
     neverConnected &&
@@ -388,6 +390,7 @@ export async function endCall(tx: PoolClient, callId: string, reason: string): P
     await emitConversation(tx, CONVERSATION_EVENTS.updated, await loadRef(tx, c.conversation_id), {
       action: 'closed',
       disposition: 'Пропущенный звонок',
+      dispositionKind: 'abandoned',
     });
   } else {
     await appendMessage(tx, {
@@ -432,6 +435,24 @@ async function detachAgent(
   return rows[0]!;
 }
 
+/**
+ * Поля события перевода для отчётов (Ф10): прямой перевод на подразделение предприятия (M-TKT-11) — отдельная
+ * строка отчёта по 2-й линии, поэтому в событии — адресат (предприятие и подразделение), а не только очередь.
+ */
+export function directTransferData(
+  data: Record<string, unknown> | undefined,
+  fallback: 'queue' | 'external',
+): Record<string, unknown> {
+  if (!data?.direct) return { transferKind: fallback };
+  return {
+    transferKind: 'direct',
+    direct: true,
+    directEnterpriseId: data.enterpriseId ?? null,
+    directDepartmentId: data.departmentId ?? null,
+    directTarget: fallback,
+  };
+}
+
 /** Слепой перевод в очередь (M-OP-05, M-TKT-11): новая постановка в очередь, отсчёт ожидания заново. */
 export async function transferCallToQueue(
   tx: PoolClient,
@@ -455,6 +476,8 @@ export async function transferCallToQueue(
   });
   await emitConversation(tx, CONVERSATION_EVENTS.updated, await loadRef(tx, c.conversation_id), {
     action: 'transferred',
+    byUserId: o.byUserId,
+    ...directTransferData(o.data, 'queue'),
   });
   await emitCallState(tx, callId);
 }
@@ -499,6 +522,8 @@ export async function transferCallToUser(
   });
   await emitConversation(tx, CONVERSATION_EVENTS.updated, await loadRef(tx, c.conversation_id), {
     action: 'transferred',
+    transferKind: 'user',
+    byUserId: o.byUserId,
   });
   await emitCallState(tx, callId);
 }

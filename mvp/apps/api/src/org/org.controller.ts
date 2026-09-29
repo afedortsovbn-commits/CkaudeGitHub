@@ -1,5 +1,5 @@
 import { Body, Controller, Get, HttpCode, Inject, Param, Patch, Post, Put, Query } from '@nestjs/common';
-import { newId } from '@cc/contracts';
+import { newId, SupervisorThresholdsSchema } from '@cc/contracts';
 import Papa from 'papaparse';
 import { z } from 'zod';
 import { scopeFilter } from '@cc/auth';
@@ -60,6 +60,12 @@ const SETTINGS: Record<string, z.ZodTypeAny> = {
   'system.timezone': z.string().min(1),
   'operator.max_chats': z.number().int().min(1).max(20),
   'routing.escalation_boost': z.number().int().min(0).max(100000),
+  // Ф10: пороги панели супервизора и параметры отчётов.
+  'supervisor.thresholds': SupervisorThresholdsSchema,
+  'report.sl_voice_s': z.number().int().min(1).max(3600),
+  'report.sl_text_s': z.number().int().min(1).max(86400),
+  'report.short_abandon_s': z.number().int().min(0).max(600),
+  'report.first_response_s': z.number().int().min(1).max(86400),
 };
 
 const toCols = (data: Record<string, unknown>) => {

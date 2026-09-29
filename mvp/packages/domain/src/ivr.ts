@@ -220,6 +220,7 @@ export async function saveCsat(tx: PoolClient, callId: string, score: number): P
   await emitConversation(tx, CONVERSATION_EVENTS.updated, await loadRef(tx, c.conversation_id), {
     action: 'csat',
     score,
+    agentUserId: c.agent_user_id,
   });
   return true;
 }

@@ -322,7 +322,10 @@ export class ConversationsController {
           WHERE conversation_id = $1 AND user_id = $2 AND outcome IS NULL`,
         [id, p.id],
       );
-      await emitConversation(tx, CONVERSATION_EVENTS.updated, await loadRef(tx, id), { action: 'declined' });
+      await emitConversation(tx, CONVERSATION_EVENTS.updated, await loadRef(tx, id), {
+        action: 'declined',
+        userId: p.id,
+      });
     });
     return { ok: true };
   }
@@ -460,6 +463,8 @@ export class ConversationsController {
       }
       await emitConversation(tx, CONVERSATION_EVENTS.updated, await loadRef(tx, id), {
         action: 'transferred',
+        transferKind: b.toUserId ? 'user' : 'queue',
+        byUserId: p.id,
       });
     });
     return this.get(p, id);
@@ -523,6 +528,8 @@ export class ConversationsController {
       await emitConversation(tx, CONVERSATION_EVENTS.updated, await loadRef(tx, id), {
         action: 'closed',
         disposition: d.name,
+        dispositionId: dispositionId,
+        dispositionKind: d.behavior,
       });
       // Постобработка (M-RT-06) — только для своего обращения и только из «Готов»: иначе оператор на перерыве
       // (или супервизор, закрывший чужое) через wrap_up_s автоматически стал бы «Готов» и получал обращения.

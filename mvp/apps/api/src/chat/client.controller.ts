@@ -283,7 +283,11 @@ export class ClientChatController {
           body: `Клиент оценил обслуживание: ${b.score} из 5`,
           channelKind: channel.kind,
         });
-        await emitConversation(tx, CONVERSATION_EVENTS.updated, ref, { action: 'csat', score: b.score });
+        await emitConversation(tx, CONVERSATION_EVENTS.updated, ref, {
+          action: 'csat',
+          score: b.score,
+          agentUserId: c.assignee_id ?? c.closed_by,
+        });
       }
       return { ok: true, duplicate: !r.rowCount };
     });

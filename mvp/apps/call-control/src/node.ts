@@ -13,6 +13,7 @@ import {
   agentLegFailed,
   callEvent,
   connectAgent,
+  directTransferData,
   emitCallState,
   emitConversation,
   endCall,
@@ -837,6 +838,8 @@ export class MediaNode {
       });
       await emitConversation(tx, CONVERSATION_EVENTS.updated, await loadRef(tx, c.conversation_id), {
         action: 'transferred',
+        byUserId: cmd.userId,
+        ...directTransferData(data, 'external'),
       });
     });
     await detach();

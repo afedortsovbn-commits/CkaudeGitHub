@@ -29,6 +29,8 @@ interface ConvRow {
   department_id: string | null;
   topic_path: string[];
   is_important: boolean;
+  topic_id?: string | null;
+  object_id?: string | null;
 }
 
 export function refOf(c: ConvRow): ConversationRef {
@@ -44,6 +46,8 @@ export function refOf(c: ConvRow): ConversationRef {
     departmentId: c.department_id,
     topicPath: c.topic_path ?? [],
     isImportant: c.is_important,
+    topicId: c.topic_id ?? null,
+    objectId: c.object_id ?? null,
   };
 }
 
