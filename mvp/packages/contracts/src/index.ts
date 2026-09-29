@@ -4,3 +4,4 @@ export * from './telephony';
 export * from './integrations';
 export * from './assist';
 export * from './tickets';
+export * from './public-api';

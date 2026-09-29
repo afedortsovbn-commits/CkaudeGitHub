@@ -19,7 +19,7 @@ export const ADMIN_URL = process.env.TEST_DATABASE_URL;
 export const DEMO_PW = 'Demo12345!';
 
 /** Тестовое приложение на отдельной временной БД с демо-данными и администратором admin@test.local. */
-export async function createTestApp() {
+export async function createTestApp(o: { seed?: boolean } = {}) {
   const dbName = `cc_it_${Date.now()}_${Math.floor(Math.random() * 1e6)}`;
   const admin = new Pool({ connectionString: ADMIN_URL });
   admin.on('error', () => undefined);
@@ -40,7 +40,7 @@ export async function createTestApp() {
     );
     await tx.query(`INSERT INTO user_role VALUES ($1, 'admin')`, [id]);
     await tx.query(`INSERT INTO access_scope (id, user_id) VALUES ($1, $2)`, [newId(), id]);
-    await seedDemo(tx, DEMO_PW);
+    if (o.seed !== false) await seedDemo(tx, DEMO_PW);
   });
   const config = ApiConfigSchema.parse({
     SERVICE_NAME: 'api-test',

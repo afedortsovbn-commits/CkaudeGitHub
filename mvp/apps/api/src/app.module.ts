@@ -19,6 +19,10 @@ import { UsersController } from './org/users.controller';
 import { PingController } from './ping.controller';
 import { NotificationsController } from './tickets/notifications.controller';
 import { TicketsController } from './tickets/tickets.controller';
+import { ConfigController } from './config/config.controller';
+import { DocsController } from './ext/docs.controller';
+import { ExtController } from './ext/ext.controller';
+import { IntegrationsAdminController } from './ext/integrations-admin.controller';
 
 @Module({})
 export class AppModule {
@@ -43,6 +47,10 @@ export class AppModule {
         AutomationController,
         TicketsController,
         NotificationsController,
+        ExtController,
+        IntegrationsAdminController,
+        ConfigController,
+        DocsController,
       ],
       providers: [
         { provide: APP_CONTEXT, useValue: ctx },

@@ -20,6 +20,7 @@ import { Automation } from './automation';
 import { DeliveryProcessor } from './delivery';
 import { InboundProcessor } from './inbound';
 import { TicketMailer } from './tickets';
+import { WebhookProcessor } from './webhooks';
 
 const ConfigSchema = BaseConfigSchema.extend({
   DATABASE_URL: z.string().url(),
@@ -40,9 +41,17 @@ const ConfigSchema = BaseConfigSchema.extend({
     z.string().url().default('https://localhost'),
   ),
   MAIL_POLL_MS: z.coerce.number().int().min(200).default(2000),
+  // ---- Webhooks и внешние боты (Ф9) ----
+  /** Ключ расшифровки секретов подписи webhooks (тот же, что у api). */
+  SECRETS_KEY: z.string().min(16).optional(),
+  WEBHOOK_POLL_MS: z.coerce.number().int().min(50).default(500),
+  /** Потолок задержки повтора доставки, с. */
+  WEBHOOK_MAX_BACKOFF_S: z.coerce.number().int().min(1).default(300),
+  /** Сколько часов доставка ждёт восстановления получателя, прежде чем получить статус «не доставлено». */
+  WEBHOOK_MAX_AGE_H: z.coerce.number().min(0.01).default(72),
 });
 
-/** worker: фоновая обработка — входящие сообщения каналов, автоответы и боты (Ф7), статусы доставки, outbox-relay. */
+/** worker: фоновая обработка — входящие сообщения каналов, автоответы и боты (Ф7), статусы доставки, письма 2-й линии (Ф8), webhooks и внешние боты (Ф9), outbox-relay. */
 async function main(): Promise<void> {
   const config = loadConfig(ConfigSchema);
   const logger = createLogger({
@@ -99,12 +108,27 @@ async function main(): Promise<void> {
     },
   });
   await mailer.start();
+  const webhooks = new WebhookProcessor({
+    pool,
+    js: nc.jetstream(),
+    jsm,
+    logger,
+    pollMs: config.WEBHOOK_POLL_MS,
+    delivery: {
+      secretsKey: config.SECRETS_KEY,
+      baseUrl: config.PUBLIC_BASE_URL,
+      maxBackoffS: config.WEBHOOK_MAX_BACKOFF_S,
+      maxAgeH: config.WEBHOOK_MAX_AGE_H,
+    },
+  });
+  await webhooks.start();
 
   lifecycle.onShutdown('inbound', 20, () => inbound.stop());
   lifecycle.onShutdown('delivery', 20, () => delivery.stop());
   lifecycle.onShutdown('automation', 21, () => automation.stop());
   lifecycle.onShutdown('outbox-relay', 21, () => relay.stop());
   lifecycle.onShutdown('ticket-mailer', 21, () => mailer.stop());
+  lifecycle.onShutdown('webhooks', 21, () => webhooks.stop());
   lifecycle.onShutdown('pg-boss', 25, () => boss.stop({ graceful: true, timeout: 10_000 }));
   lifecycle.onShutdown('nats', 30, () => nc.drain());
   lifecycle.onShutdown('postgres', 31, () => pool.end());

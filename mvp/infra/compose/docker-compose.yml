@@ -203,6 +203,8 @@ services:
       DEMO_CALLER_ENABLED: ${SEED_DEMO:-false}
       S3_ENDPOINT: http://s3:8333
       MAX_UPLOAD_MB: 10
+      # Адрес системы в описании публичного API (OpenAPI, Ф9).
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-https://localhost}
     networks: [cc]
     stop_grace_period: 35s
     depends_on:
@@ -234,8 +236,11 @@ services:
       SMTP_USER: ${TICKET_SMTP_USER:-}
       SMTP_PASSWORD: ${TICKET_SMTP_PASSWORD:-}
       SMTP_FROM: ${TICKET_SMTP_FROM:-Контакт-центр <cc@cc.local>}
-      # Адрес системы для ссылок в письмах.
+      # Адрес системы для ссылок в письмах и в ходе внешнего бота (replyUrl).
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-https://localhost}
+      # Webhooks (Ф9): потолок задержки повтора (с) и срок ожидания восстановления получателя (ч).
+      WEBHOOK_MAX_BACKOFF_S: ${WEBHOOK_MAX_BACKOFF_S:-300}
+      WEBHOOK_MAX_AGE_H: ${WEBHOOK_MAX_AGE_H:-72}
     networks: [cc]
     stop_grace_period: 35s
     depends_on:
@@ -443,14 +448,18 @@ services:
     networks: [cc]
     ports: ['127.0.0.1:${MOCK_TELEGRAM_PORT:-8081}:3000']
   # Мок внешней системы самообслуживания (баланс бонусов, история заправок) — демо-сценарий IVR и панель
-  # внешних данных клиента (Ф6). Профили test и demo.
+  # внешних данных клиента (Ф6), LLM (Ф7), приёмник webhooks, анализатор и внешний бот (Ф9). Профили test и demo.
   mock-selfservice:
     profiles: [test, demo]
     image: cc/mock-selfservice:${MOCK_SELFSERVICE_TAG:-${MOCK_TELEGRAM_TAG:-dev}}
     restart: unless-stopped
     environment:
       MOCK_TOKEN: ${MOCK_SELFSERVICE_TOKEN:-demo-selfservice-token}
+      # Ф9: демо-анализатор и внешний бот вызывают публичный API (ключи демо-стенда — как в сиде api).
+      API_URL: http://api:3000
     networks: [cc]
+    # Управление приёмником webhooks из e2e (POST /control, GET /hooks/<имя>).
+    ports: ['127.0.0.1:${MOCK_SELFSERVICE_PORT:-8082}:3000']
   mail:
     profiles: [test]
     # GreenMail: тестовый SMTP (3025) + IMAP (3143), ящики создаются при первом входе.

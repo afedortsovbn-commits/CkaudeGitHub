@@ -15,6 +15,8 @@ import {
 } from '@cc/flow-engine';
 import type { Pool, PoolClient } from 'pg';
 import { appendMessage, emitConversation, loadRef } from './conversations';
+import { DomainError } from './tickets';
+import { enqueueBotTurn } from './webhooks';
 
 /**
  * Автоматизация текстовых обращений (Ф7): правила автоответов (M-AUTO-02) и сценарный бот на flow-engine
@@ -52,6 +54,8 @@ export interface BotState extends FlowState {
   pending?: { token: string; operationId: string; input: Record<string, string> };
   /** Бот закончил (перевёл на оператора или закрыл диалог). */
   done?: boolean;
+  /** Внешний бот (Bot Gateway, Ф9): подписка вида «bot», которой отдаются ходы диалога. */
+  external?: string;
 }
 
 export interface RuleRow {
@@ -229,6 +233,10 @@ export async function afterInbound(
   if (r.created) {
     await replyOnce(tx, c, 'greeting', vars);
     await afterHours(tx, c, vars, now);
+  }
+  if (c.status === 'bot' && c.bot_state?.external && !c.bot_state.done) {
+    await externalBotTurn(tx, c, now);
+    return null;
   }
   if (c.status === 'bot' && c.bot_flow_version_id) {
     return r.created || !c.bot_state
@@ -458,6 +466,7 @@ export async function claimStaleBotSteps(tx: PoolClient, limit = 20): Promise<Bo
   const { rows } = await tx.query<{ id: string; bot_state: BotState }>(
     `SELECT id, bot_state FROM conversation
       WHERE bot_wake_at IS NOT NULL AND bot_wake_at < now() AND status = 'bot'
+        AND NOT (COALESCE(bot_state, '{}') ? 'external')
       ORDER BY bot_wake_at LIMIT $1 FOR UPDATE SKIP LOCKED`,
     [limit],
   );
@@ -560,4 +569,99 @@ export async function sweepInactivity(tx: PoolClient, now = new Date()): Promise
     }
   }
   return n;
+}
+
+// ------------------------------------------------------------------ внешний бот (Bot Gateway, Ф9, M-AI-02)
+
+/**
+ * Новое сообщение клиента в диалоге внешнего бота: ход боту (webhook conversation.bot_turn той же транзакцией —
+ * доставку выполнит worker) и срок ответа. Не ответил к сроку — диалог уходит оператору (sweepExternalBots).
+ */
+async function externalBotTurn(tx: PoolClient, c: ConvRow, now: Date): Promise<void> {
+  const deadline = await enqueueBotTurn(tx, c.id, c.bot_state!.external!, now);
+  if (!deadline) {
+    // Бот отключён или удалён из канала — сразу к оператору.
+    await saveState(tx, c, { ...c.bot_state!, done: true }, null);
+    await handoff(tx, c, { queueId: null, topicId: null, priority: 0, text: '' }, {});
+    return;
+  }
+  await tx.query(`UPDATE conversation SET bot_wake_at = $2 WHERE id = $1`, [c.id, deadline]);
+}
+
+async function loadExternal(tx: PoolClient, conversationId: string): Promise<ConvRow> {
+  const c = await loadConv(tx, conversationId);
+  if (c.status !== 'bot' || !c.bot_state?.external || c.bot_state.done)
+    throw new DomainError(409, 'not_bot', 'Обращение не ведёт внешний бот (уже у оператора или закрыто)');
+  return c;
+}
+
+/** Ответ внешнего бота клиенту (кнопки — как у сценарного бота: нажатие приходит текстом кнопки). */
+export async function externalBotReply(
+  tx: PoolClient,
+  conversationId: string,
+  m: { text: string; buttons?: string[] },
+  source: string,
+) {
+  const c = await loadExternal(tx, conversationId);
+  const msg = await appendMessage(tx, {
+    conversationId: c.id,
+    direction: 'out',
+    body: m.text,
+    channelKind: c.channel_kind,
+    meta: {
+      auto: 'bot',
+      external: source,
+      ...(m.buttons?.length ? { buttons: m.buttons.map((label, i) => ({ id: `b${i + 1}`, label })) } : {}),
+    },
+  });
+  // Бот ответил — срок снят до следующего сообщения клиента.
+  await tx.query(`UPDATE conversation SET bot_wake_at = NULL WHERE id = $1`, [c.id]);
+  return msg;
+}
+
+/** Внешний бот переводит диалог на оператора: очередь, тема, сообщение клиенту, заметка оператору. */
+export async function externalBotHandoff(
+  tx: PoolClient,
+  conversationId: string,
+  a: { queueId?: string; topicId?: string; text?: string; note?: string },
+  source: string,
+): Promise<void> {
+  const c = await loadExternal(tx, conversationId);
+  if (a.note)
+    await appendMessage(tx, {
+      conversationId: c.id,
+      direction: 'note',
+      body: a.note,
+      channelKind: c.channel_kind,
+      meta: { external: source },
+    });
+  await saveState(tx, c, { ...c.bot_state!, done: true }, null);
+  await handoff(
+    tx,
+    c,
+    { queueId: a.queueId ?? null, topicId: a.topicId ?? null, priority: 0, text: a.text ?? '' },
+    {},
+  );
+}
+
+/** Внешний бот не ответил к сроку (упал, недоступен) — клиент не остаётся без ответа: диалог к оператору. */
+export async function sweepExternalBots(tx: PoolClient, now = new Date()): Promise<number> {
+  const { rows } = await tx.query<{ id: string }>(
+    `SELECT id FROM conversation
+      WHERE bot_wake_at IS NOT NULL AND bot_wake_at < $1 AND status = 'bot' AND bot_state ? 'external'
+      ORDER BY bot_wake_at LIMIT 20 FOR UPDATE SKIP LOCKED`,
+    [now],
+  );
+  for (const r of rows) {
+    const c = await loadConv(tx, r.id);
+    await appendMessage(tx, {
+      conversationId: c.id,
+      direction: 'system',
+      body: 'Внешний бот не ответил вовремя — диалог передан оператору',
+      channelKind: c.channel_kind,
+    });
+    await saveState(tx, c, { ...c.bot_state!, done: true }, null);
+    await handoff(tx, c, { queueId: null, topicId: null, priority: 0, text: '' }, {});
+  }
+  return rows.length;
 }

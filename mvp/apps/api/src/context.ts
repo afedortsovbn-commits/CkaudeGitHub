@@ -6,6 +6,7 @@ import type { PrincipalLoader } from '@cc/auth';
 import type { TokenService } from '@cc/auth';
 import type { JetStreamClient, NatsConnection } from 'nats';
 import type { Storage } from './lib/storage';
+import type { ApiKeyStore } from './ext/api-key';
 
 export const ApiConfigSchema = BaseConfigSchema.extend({
   DATABASE_URL: z.string().url(),
@@ -39,6 +40,12 @@ export const ApiConfigSchema = BaseConfigSchema.extend({
   /** Демо-страница «Позвонить в КЦ» (WebRTC-абонент без SIP-транка) — только для демо-стенда. */
   DEMO_CALLER_ENABLED: z.enum(['true', 'false']).default('false'),
   DEMO_CALLER_DID: z.string().default('1000'),
+  // ---- Публичный API и webhooks (Ф9) ----
+  /** Адрес системы для ссылок (документация API, ход внешнего бота). */
+  PUBLIC_BASE_URL: z.preprocess(
+    (v) => (v === '' ? undefined : v),
+    z.string().url().default('https://localhost'),
+  ),
 });
 export type ApiConfig = z.infer<typeof ApiConfigSchema>;
 
@@ -57,6 +64,8 @@ export interface AppContext {
   storage: Storage;
   /** Разрешён ли домен сайта для клиентского API (объединение allowed_origins активных каналов). */
   allowedOrigins?: (origin: string) => Promise<boolean>;
+  /** Ключи публичного API (Ф9): создаётся при первом обращении. */
+  apiKeys?: ApiKeyStore;
 }
 
 export const APP_CONTEXT = Symbol('APP_CONTEXT');

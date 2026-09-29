@@ -10,8 +10,11 @@
  *   POST /v1/chat/completions  → черновик ответа по последнему сообщению клиента
  *   GET  /v1/models            → список «моделей»
  *   /slow/v1/… — ответ через 10 с (таймаут), /down/v1/… — 503 (провайдер упал).
+ *
+ * Ф9 — приёмник webhooks, демо-анализатор и внешний эхо-бот: см. integrations.ts.
  */
 import { createServer } from 'node:http';
+import { handleIntegrations } from './integrations';
 
 const PORT = Number(process.env.PORT ?? 3000);
 const TOKEN = process.env.MOCK_TOKEN ?? '';
@@ -113,6 +116,7 @@ const server = createServer((req, res) => {
     res.writeHead(status, { 'content-type': 'application/json; charset=utf-8' }).end(JSON.stringify(body));
   if (url.pathname === '/healthz' || url.pathname === '/readyz') return send(200, { status: 'ok' });
   if (/^\/((slow|down)\/)?v1\//.test(url.pathname)) return llm(req, url, send);
+  if (handleIntegrations(req, url, send)) return;
   if (TOKEN && req.headers.authorization !== `Bearer ${TOKEN}`) return send(401, { error: 'unauthorized' });
   const phone = url.searchParams.get('phone') ?? '';
   if (!/^\+?\d{5,15}$/.test(phone)) return send(400, { error: 'phone' });
