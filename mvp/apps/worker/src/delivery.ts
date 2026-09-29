@@ -1,6 +1,6 @@
 import { DeliveryStatusSchema } from '@cc/contracts';
 import { applyDeliveryStatus } from '@cc/domain';
-import type { Logger } from '@cc/service-kit';
+import { type Logger, retryJs } from '@cc/service-kit';
 import { AckPolicy, type Consumer, type JetStreamClient, type JetStreamManager, type JsMsg } from 'nats';
 import type { Pool } from 'pg';
 
@@ -21,17 +21,19 @@ export class DeliveryProcessor {
   ) {}
 
   async start(): Promise<void> {
-    await this.o.jsm.consumers
-      .add('CC_OUTBOUND', {
-        durable_name: CONSUMER,
-        filter_subject: 'cc.delivery.>',
-        ack_policy: AckPolicy.Explicit,
-        ack_wait: 30_000_000_000,
-        max_deliver: 20,
-      })
-      .catch((e: unknown) => {
-        if (!String(e).includes('already')) throw e;
-      });
+    await retryJs(() =>
+      this.o.jsm.consumers
+        .add('CC_OUTBOUND', {
+          durable_name: CONSUMER,
+          filter_subject: 'cc.delivery.>',
+          ack_policy: AckPolicy.Explicit,
+          ack_wait: 30_000_000_000,
+          max_deliver: 20,
+        })
+        .catch((e: unknown) => {
+          if (!String(e).includes('already')) throw e;
+        }),
+    );
     this.consumer = await this.o.js.consumers.get('CC_OUTBOUND', CONSUMER);
     this.running = true;
     this.loop = this.run();

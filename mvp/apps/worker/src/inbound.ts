@@ -1,6 +1,6 @@
 import { InboundMessageSchema } from '@cc/contracts';
 import { afterInbound, type BotHttp, ingestInbound } from '@cc/domain';
-import type { Logger } from '@cc/service-kit';
+import { type Logger, retryJs } from '@cc/service-kit';
 import { AckPolicy, type Consumer, type JetStreamClient, type JetStreamManager, type JsMsg } from 'nats';
 import type { Pool } from 'pg';
 import { Counter } from 'prom-client';
@@ -39,16 +39,18 @@ export class InboundProcessor {
   }
 
   async start(): Promise<void> {
-    await this.o.jsm.consumers
-      .add('CC_INBOUND', {
-        durable_name: CONSUMER,
-        ack_policy: AckPolicy.Explicit,
-        ack_wait: 30_000_000_000,
-        max_deliver: MAX_DELIVER,
-      })
-      .catch((e: unknown) => {
-        if (!String(e).includes('already')) throw e;
-      });
+    await retryJs(() =>
+      this.o.jsm.consumers
+        .add('CC_INBOUND', {
+          durable_name: CONSUMER,
+          ack_policy: AckPolicy.Explicit,
+          ack_wait: 30_000_000_000,
+          max_deliver: MAX_DELIVER,
+        })
+        .catch((e: unknown) => {
+          if (!String(e).includes('already')) throw e;
+        }),
+    );
     this.consumer = await this.o.js.consumers.get('CC_INBOUND', CONSUMER);
     this.running = true;
     this.loop = this.run();

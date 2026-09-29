@@ -1,6 +1,6 @@
 import { parseEvent } from '@cc/contracts';
 import { type DeliveryOptions, fanOutEvent, processWebhookQueue } from '@cc/domain';
-import type { Logger } from '@cc/service-kit';
+import { type Logger, retryJs } from '@cc/service-kit';
 import {
   AckPolicy,
   type Consumer,
@@ -38,18 +38,20 @@ export class WebhookProcessor {
   ) {}
 
   async start(): Promise<void> {
-    await this.o.jsm.consumers
-      .add('CC_EVENTS', {
-        durable_name: CONSUMER,
-        ack_policy: AckPolicy.Explicit,
-        ack_wait: 30_000_000_000,
-        max_deliver: 50,
-        // История событий до появления потребителя (первый запуск Ф9) подписчикам не нужна.
-        deliver_policy: DeliverPolicy.New,
-      })
-      .catch((e: unknown) => {
-        if (!String(e).includes('already')) throw e;
-      });
+    await retryJs(() =>
+      this.o.jsm.consumers
+        .add('CC_EVENTS', {
+          durable_name: CONSUMER,
+          ack_policy: AckPolicy.Explicit,
+          ack_wait: 30_000_000_000,
+          max_deliver: 50,
+          // История событий до появления потребителя (первый запуск Ф9) подписчикам не нужна.
+          deliver_policy: DeliverPolicy.New,
+        })
+        .catch((e: unknown) => {
+          if (!String(e).includes('already')) throw e;
+        }),
+    );
     this.consumer = await this.o.js.consumers.get('CC_EVENTS', CONSUMER);
     this.running = true;
     this.consumeLoop = this.consume();
