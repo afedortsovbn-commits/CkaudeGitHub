@@ -143,7 +143,7 @@ export interface MessageDto {
 
 export interface MessageMeta {
   /** Сообщение отправлено автоматически: правило автоответа (вид правила) или бот. */
-  auto?: 'greeting' | 'queued' | 'after_hours' | 'keyword' | 'inactivity' | 'bot';
+  auto?: 'greeting' | 'queued' | 'after_hours' | 'keyword' | 'inactivity' | 'bot' | 'ticket';
   /** Кнопки бота — клиент нажимает (в виджете) или пишет текст кнопки. */
   buttons?: { id: string; label: string }[];
   /** Запрос оценки обслуживания после закрытия чата (виджет показывает 1–5). */

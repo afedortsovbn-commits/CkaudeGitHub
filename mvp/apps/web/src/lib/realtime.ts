@@ -1,9 +1,9 @@
-import { useQueryClient } from '@tanstack/react-query';
-import { useEffect, useRef, useState } from 'react';
+import { type QueryClient, useQueryClient } from '@tanstack/react-query';
+import { useEffect, useState } from 'react';
 import { getAccessToken, refreshSession } from './api';
 
 export interface RtEvent {
-  type: 'event' | 'typing' | 'hello';
+  type: 'event' | 'typing' | 'hello' | 'ticket';
   event?: string;
   data?: Record<string, unknown> & {
     conversationId?: string;
@@ -22,52 +22,85 @@ export const onRealtime = (l: Listener) => {
   return () => void listeners.delete(l);
 };
 
+/** Одно общее соединение на вкладку: им пользуются рабочее место, колокольчик и другие разделы. */
+const shared = {
+  users: 0,
+  ws: null as WebSocket | null,
+  connected: false,
+  stopped: true,
+  retry: 0,
+  first: true,
+  qc: null as QueryClient | null,
+  timer: undefined as ReturnType<typeof setTimeout> | undefined,
+  subs: new Set<() => void>(),
+};
+const setConnected = (v: boolean) => {
+  shared.connected = v;
+  shared.subs.forEach((f) => f());
+};
+
+async function connect(): Promise<void> {
+  if (shared.stopped) return;
+  if (!getAccessToken() || shared.retry > 0) await refreshSession();
+  if (shared.stopped) return;
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  const ws = new WebSocket(
+    `${proto}://${location.host}/ws?token=${encodeURIComponent(getAccessToken() ?? '')}`,
+  );
+  shared.ws = ws;
+  ws.onopen = () => {
+    shared.retry = 0;
+    setConnected(true);
+    if (!shared.first) void shared.qc?.invalidateQueries();
+    shared.first = false;
+  };
+  ws.onmessage = (e) => {
+    const d = JSON.parse(String(e.data)) as RtEvent;
+    listeners.forEach((l) => l(d));
+  };
+  ws.onclose = () => {
+    setConnected(false);
+    if (shared.stopped) return;
+    shared.timer = setTimeout(() => void connect(), Math.min(500 * 2 ** shared.retry++, 10_000));
+  };
+}
+
 /**
  * Подключение к realtime с переподключением. После переподключения (в т.ч. при обновлении сервиса — код 1012)
  * все данные перечитываются из API: источник истины — БД, пропущенные события не теряются.
  */
 export function useRealtime(enabled: boolean): { connected: boolean; send(m: unknown): void } {
   const qc = useQueryClient();
-  const [connected, setConnected] = useState(false);
-  const wsRef = useRef<WebSocket | null>(null);
+  const [connected, setLocal] = useState(shared.connected);
+  useEffect(() => {
+    const sync = () => setLocal(shared.connected);
+    shared.subs.add(sync);
+    sync();
+    return () => void shared.subs.delete(sync);
+  }, []);
   useEffect(() => {
     if (!enabled) return;
-    let stopped = false;
-    let retry = 0;
-    let first = true;
-    const connect = async () => {
-      if (!getAccessToken() || retry > 0) await refreshSession();
-      const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-      const ws = new WebSocket(
-        `${proto}://${location.host}/ws?token=${encodeURIComponent(getAccessToken() ?? '')}`,
-      );
-      wsRef.current = ws;
-      ws.onopen = () => {
-        retry = 0;
-        setConnected(true);
-        if (!first) void qc.invalidateQueries();
-        first = false;
-      };
-      ws.onmessage = (e) => {
-        const d = JSON.parse(String(e.data)) as RtEvent;
-        listeners.forEach((l) => l(d));
-      };
-      ws.onclose = () => {
-        setConnected(false);
-        if (stopped) return;
-        setTimeout(() => void connect(), Math.min(500 * 2 ** retry++, 10_000));
-      };
-    };
-    void connect();
+    shared.qc = qc;
+    if (++shared.users === 1) {
+      shared.stopped = false;
+      shared.retry = 0;
+      shared.first = true;
+      void connect();
+    }
     return () => {
-      stopped = true;
-      wsRef.current?.close();
+      if (--shared.users === 0) {
+        shared.stopped = true;
+        clearTimeout(shared.timer);
+        shared.ws?.close();
+        shared.ws = null;
+        setConnected(false);
+      }
     };
   }, [enabled, qc]);
   return {
     connected,
     send: (m) => {
-      if (wsRef.current?.readyState === WebSocket.OPEN) wsRef.current.send(JSON.stringify(m));
+      if (shared.ws?.readyState === WebSocket.OPEN) shared.ws.send(JSON.stringify(m));
     },
   };
 }

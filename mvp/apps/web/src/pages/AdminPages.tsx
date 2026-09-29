@@ -46,6 +46,12 @@ export function SettingsPage() {
         value={String(v['ticket.approval_mode'] ?? 'creator')}
         onChange={(x) => setV({ ...v, 'ticket.approval_mode': x })}
       />
+      <TextInput
+        label="Автосообщение клиенту при передаче на 2-ю линию"
+        description="Уходит в текстовых каналах; пусто — не отправлять"
+        value={String(v['ticket.transfer_message'] ?? '')}
+        onChange={(e) => setV({ ...v, 'ticket.transfer_message': e.currentTarget.value })}
+      />
       <Button onClick={() => save.mutate(undefined)} loading={save.isPending}>
         {t.save}
       </Button>

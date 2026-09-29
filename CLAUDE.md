@@ -16,7 +16,7 @@
 
 ## Текущее состояние (29.09.2026)
 
-- **Выполнены Ф0–Ф7** (PR #1–#3, #5–#9 и PR Ф7, см. `mvp/docs/PROGRESS.md`). Код — в `mvp/`, как запустить —
+- **Выполнены Ф0–Ф8** (PR #1–#3, #5–#10 и PR Ф8, см. `mvp/docs/PROGRESS.md`). Код — в `mvp/`, как запустить —
   `mvp/README.md`.
 - **Ф5a** добавила телефонию: `infra/asterisk` (2 узла, образ на `andrius/asterisk:22`), `infra/kamailio` (Kamailio 6
   из RPM на AlmaLinux 9, WSS 8443, auth_ephemeral, dispatcher), coturn ×2, сервис `call-control` (ARI, активный/
@@ -37,7 +37,13 @@
   входящего сообщения, статус обращения `bot`), подсказки (Assist) — считает **api** по запросу панели оператора
   (`apps/api/src/automation/assist.ts`: встроенный, LLM OpenAI-совместимый, внешний HTTP), оценку чата в виджете.
   Демо-чат с ботом — `/widget/demo.html?key=demo-webchat-bot` (прежний `demo-webchat` — без бота).
-- **Следующая — Ф8** (2-я линия) — можно параллельно с Ф9/Ф10 по плану.
+- **Ф8** добавила 2-ю линию: тикеты (`packages/domain/src/tickets.ts`: передача, открытие, закрытие ответственным,
+  согласование, возврат, переадресация, замена, увольнения, «применить матрицу»; все переходы — с проверкой
+  `version`), уведомления (`ticket-notify.ts`: письма «Важно!», колокольчик, ежедневная рассылка), worker — рассылка
+  (pg-boss раз в минуту + отметка дня) и отправка писем из очереди `notification` (SMTP — `TICKET_SMTP_*`), api —
+  `apps/api/src/tickets/`, web — форма передачи, вкладки «На согласовании»/«Переданные», `/tickets` (кабинет),
+  `/tickets/:id`, `/tickets-control`. Обращение с тикетом — статус `waiting_2nd_line`.
+- **Следующие — Ф9, Ф10** (можно параллельно), затем Ф11–Ф13 по плану.
 - Ждём от заказчика: параметры SIP-транка МТС (подключается переменной `TRUNK_HOST`), описание API Rocket Data и
   источника справочника объектов (к Ф13). Их отсутствие работу не блокирует — см. соответствующие фазы в плане.
 
@@ -82,7 +88,9 @@
 - Телефония: образы `cc/asterisk`, `cc/kamailio` собирает `ops/build-images.sh` (тег `MEDIA_TAG`, `SKIP_MEDIA=1` —
   пропустить). Базы: `andrius/asterisk:22`, `kamailio/kamailio-store:6.0.5-centos-9.amd64`, `almalinux:9` (в облаке —
   через `mirror.gcr.io/...` + `docker tag`). ARI: после `StasisEnd` приложению не приходит `ChannelDestroyed`.
-  Kamailio должен слушать адрес интерфейса (не 0.0.0.0 — иначе Record-Route ломает диалоги). Браузер в e2e —
+  Kamailio должен слушать адрес интерфейса (не 0.0.0.0 — иначе Record-Route ломает диалоги).
+  Регистрации софтфона копятся (новая на каждую загрузку страницы, живут 300 с), а вызов рассылается максимум на
+  12 контактов — поэтому `usrloc desc_time_order=1` (новые первыми) и снятие регистрации на `pagehide`. Браузер в e2e —
   Chromium с `--use-fake-device-for-media-stream`; Asterisk в docker-сети доступен браузеру на хосте напрямую.
 - IVR: фразы Asterisk берёт по HTTP у call-control (`sound:http://call-control:3000/media/<id>.wav`,
   `res_http_media_cache`) — нужен `astcachedir` (иначе проигрывание мгновенно «заканчивается»). DTMF из браузера —
@@ -94,6 +102,9 @@
   сопоставляет текст/номер кнопки. Панель подсказок перечитывает `/suggestions` только при новом сообщении клиента
   (ключ запроса не начинается с `/conversations`). Адрес LLM вне контура сохраняется только с `allowExternal`.
   Мок LLM — в `mock-selfservice` (`/v1`, `/down/v1`, `/slow/v1`). Имена переменных сценария — и кириллицей.
+- Ф8: письма по тикетам сначала пишутся в `notification` (уникальный `dedupe_key`), отправляются отдельно;
+  рассылку в тестах вызывать `runDailyDigest(pool, now)` с подменой времени. Подстановка по матрице теперь в
+  `packages/domain/src/matrix.ts` (api реэкспортирует). Для e2e Ф8 — `TICKET_SMTP_HOST=mail TICKET_SMTP_PORT=3025`.
 - Стек для e2e Ф4/Ф5 и проверок: `COMPOSE_PROFILES=test MOCK_TELEGRAM_TAG=<тег> PUBLIC_BASE_URL=https://traefik TRUNK_HOST=trunk-sim:5060`,
   образы моков — `APPS="mock-telegram mock-selfservice" ops/build-images.sh <тег>`. Проверки, оставляющие операторов «Готов»
   (`route-under-rollout.mjs`), влияют на последующие: router сам предлагает новые обращения.

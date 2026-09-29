@@ -3,3 +3,7 @@ export * from './agent-status';
 export * from './calls';
 export * from './ivr';
 export * from './automation';
+export * from './matrix';
+export * from './ticket-time';
+export * from './ticket-notify';
+export * from './tickets';

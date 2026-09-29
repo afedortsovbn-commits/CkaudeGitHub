@@ -15,8 +15,8 @@ import {
 } from '@mantine/core';
 import { useEffect, useState } from 'react';
 import { DictPage } from '../components/DictPage';
-import { post, put, patch } from '../lib/api';
-import { type Row, options, useAction, useList } from '../lib/data';
+import { get, post, put, patch } from '../lib/api';
+import { type Row, type TicketRef, options, useAction, useList } from '../lib/data';
 import { t } from '../lib/i18n';
 
 export function EnterprisesPage() {
@@ -48,7 +48,17 @@ function DepartmentEnterprises({ dep, onClose }: { dep: Row; onClose(): void }) 
   useEffect(() => {
     if (links.data) setSelected(links.data.map((l) => String(l.enterpriseId)));
   }, [links.data]);
-  const save = useAction(() => put(`/departments/${dep.id}/enterprises`, { enterpriseIds: selected }));
+  // Отключаемые связки: перед сохранением узнаём их открытые тикеты, чтобы предупредить (M-TKT-12a).
+  const save = useAction(async () => {
+    const removed = (links.data ?? []).filter((l) => !selected.includes(String(l.enterpriseId)));
+    const affected = (
+      await Promise.all(
+        removed.map((l) => get<TicketRef[]>(`/tickets-impact?enterpriseDepartmentId=${l.id}`)),
+      )
+    ).flat();
+    await put(`/departments/${dep.id}/enterprises`, { enterpriseIds: selected });
+    return { openTickets: affected };
+  });
   const saveLink = useAction((l: { id: string; transferNumber: string; email: string }) =>
     patch(`/enterprise-departments/${l.id}`, {
       transferNumber: l.transferNumber || null,

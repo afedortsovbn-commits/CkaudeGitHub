@@ -15,6 +15,7 @@ import {
 } from '@cc/contracts';
 import { enqueueCommand, enqueueEvent } from '@cc/service-kit';
 import type { PoolClient } from 'pg';
+import { notifyClientMessage } from './tickets';
 
 interface ConvRow {
   id: string;
@@ -263,7 +264,7 @@ export async function ingestInbound(
     const thread = await tx.query<{ id: string }>(
       `SELECT c.id FROM message msg JOIN conversation c ON c.id = msg.conversation_id
         WHERE msg.channel_kind = 'email' AND msg.external_id = ANY($1) AND c.channel_id = $2
-          AND c.status NOT IN ('closed', 'waiting_2nd_line')
+          AND c.status <> 'closed'
         ORDER BY msg.sent_at DESC LIMIT 1 FOR UPDATE OF c`,
       [email.references, m.channelId],
     );
@@ -271,7 +272,7 @@ export async function ingestInbound(
   }
   if (!conversationId) {
     const open = await tx.query<{ id: string }>(
-      `SELECT id FROM conversation WHERE contact_id = $1 AND channel_id = $2 AND status NOT IN ('closed', 'waiting_2nd_line')
+      `SELECT id FROM conversation WHERE contact_id = $1 AND channel_id = $2 AND status <> 'closed'
         ORDER BY created_at DESC LIMIT 1 FOR UPDATE`,
       [contactId, m.channelId],
     );
@@ -323,6 +324,14 @@ export async function ingestInbound(
     sentAt: new Date(m.receivedAt),
     id: m.id,
   });
+  if (msg && !created) {
+    // Обращение ждёт 2-ю линию: сообщение остаётся в обращении, видно в тикете, назначенным — уведомление;
+    // в очередь 1-й линии оно не направляется (M-TKT-03).
+    const st = await tx.query<{ status: string }>('SELECT status FROM conversation WHERE id = $1', [
+      conversationId,
+    ]);
+    if (st.rows[0]?.status === 'waiting_2nd_line') await notifyClientMessage(tx, conversationId, msg.id);
+  }
   if (msg && email) {
     // Тема — от первого письма обращения; Message-ID и References — для ответа в ту же цепочку.
     await tx.query(

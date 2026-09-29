@@ -14,6 +14,7 @@ import { MatrixPage } from './pages/MatrixPage';
 import { DepartmentsPage, DictionariesPage, EnterprisesPage, ObjectsPage } from './pages/OrgPages';
 import { SupervisorPage } from './pages/SupervisorPage';
 import { TopicsPage } from './pages/TopicsPage';
+import { CabinetPage, TicketControlPage, TicketPage } from './pages/TicketPages';
 import { UsersPage } from './pages/UsersPage';
 import { WorkspacePage } from './pages/WorkspacePage';
 import { ChannelsPage } from './pages/ChannelsPage';
@@ -44,6 +45,9 @@ function App() {
         <Route index element={<HomePage />} />
         <Route path="workspace" element={<WorkspacePage />} />
         <Route path="supervisor" element={<SupervisorPage />} />
+        <Route path="tickets" element={<CabinetPage />} />
+        <Route path="tickets/:id" element={<TicketPage />} />
+        <Route path="tickets-control" element={<TicketControlPage />} />
         <Route path="channels" element={<ChannelsPage />} />
         <Route path="ivr" element={<FlowListPage kind="voice" key="voice" />} />
         <Route path="ivr/:id" element={<FlowEditorPage />} />

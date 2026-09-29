@@ -96,6 +96,7 @@ class Softphone {
   private ringer: HTMLAudioElement | null = null;
   private renew: ReturnType<typeof setTimeout> | null = null;
   private stopRealtime: (() => void) | null = null;
+  private onPageHide: (() => void) | null = null;
   private stopDevices: (() => void) | null = null;
   private stats: ReturnType<typeof setInterval> | null = null;
   private lastLoss: { lost: number; recv: number } | null = null;
@@ -161,6 +162,16 @@ class Softphone {
     ua.on('newRTCSession', (e: RTCSessionEvent) => this.onSession(e));
     ua.start();
     this.ua = ua;
+    // Закрытие или перезагрузка страницы — снимаем свою регистрацию, чтобы у оператора не копились «мёртвые»
+    // контакты (живут до register_expires): звонок рассылается на ограниченное число регистраций.
+    this.onPageHide = () => {
+      try {
+        ua.unregister();
+      } catch {
+        /* соединение уже закрыто — регистрация истечёт сама */
+      }
+    };
+    window.addEventListener('pagehide', this.onPageHide);
     // Учётные данные короткоживущие — пересоздаём регистрацию заранее, но не во время разговора.
     const ms = Math.max(60_000, new Date(cfg.expiresAt).getTime() - Date.now() - 10 * 60_000);
     this.renew = setTimeout(() => this.renewWhenIdle(), ms);
@@ -186,6 +197,8 @@ class Softphone {
 
   stop(): void {
     if (this.renew) clearTimeout(this.renew);
+    if (this.onPageHide) window.removeEventListener('pagehide', this.onPageHide);
+    this.onPageHide = null;
     this.stopRealtime?.();
     this.stopRealtime = null;
     this.stopDevices?.();

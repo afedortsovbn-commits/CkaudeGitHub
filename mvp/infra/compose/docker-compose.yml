@@ -226,6 +226,16 @@ services:
     environment:
       <<: *app-env
       SERVICE_NAME: worker
+      # Письма 2-й линии (Ф8) — SMTP заказчика; пусто — письма копятся в очереди. В профиле test — GreenMail:
+      # TICKET_SMTP_HOST=mail TICKET_SMTP_PORT=3025.
+      SMTP_HOST: ${TICKET_SMTP_HOST:-}
+      SMTP_PORT: ${TICKET_SMTP_PORT:-25}
+      SMTP_SECURE: ${TICKET_SMTP_SECURE:-false}
+      SMTP_USER: ${TICKET_SMTP_USER:-}
+      SMTP_PASSWORD: ${TICKET_SMTP_PASSWORD:-}
+      SMTP_FROM: ${TICKET_SMTP_FROM:-Контакт-центр <cc@cc.local>}
+      # Адрес системы для ссылок в письмах.
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-https://localhost}
     networks: [cc]
     stop_grace_period: 35s
     depends_on:

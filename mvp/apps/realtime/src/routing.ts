@@ -38,3 +38,19 @@ export function deliver(peer: Peer, e: ConvEvent): Record<string, unknown> | nul
     return { type: 'status', conversationId: d.conversationId, status: d.status };
   return null;
 }
+
+/**
+ * События тикетов 2-й линии (Ф8): только тем, кому адресовано уведомление (`notifyUserIds`) — назначенным,
+ * создателю, согласующим. Клиенты их не получают. Оператор по такому событию обновляет колокольчик и списки.
+ */
+export function deliverTicket(
+  peer: Peer,
+  e: Omit<EventEnvelope, 'data'> & {
+    data: { notifyUserIds?: string[]; ticketId?: string; number?: number; status?: string };
+  },
+): Record<string, unknown> | null {
+  if (peer.kind !== 'operator') return null;
+  if (!e.data.notifyUserIds?.includes(peer.principal.id)) return null;
+  const { ticketId, number, status } = e.data;
+  return { type: 'ticket', event: e.type, data: { ticketId, number, status } };
+}

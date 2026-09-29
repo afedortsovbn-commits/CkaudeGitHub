@@ -55,6 +55,9 @@ jobs:
       PUBLIC_BASE_URL: https://traefik
       # Имитация SIP-транка (SIPp UAS) для исходящих вызовов в e2e Ф5.
       TRUNK_HOST: trunk-sim:5060
+      # Письма 2-й линии (Ф8) — в GreenMail.
+      TICKET_SMTP_HOST: mail
+      TICKET_SMTP_PORT: '3025'
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4

@@ -1,7 +1,9 @@
 import { AppShell, Badge, Button, Group, NavLink, ScrollArea, Text } from '@mantine/core';
 import { useEffect } from 'react';
 import { NavLink as RouterLink, Outlet, useLocation } from 'react-router';
+import { NotificationBell } from '../components/NotificationBell';
 import { SoftphoneCall, SoftphoneStatus } from '../components/Softphone';
+import { useRealtime } from '../lib/realtime';
 import { softphone } from '../lib/softphone';
 import { useAuth } from '../lib/auth';
 import { t } from '../lib/i18n';
@@ -10,6 +12,8 @@ const MENU: { to: string; label: string; perms?: string[] }[] = [
   { to: '/', label: t.nav.home },
   { to: '/workspace', label: 'Рабочее место оператора', perms: ['conversations.work'] },
   { to: '/supervisor', label: 'Супервизор', perms: ['supervisor.monitor'] },
+  { to: '/tickets', label: 'Кабинет 2-й линии', perms: ['tickets.work'] },
+  { to: '/tickets-control', label: 'Контроль 2-й линии', perms: ['supervisor.approvals', 'admin.matrix'] },
   { to: '/channels', label: 'Каналы', perms: ['admin.directories'] },
   { to: '/ivr', label: 'Сценарии IVR', perms: ['admin.directories', 'supervisor.monitor'] },
   { to: '/ivr-audio', label: 'Аудиобиблиотека', perms: ['admin.directories'] },
@@ -42,6 +46,8 @@ export function Layout() {
   // Софтфон работает на всех страницах, пока сотрудник в системе (входящий звонок не зависит от раздела).
   // Зависимость — только id: перечитанный профиль не должен перезапускать софтфон посреди разговора.
   const userId = me?.id;
+  // Одно общее соединение: колокольчик и рабочее место получают события по нему.
+  useRealtime(!!userId);
   useEffect(() => {
     if (phone && userId) void softphone.start(userId);
     return () => softphone.stop();
@@ -53,6 +59,7 @@ export function Layout() {
           <Text fw={700}>{t.appName}</Text>
           <Group>
             {phone && <SoftphoneStatus />}
+            <NotificationBell />
             <Text size="sm" data-testid="current-user">
               {me?.fullName}
             </Text>

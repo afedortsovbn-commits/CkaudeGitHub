@@ -6,6 +6,7 @@ import { scopeFilter } from '@cc/auth';
 import { CurrentUser, RequirePerm } from '../auth/guard';
 import type { Principal } from '@cc/auth';
 import { APP_CONTEXT, type AppContext } from '../context';
+import { openTicketsAffectedBy } from '@cc/domain';
 import { audit } from '../lib/audit';
 import { one, rows, toApi, withTx } from '../lib/db';
 import { badRequest, notFound, parse } from '../lib/errors';
@@ -55,6 +56,7 @@ const SETTINGS: Record<string, z.ZodTypeAny> = {
   'ticket.default_response_days': z.number().int().min(1).max(365),
   'ticket.daily_notification_time': z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
   'ticket.approval_mode': z.enum(['creator', 'supervisor']),
+  'ticket.transfer_message': z.string().max(1000),
   'system.timezone': z.string().min(1),
   'operator.max_chats': z.number().int().min(1).max(20),
   'routing.escalation_boost': z.number().int().min(0).max(100000),
@@ -154,7 +156,22 @@ export class OrgController {
         [id, ...vals],
       );
       await audit(tx, p, 'update', 'enterprise_department', id, before, row);
-      return toApi(row!);
+      // Предупреждение администратору: по отключаемой связке есть открытые тикеты (M-TKT-12a).
+      const warning =
+        data.isActive === false ? await openTicketsAffectedBy(tx, { enterpriseDepartmentIds: [id] }) : [];
+      return { ...toApi(row!), openTickets: warning };
+    });
+  }
+
+  /** Открытые тикеты, которых коснётся отключение (предупреждение администратору, M-TKT-12a). */
+  @Get('tickets-impact')
+  @RequirePerm('admin.directories')
+  async ticketsImpact(@Query() q: Record<string, string>) {
+    return openTicketsAffectedBy(this.ctx.pool, {
+      ...(q.enterpriseDepartmentId ? { enterpriseDepartmentIds: [q.enterpriseDepartmentId] } : {}),
+      ...(q.topicId ? { topicId: q.topicId } : {}),
+      ...(q.enterpriseId ? { enterpriseId: q.enterpriseId } : {}),
+      ...(q.departmentId ? { departmentId: q.departmentId } : {}),
     });
   }
 
@@ -246,12 +263,16 @@ export class OrgController {
       ]);
       if (!t) throw notFound('Тема');
       if (action === 'deactivate') {
+        const openTickets = await openTicketsAffectedBy(tx, { topicId: id });
         const r = await tx.query(
           'UPDATE topic SET is_active = false, updated_at = now() WHERE $1 = ANY(path) AND is_active',
           [id],
         );
-        await audit(tx, p, 'deactivate', 'topic', id, null, { affected: r.rowCount });
-        return { affected: r.rowCount };
+        await audit(tx, p, 'deactivate', 'topic', id, null, {
+          affected: r.rowCount,
+          openTickets: openTickets.length,
+        });
+        return { affected: r.rowCount, openTickets };
       }
       if (t.parent_id) {
         const parent = await one<{ is_active: boolean }>(tx, 'SELECT is_active FROM topic WHERE id = $1', [

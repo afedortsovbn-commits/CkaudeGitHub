@@ -31,6 +31,7 @@ import { notify, onRealtime, useRealtime } from '../lib/realtime';
 import { ExternalDataPanel } from './IvrAdminPages';
 import { AssistPanel, renderTemplate, SlashList, useSlashTemplates } from '../components/AssistPanel';
 import { softphone, useSoftphone } from '../lib/softphone';
+import { EscalateModal, SubstitutesPanel, TicketList, useTicketCount } from './TicketPages';
 
 const CHANNEL: Record<string, string> = {
   webchat: 'Сайт',
@@ -47,6 +48,7 @@ const STATUS: Record<string, string> = {
   closed: 'Закрыто',
   hold: 'Удержание',
   waiting_customer: 'Ждём клиента',
+  waiting_2nd_line: 'На 2-й линии',
 };
 const time = (s: unknown) =>
   s ? new Date(String(s)).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }) : '';
@@ -624,6 +626,8 @@ function ConversationCard({ conv }: { conv: Row }) {
   useEffect(() => setVals((conv.fields as Record<string, unknown>) ?? {}), [conv.id, conv.fields]);
   const upd = useAction((b: Record<string, unknown>) => patch(`/conversations/${conv.id}`, b));
   const isPostponed = dispositions.data?.find((d) => d.id === disp)?.behavior === 'postponed';
+  const isEscalate = dispositions.data?.find((d) => d.id === disp)?.behavior === 'escalate';
+  const [escalating, setEscalating] = useState(false);
   const close = useAction(
     () =>
       post(`/conversations/${conv.id}/close`, {
@@ -641,8 +645,15 @@ function ConversationCard({ conv }: { conv: Row }) {
     label: `${'— '.repeat(Number(t.level) - 1)}${String(t.name)}${t.isImportant ? ' ❗' : ''}`,
   }));
   const closed = conv.status === 'closed';
+  const ticket = conv.ticket as { id: string; number: number; status: string } | null;
   return (
     <Stack gap="xs">
+      <EscalateModal conv={conv} opened={escalating} onClose={() => setEscalating(false)} />
+      {ticket && (
+        <Badge color="violet" variant="light" data-testid="conv-ticket">
+          2-я линия: тикет №{String(ticket.number)}
+        </Badge>
+      )}
       {conv.chatCsat ? (
         <Badge color="yellow" variant="light" data-testid="chat-csat">
           Оценка клиента: {String(conv.chatCsat)} из 5
@@ -734,7 +745,7 @@ function ConversationCard({ conv }: { conv: Row }) {
           disabled={closed}
         />
       </Group>
-      {!closed && (
+      {!closed && conv.status !== 'waiting_2nd_line' && (
         <>
           <Paper withBorder p="xs">
             <Select
@@ -756,17 +767,30 @@ function ConversationCard({ conv }: { conv: Row }) {
                 data-testid="callback-at"
               />
             )}
-            <Button
-              size="xs"
-              mt="xs"
-              fullWidth
-              color="green"
-              disabled={!disp || (isPostponed && !callbackAt)}
-              onClick={() => close.mutate(undefined)}
-              data-testid="close"
-            >
-              Завершить обращение
-            </Button>
+            {isEscalate ? (
+              <Button
+                size="xs"
+                mt="xs"
+                fullWidth
+                color="violet"
+                onClick={() => setEscalating(true)}
+                data-testid="escalate"
+              >
+                Передать на 2-ю линию…
+              </Button>
+            ) : (
+              <Button
+                size="xs"
+                mt="xs"
+                fullWidth
+                color="green"
+                disabled={!disp || (isPostponed && !callbackAt)}
+                onClick={() => close.mutate(undefined)}
+                data-testid="close"
+              >
+                Завершить обращение
+              </Button>
+            )}
           </Paper>
           <Paper withBorder p="xs">
             <Select
@@ -1030,6 +1054,8 @@ export function WorkspacePage() {
     [qc, me?.id, selected],
   );
 
+  const secondLine = tab === 'approvals' || tab === 'created';
+  const nApprovals = useTicketCount('approvals');
   const tabs = useMemo(
     () => [
       { value: 'mine', label: 'Мои' },
@@ -1057,13 +1083,39 @@ export function WorkspacePage() {
           fullWidth
           size="xs"
           data={tabs}
-          value={tab}
+          value={secondLine ? '' : tab}
           onChange={setTab}
-          mb="xs"
+          mb={4}
           data-testid="tabs"
         />
-        <ScrollArea h="calc(100vh - 190px)">
-          <List tab={tab} selected={selected} onSelect={setSelected} />
+        <SegmentedControl
+          fullWidth
+          size="xs"
+          data={[
+            { value: 'approvals', label: nApprovals ? `На согласовании (${nApprovals})` : 'На согласовании' },
+            { value: 'created', label: 'Переданные' },
+          ]}
+          value={secondLine ? tab : ''}
+          onChange={setTab}
+          mb="xs"
+          data-testid="tabs-2nd-line"
+        />
+        <ScrollArea h="calc(100vh - 220px)">
+          {secondLine ? (
+            <Stack gap="xs">
+              <TicketList view={tab} extra={tab === 'created' ? '&status=new,in_work,approval,rework' : ''} />
+              {tab === 'approvals' && (
+                <Paper withBorder p="xs">
+                  <Text size="sm" fw={600} mb={4}>
+                    Заместитель на период отсутствия
+                  </Text>
+                  <SubstitutesPanel />
+                </Paper>
+              )}
+            </Stack>
+          ) : (
+            <List tab={tab} selected={selected} onSelect={setSelected} />
+          )}
         </ScrollArea>
       </Grid.Col>
       <Grid.Col span={5}>
