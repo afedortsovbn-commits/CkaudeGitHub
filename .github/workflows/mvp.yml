@@ -75,6 +75,8 @@ jobs:
         run: API_TAG=v2 SERVICE=web node ops/test/rollout-under-load.mjs v2 40 30
       - name: Переписка во время обновления api, worker и realtime — без потерь и дублей
         run: API_TAG=v2 node ops/test/chat-under-rollout.mjs v2 60
+      - name: Внешний канал и webhooks во время обновления api и worker — без потерь и дублей
+        run: API_TAG=v2 node ops/test/webhooks-under-rollout.mjs v2 60
       - name: Поток Telegram и email во время обновления коннекторов — без потерь и дублей
         run: API_TAG=v2 node ops/test/connectors-under-rollout.mjs v2 60
       - name: Обновление Asterisk осушением узлов во время ~10 разговоров SIPp — 0 обрывов

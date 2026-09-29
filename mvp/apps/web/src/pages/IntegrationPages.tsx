@@ -384,7 +384,12 @@ const parseHeaders = (s: string) =>
 
 function SubscriptionsPage({ kind }: { kind: 'events' | 'bot' }) {
   const bot = kind === 'bot';
-  const list = useList(`/webhooks?kind=${kind}`);
+  // Состояние получателей меняется само (сбой, восстановление) — список перечитывается.
+  const list = useQuery({
+    queryKey: [`/webhooks?kind=${kind}`],
+    queryFn: () => get<Row[]>(`/webhooks?kind=${kind}`),
+    refetchInterval: 3000,
+  });
   const cat = useCatalog();
   const channels = useList('/dict/channels');
   const [edit, setEdit] = useState<Row | 'new' | null>(null);

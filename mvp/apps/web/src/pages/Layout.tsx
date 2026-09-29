@@ -30,7 +30,7 @@ const MENU: { to: string; label: string; perms?: string[] }[] = [
   { to: '/integrations', label: 'Интеграции', perms: ['admin.directories'] },
   { to: '/api-keys', label: 'Ключи API', perms: ['admin.settings'] },
   { to: '/webhooks', label: 'Webhooks', perms: ['admin.settings'] },
-  { to: '/external-bots', label: 'Внешние боты', perms: ['admin.settings'] },
+  { to: '/external-bots', label: 'Внешний бот (Bot Gateway)', perms: ['admin.settings'] },
   { to: '/api-docs', label: 'Документация API', perms: ['admin.settings', 'admin.directories'] },
   { to: '/config-transfer', label: 'Экспорт и импорт', perms: ['admin.settings'] },
   { to: '/enterprises', label: t.nav.enterprises, perms: ['admin.directories'] },
