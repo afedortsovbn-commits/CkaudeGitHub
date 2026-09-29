@@ -14,6 +14,7 @@ import { createS3Storage } from '../lib/storage';
 import { seedDemo } from './demo-seed';
 import { seedBotDemo } from './bot-demo-seed';
 import { seedIvrDemo } from './ivr-demo-seed';
+import { seedIntegrationsDemo } from './integrations-demo-seed';
 
 const log = (msg: string, extra: Record<string, unknown> = {}) =>
   console.log(JSON.stringify({ level: 'info', service: 'bootstrap', msg, ...extra }));
@@ -74,6 +75,19 @@ async function main(): Promise<void> {
         }),
       );
       log(bot ? 'демо-бот и база знаний загружены' : 'демо-бот уже есть — пропуск');
+      // Демо Ф9: анализатор, внешний бот, внешний канал — к моку (mock-selfservice).
+      const integ = await withTx(pool, (tx) =>
+        seedIntegrationsDemo(tx, {
+          mockUrl: process.env.SELFSERVICE_URL ?? 'http://mock-selfservice:3000',
+          secretsKey: process.env.SECRETS_KEY,
+          keys: {
+            ...(process.env.DEMO_ANALYZER_API_KEY ? { analyzerKey: process.env.DEMO_ANALYZER_API_KEY } : {}),
+            ...(process.env.DEMO_BOT_API_KEY ? { botKey: process.env.DEMO_BOT_API_KEY } : {}),
+            ...(process.env.DEMO_FORM_API_KEY ? { formKey: process.env.DEMO_FORM_API_KEY } : {}),
+          },
+        }),
+      );
+      log(integ ? 'демо-интеграции загружены' : 'демо-интеграции уже есть — пропуск');
     }
   } finally {
     await pool.end();

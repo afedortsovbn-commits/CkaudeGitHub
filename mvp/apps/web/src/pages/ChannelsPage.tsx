@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { DictPage } from '../components/DictPage';
 import type { FormField } from '../components/FormModal';
 import { get } from '../lib/api';
+import { useAuth } from '../lib/auth';
 import { type Row, options, useList } from '../lib/data';
 
 /** Маска секрета от api: «не менять». */
@@ -15,6 +16,7 @@ const KINDS = [
   { value: 'telegram', label: 'Telegram-бот' },
   { value: 'email', label: 'Электронная почта' },
   { value: 'voice', label: 'Телефон' },
+  { value: 'api', label: 'Внешняя система (API)' },
 ];
 const kindLabel = (k: unknown) => KINDS.find((x) => x.value === k)?.label ?? String(k ?? '');
 
@@ -185,6 +187,7 @@ const toForm = (r: Row) => {
     name: r.name,
     queueId: r.queueId,
     botFlowId: r.botFlowId,
+    botWebhookId: r.botWebhookId,
     publicKey: c.public_key,
     allowedOrigins: ((c.allowed_origins as string[]) ?? []).join(', '),
     consentText: c.consent_text,
@@ -221,8 +224,10 @@ const fromForm = (v: Record<string, unknown>, editing: Row | null) => {
     ...(isCreate ? { kind: k } : {}),
     name,
     queueId,
-    ...(k !== 'voice' ? { botFlowId: v.botFlowId ?? null } : {}),
+    ...(k !== 'voice' ? { botFlowId: v.botFlowId ?? null, botWebhookId: v.botWebhookId ?? null } : {}),
   };
+  // Внешняя система (Ф9): сообщения приходят по ключу API с правом «Внешний канал».
+  if (k === 'api') return { ...base, config: {} };
   if (k === 'telegram')
     return {
       ...base,
@@ -294,8 +299,11 @@ const CREATE_DEFAULTS = {
 
 /** Экземпляры каналов: веб-чат, чат в приложении, Telegram-боты, почтовые ящики (M-CH-07). */
 export function ChannelsPage() {
+  const { can } = useAuth();
   const queues = useList('/dict/queues');
   const bots = useList('/flows?kind=text');
+  // Внешние боты (Bot Gateway, Ф9) — «Администрирование → Внешние боты».
+  const extBots = useList('/webhooks?kind=bot', can('admin.settings'));
   const [logOf, setLogOf] = useState<Row | null>(null);
 
   return (
@@ -314,13 +322,19 @@ export function ChannelsPage() {
               if (r.kind === 'email') return str(c.address);
               if (r.kind === 'voice') return ((c.dids as string[]) ?? []).join(', ');
               if (r.kind === 'telegram') return c.mode === 'webhook' ? 'webhook' : 'опрос';
+              if (r.kind === 'api') return 'по ключу API';
               return <Code>{str(c.public_key)}</Code>;
             },
           },
           {
             key: 'bot',
             label: 'Бот',
-            render: (r) => String(bots.data?.find((b) => b.id === r.botFlowId)?.name ?? '—'),
+            render: (r) =>
+              String(
+                bots.data?.find((b) => b.id === r.botFlowId)?.name ??
+                  extBots.data?.find((b) => b.id === r.botWebhookId)?.name ??
+                  '—',
+              ),
           },
           { key: 'conn', label: 'Подключение', render: (r) => <ChannelStatus row={r} /> },
         ]}
@@ -344,6 +358,14 @@ export function ChannelsPage() {
             options: options(bots.data),
             description: 'Новые обращения сначала ведёт бот (опубликованная версия), затем — оператор',
             show: (v) => v.kind !== 'voice',
+          },
+          {
+            key: 'botWebhookId',
+            label: 'Внешний бот',
+            type: 'select',
+            options: options(extBots.data),
+            description: 'Бот внешней системы (Bot Gateway); действует, если сценарный бот не выбран',
+            show: (v) => v.kind !== 'voice' && !v.botFlowId,
           },
           ...FIELDS.slice(2),
         ]}

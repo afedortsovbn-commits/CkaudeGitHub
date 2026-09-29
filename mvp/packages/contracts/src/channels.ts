@@ -113,6 +113,8 @@ export const emailMessageId = (messageId: string, domain: string) => `<${message
 export interface ConversationRef {
   conversationId: string;
   contactId: string;
+  /** Канал обращения (Ф9: фильтр подписок webhooks по каналам). */
+  channelId?: string;
   channelKind: string;
   status: string;
   queueId: string | null;
@@ -148,6 +150,8 @@ export interface MessageMeta {
   buttons?: { id: string; label: string }[];
   /** Запрос оценки обслуживания после закрытия чата (виджет показывает 1–5). */
   csat?: boolean;
+  /** Сообщение или заметка от внешней системы по ключу API (Ф9): название ключа. */
+  external?: string;
 }
 
 /** Типы событий обращений (payload — ConversationRef [+ message]). */

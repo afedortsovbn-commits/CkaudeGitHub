@@ -214,6 +214,8 @@ export const DICTIONARIES: Record<string, DictSpec> = {
       f('queueId', uuid.nullable().optional()),
       // Ф7: бот канала (текстовый сценарий flow-engine) — ведёт новые обращения до перевода на оператора.
       f('botFlowId', uuid.nullable().optional()),
+      // Ф9: внешний бот канала (Bot Gateway) — если сценарный бот не назначен.
+      f('botWebhookId', uuid.nullable().optional()),
       // Проверка по типу канала и шифрование секретов — prepareChannelConfig (hooks.prepare).
       f('config', z.record(z.unknown()).default({}), { json: true }),
     ],

@@ -1,3 +1,4 @@
+import { retryJs } from './nats';
 import type { KV } from 'nats';
 
 /**
@@ -49,5 +50,10 @@ export async function leaseBucket(
   ttlMs: number,
   replicas: number,
 ): Promise<KV> {
-  return js.views.kv(name, { ttl: ttlMs, history: 1, replicas });
+  return retryJs(
+    () => js.views.kv(name, { ttl: ttlMs, history: 1, replicas }),
+    60_000,
+    undefined,
+    `KV ${name}`,
+  );
 }

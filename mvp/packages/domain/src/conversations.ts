@@ -20,6 +20,7 @@ import { notifyClientMessage } from './tickets';
 interface ConvRow {
   id: string;
   contact_id: string;
+  channel_id?: string;
   channel_kind: string;
   status: string;
   queue_id: string | null;
@@ -34,6 +35,7 @@ export function refOf(c: ConvRow): ConversationRef {
   return {
     conversationId: c.id,
     contactId: c.contact_id,
+    ...(c.channel_id ? { channelId: c.channel_id } : {}),
     channelKind: c.channel_kind,
     status: c.status,
     queueId: c.queue_id,
@@ -291,9 +293,19 @@ export async function ingestInbound(
       [m.channelId],
     );
     const botVersion = bot.rows[0]?.version_id ?? null;
+    // Внешний бот (Bot Gateway, Ф9) — если сценарного бота у канала нет.
+    const ext = botVersion
+      ? null
+      : ((
+          await tx.query<{ id: string }>(
+            `SELECT s.id FROM channel ch JOIN webhook_subscription s ON s.id = ch.bot_webhook_id
+              WHERE ch.id = $1 AND s.is_active AND s.kind = 'bot'`,
+            [m.channelId],
+          )
+        ).rows[0]?.id ?? null);
     await tx.query(
-      `INSERT INTO conversation (id, channel_id, channel_kind, contact_id, status, queue_id, priority, is_urgent, queued_at, bot_flow_version_id)
-       VALUES ($1, $2, $3, $4, $8, $5, $6, $7, now(), $9)`,
+      `INSERT INTO conversation (id, channel_id, channel_kind, contact_id, status, queue_id, priority, is_urgent, queued_at, bot_flow_version_id, bot_state)
+       VALUES ($1, $2, $3, $4, $8, $5, $6, $7, now(), $9, $10)`,
       [
         conversationId,
         m.channelId,
@@ -302,8 +314,9 @@ export async function ingestInbound(
         routing.queueId,
         routing.priority,
         routing.isUrgent,
-        botVersion ? 'bot' : 'queued',
+        botVersion || ext ? 'bot' : 'queued',
         botVersion,
+        ext ? JSON.stringify({ external: ext }) : null,
       ],
     );
     await emitConversation(tx, CONVERSATION_EVENTS.created, await loadRef(tx, conversationId));
@@ -313,6 +326,14 @@ export async function ingestInbound(
       `UPDATE conversation SET auto_state = auto_state - 'inactivityWarnedAt' WHERE id = $1 AND auto_state ? 'inactivityWarnedAt'`,
       [conversationId],
     );
+  }
+  // Внешний канал (Ф9, M-CH-09): данные формы сторонней системы — в поля обращения.
+  const formFields = m.meta?.fields;
+  if (formFields && typeof formFields === 'object' && !Array.isArray(formFields)) {
+    await tx.query(`UPDATE conversation SET fields = fields || $2::jsonb WHERE id = $1`, [
+      conversationId,
+      JSON.stringify(formFields),
+    ]);
   }
   const msg = await appendMessage(tx, {
     conversationId,

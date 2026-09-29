@@ -8,7 +8,7 @@ import {
   OutboundMessageSchema,
   outboundSubject,
 } from '@cc/contracts';
-import type { Logger } from '@cc/service-kit';
+import { type Logger, retryJs } from '@cc/service-kit';
 import {
   AckPolicy,
   type Consumer,
@@ -65,17 +65,19 @@ export class OutboundWorker {
 
   async start(): Promise<void> {
     const durable = `connector-${this.o.kind}-outbound`;
-    await this.o.jsm.consumers
-      .add('CC_OUTBOUND', {
-        durable_name: durable,
-        filter_subject: outboundSubject(this.o.kind),
-        ack_policy: AckPolicy.Explicit,
-        ack_wait: 60_000_000_000,
-        max_deliver: this.o.maxAttempts + 2,
-      })
-      .catch((e: unknown) => {
-        if (!String(e).includes('already')) throw e;
-      });
+    await retryJs(() =>
+      this.o.jsm.consumers
+        .add('CC_OUTBOUND', {
+          durable_name: durable,
+          filter_subject: outboundSubject(this.o.kind),
+          ack_policy: AckPolicy.Explicit,
+          ack_wait: 60_000_000_000,
+          max_deliver: this.o.maxAttempts + 2,
+        })
+        .catch((e: unknown) => {
+          if (!String(e).includes('already')) throw e;
+        }),
+    );
     this.consumer = await this.o.js.consumers.get('CC_OUTBOUND', durable);
     this.running = true;
     this.loop = this.run();

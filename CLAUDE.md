@@ -16,7 +16,7 @@
 
 ## Текущее состояние (29.09.2026)
 
-- **Выполнены Ф0–Ф8** (PR #1–#3, #5–#10 и PR Ф8, см. `mvp/docs/PROGRESS.md`). Код — в `mvp/`, как запустить —
+- **Выполнены Ф0–Ф9** (PR #1–#3, #5–#11 и PR Ф9, см. `mvp/docs/PROGRESS.md`). Код — в `mvp/`, как запустить —
   `mvp/README.md`.
 - **Ф5a** добавила телефонию: `infra/asterisk` (2 узла, образ на `andrius/asterisk:22`), `infra/kamailio` (Kamailio 6
   из RPM на AlmaLinux 9, WSS 8443, auth_ephemeral, dispatcher), coturn ×2, сервис `call-control` (ARI, активный/
@@ -43,7 +43,19 @@
   (pg-boss раз в минуту + отметка дня) и отправка писем из очереди `notification` (SMTP — `TICKET_SMTP_*`), api —
   `apps/api/src/tickets/`, web — форма передачи, вкладки «На согласовании»/«Переданные», `/tickets` (кабинет),
   `/tickets/:id`, `/tickets-control`. Обращение с тикетом — статус `waiting_2nd_line`.
-- **Следующие — Ф9, Ф10** (можно параллельно), затем Ф11–Ф13 по плану.
+- **Ф9** добавила публичный API `/api/v1/ext/*` по ключам (`api_key`: права `conversations.read/write`, `bot.reply`,
+  `inbound`, область видимости; guard различает ключ `cck_…` и сессию сотрудника), OpenAPI 3.1
+  (`/api/v1/openapi.json`, `apps/api/src/ext/openapi.ts`, тест сверяет с маршрутами), webhooks
+  (`packages/domain/src/webhooks.ts`: worker раскладывает `CC_EVENTS` по подпискам в `webhook_delivery`, доставка с
+  HMAC, пробная доставка при сбое), Bot Gateway (подписка вида `bot` на канале, `conversation.bot_turn`, срок
+  ответа → оператор), внешний канал (`POST /ext/inbound`, канал типа `api`), экспорт/импорт конфигурации
+  (`apps/api/src/config/`), страницы «Ключи API», «Webhooks», «Внешний бот», «Экспорт и импорт», «Документация API».
+  Демо: `/widget/demo.html?key=demo-webchat-extbot` (эхо-бот), подписка «Демо: анализатор» (выключена).
+- **Следующая — Ф10** (упрощённая аналитика), затем Ф11–Ф13 по плану. Исходные данные для отчётов: журнал `event`
+  (append-only; события обращений несут `ConversationRef` — канал, очередь, оператор, предприятие, подразделение,
+  путь темы, важность, `action`; **объекта и подтемы как отдельного поля в нём пока нет** — дополнить аддитивно),
+  `ticket`/`ticket_transition` (2-я линия, возвраты, ожидание согласования), `call`/`call_event`, `csat_rating`,
+  `agent_status_log`, `routing_offer`. Отчёты ограничивать областью видимости (`scopeFilter`).
 - Ждём от заказчика: параметры SIP-транка МТС (подключается переменной `TRUNK_HOST`), описание API Rocket Data и
   источника справочника объектов (к Ф13). Их отсутствие работу не блокирует — см. соответствующие фазы в плане.
 
@@ -105,6 +117,12 @@
 - Ф8: письма по тикетам сначала пишутся в `notification` (уникальный `dedupe_key`), отправляются отдельно;
   рассылку в тестах вызывать `runDailyDigest(pool, now)` с подменой времени. Подстановка по матрице теперь в
   `packages/domain/src/matrix.ts` (api реэкспортирует). Для e2e Ф8 — `TICKET_SMTP_HOST=mail TICKET_SMTP_PORT=3025`.
+- Ф9: публичные типы событий выводятся из внутренних (`publicEventOf` в contracts) — новые `action` у
+  `conversation.updated` становятся `conversation.updated`, если их не добавить в таблицу. Мок внешних систем для
+  e2e — `127.0.0.1:8082` (`/hooks/<имя>`, `POST /control {"down":true}`); демо-ключи API совпадают у сида и мока.
+  Пункты меню ищутся e2e по подстроке (`nav`) — не давать новым пунктам названий, содержащих существующие.
+- JetStream при старте кластера отвечает не сразу: сервисы подключаются через `connectNats` (ждёт готовности), новые
+  потоки/потребители/KV создавать через `ensureStream` или обёртку `retryJs` из `service-kit`.
 - Стек для e2e Ф4/Ф5 и проверок: `COMPOSE_PROFILES=test MOCK_TELEGRAM_TAG=<тег> PUBLIC_BASE_URL=https://traefik TRUNK_HOST=trunk-sim:5060`,
   образы моков — `APPS="mock-telegram mock-selfservice" ops/build-images.sh <тег>`. Проверки, оставляющие операторов «Готов»
   (`route-under-rollout.mjs`), влияют на последующие: router сам предлагает новые обращения.

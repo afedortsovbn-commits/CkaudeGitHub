@@ -21,6 +21,13 @@ import { ChannelsPage } from './pages/ChannelsPage';
 import { DemoCallPage } from './pages/DemoCallPage';
 import { FlowEditorPage, FlowListPage } from './pages/FlowEditorPage';
 import { AnnouncementsPage, AudioLibraryPage, IntegrationsPage } from './pages/IvrAdminPages';
+import {
+  ApiDocsPage,
+  ApiKeysPage,
+  ConfigTransferPage,
+  ExternalBotsPage,
+  WebhooksPage,
+} from './pages/IntegrationPages';
 import { AssistProvidersPage, AutoRepliesPage, KnowledgePage, TemplatesPage } from './pages/AutomationPages';
 
 const queryClient = new QueryClient({
@@ -60,6 +67,11 @@ function App() {
         <Route path="assist" element={<AssistProvidersPage />} />
         <Route path="announcements" element={<AnnouncementsPage />} />
         <Route path="integrations" element={<IntegrationsPage />} />
+        <Route path="api-keys" element={<ApiKeysPage />} />
+        <Route path="webhooks" element={<WebhooksPage />} />
+        <Route path="external-bots" element={<ExternalBotsPage />} />
+        <Route path="config-transfer" element={<ConfigTransferPage />} />
+        <Route path="api-docs" element={<ApiDocsPage />} />
         <Route path="enterprises" element={<EnterprisesPage />} />
         <Route path="departments" element={<DepartmentsPage />} />
         <Route path="topics" element={<TopicsPage />} />

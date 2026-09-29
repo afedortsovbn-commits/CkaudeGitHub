@@ -1,5 +1,11 @@
 import { INTEGRATION_SUBJECT, type IntegrationReply } from '@cc/contracts';
-import { type BotHttp, claimStaleBotSteps, resumeBotHttp, sweepInactivity } from '@cc/domain';
+import {
+  type BotHttp,
+  claimStaleBotSteps,
+  resumeBotHttp,
+  sweepExternalBots,
+  sweepInactivity,
+} from '@cc/domain';
 import type { Logger } from '@cc/service-kit';
 import type { NatsConnection } from 'nats';
 import type { Pool, PoolClient } from 'pg';
@@ -83,6 +89,8 @@ export class Automation {
     try {
       const n = await this.tx((c) => sweepInactivity(c));
       if (n) this.o.logger.info({ n }, 'автозакрытие: предупреждения и закрытия по молчанию клиента');
+      const ext = await this.tx((c) => sweepExternalBots(c));
+      if (ext) this.o.logger.warn({ n: ext }, 'внешний бот не ответил вовремя — диалоги переданы операторам');
       const stale = await this.tx((c) => claimStaleBotSteps(c));
       for (const h of stale) {
         this.o.logger.warn(

@@ -14,6 +14,7 @@ import {
   createLogger,
   createMetrics,
   ensureStream,
+  retryJs,
   INBOUND_STREAM,
   KvLease,
   leaseBucket,
@@ -79,7 +80,7 @@ async function main(): Promise<void> {
   await ensureStream(jsm, { ...INBOUND_STREAM, replicas });
   await ensureStream(jsm, { ...OUTBOUND_STREAM, replicas });
   const leases = await leaseBucket(js, 'cc_leases', 45_000, replicas);
-  const offsets = await js.views.kv('cc_tg_offsets', { history: 1, replicas });
+  const offsets = await retryJs(() => js.views.kv('cc_tg_offsets', { history: 1, replicas }));
   const sent = await leaseBucket(js, 'cc_outbound_sent', 7 * 24 * 3600_000, replicas);
 
   const journal = new ChannelJournal(pool, (err) => logger.warn({ err: String(err) }, 'журнал канала'));

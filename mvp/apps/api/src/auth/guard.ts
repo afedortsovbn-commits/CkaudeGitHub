@@ -11,6 +11,14 @@ import type { FastifyRequest } from 'fastify';
 import { ApiError } from '../lib/errors';
 import type { Principal } from '@cc/auth';
 import { APP_CONTEXT, type AppContext } from '../context';
+import {
+  ApiKeyStore,
+  EXT_METADATA,
+  KEY_PERMS_METADATA,
+  keyFromRequest,
+  type KeyPrincipal,
+} from '../ext/api-key';
+import { RateLimiter } from '../lib/rate-limit';
 
 const PUBLIC = 'cc:public';
 const PERMS = 'cc:perms';
@@ -20,7 +28,13 @@ export const Public = () => SetMetadata(PUBLIC, true);
 /** Требует хотя бы одно из перечисленных прав. */
 export const RequirePerm = (...perms: string[]) => SetMetadata(PERMS, perms);
 
-type Req = FastifyRequest & { principal?: Principal };
+type Req = FastifyRequest & { principal?: Principal; apiKey?: KeyPrincipal };
+
+/** Общий для guard и контроллера ключей (сброс кэша при отзыве). */
+export function apiKeys(ctx: AppContext): ApiKeyStore {
+  ctx.apiKeys ??= new ApiKeyStore(ctx.pool);
+  return ctx.apiKeys;
+}
 
 export const CurrentUser = createParamDecorator((_: unknown, ctx: ExecutionContext): Principal => {
   const p = ctx.switchToHttp().getRequest<Req>().principal;
@@ -30,6 +44,8 @@ export const CurrentUser = createParamDecorator((_: unknown, ctx: ExecutionConte
 
 @Injectable()
 export class AuthGuard implements CanActivate {
+  /** Публичный API: не больше 500 запросов за 10 с на ключ (на экземпляр api). */
+  private readonly keyLimiter = new RateLimiter(500, 10_000);
   constructor(
     @Inject(Reflector) private readonly reflector: Reflector,
     @Inject(APP_CONTEXT) private readonly ctx: AppContext,
@@ -37,8 +53,9 @@ export class AuthGuard implements CanActivate {
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const targets = [context.getHandler(), context.getClass()];
-    if (this.reflector.getAllAndOverride<boolean>(PUBLIC, targets)) return true;
     const req = context.switchToHttp().getRequest<Req>();
+    if (this.reflector.getAllAndOverride<boolean>(EXT_METADATA, targets)) return this.byKey(req, targets);
+    if (this.reflector.getAllAndOverride<boolean>(PUBLIC, targets)) return true;
     const header = req.headers.authorization;
     if (!header?.startsWith('Bearer ')) throw new ApiError(401, 'unauthorized', 'Требуется вход');
     let claims;
@@ -55,6 +72,22 @@ export class AuthGuard implements CanActivate {
     if (perms?.length && !perms.some((p) => principal.permissions.has(p))) {
       throw new ApiError(403, 'forbidden', 'Недостаточно прав');
     }
+    return true;
+  }
+
+  /** Публичный API (Ф9): только ключ API; сессия сотрудника здесь не принимается. */
+  private async byKey(req: Req, targets: Parameters<Reflector['getAllAndOverride']>[1]): Promise<boolean> {
+    const key = keyFromRequest(req);
+    if (!key) throw new ApiError(401, 'unauthorized', 'Требуется ключ API (Authorization: Bearer cck_…)');
+    const k = await apiKeys(this.ctx).resolve(key);
+    if (!k) throw new ApiError(401, 'key_invalid', 'Ключ API недействителен или отозван');
+    if (!this.keyLimiter.allow(k.keyId))
+      throw new ApiError(429, 'rate_limited', 'Слишком много запросов с этим ключом, повторите позже');
+    k.ip = req.ip;
+    req.apiKey = k;
+    const perms = this.reflector.getAllAndOverride<string[] | undefined>(KEY_PERMS_METADATA, targets);
+    if (perms?.length && !perms.some((p) => k.permissions.has(p)))
+      throw new ApiError(403, 'forbidden', `У ключа нет права: ${perms.join(' или ')}`);
     return true;
   }
 }

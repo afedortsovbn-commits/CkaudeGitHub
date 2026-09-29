@@ -39,6 +39,7 @@ const CHANNEL: Record<string, string> = {
   telegram: 'Telegram',
   email: 'Email',
   voice: 'Звонок',
+  api: 'Внешняя система',
 };
 const STATUS: Record<string, string> = {
   bot: 'У бота / в IVR',
@@ -270,9 +271,17 @@ function List({
 
 /** Подпись автоматического сообщения (Ф7): бот или правило автоответа. */
 function autoLabel(m: Row): string {
-  const auto = (m.meta as { auto?: string } | undefined)?.auto;
-  if (!auto) return '';
-  return auto === 'bot' ? 'Бот' : 'Автоответ';
+  const meta = m.meta as { auto?: string; external?: string } | undefined;
+  if (!meta?.auto) return '';
+  if (meta.auto === 'bot') return meta.external ? `Внешний бот · ${meta.external}` : 'Бот';
+  return 'Автоответ';
+}
+
+/** Автор заметки: сотрудник, внешняя система (ключ API, Ф9) или система. */
+function noteAuthor(m: Row): string {
+  const ext = (m.meta as { external?: string } | undefined)?.external;
+  if (ext) return `внешняя система «${ext}»`;
+  return String(m.authorName ?? 'система');
 }
 
 /** Доставка ответа во внешний канал (Telegram, email): ставится в очередь → отправлено / ошибка. */
@@ -363,7 +372,7 @@ function Messages({ conv, typing, onTyping }: { conv: Row; typing: boolean; onTy
                     {dir === 'in'
                       ? String(conv.contactName)
                       : dir === 'note'
-                        ? `Заметка · ${String(m.authorName ?? 'система')}`
+                        ? `Заметка · ${noteAuthor(m)}`
                         : autoLabel(m) || String(m.authorName ?? '')}{' '}
                     · {time(m.sentAt)}
                     {dir === 'out' && <Delivery m={m} />}
@@ -598,6 +607,28 @@ function ContactCard({ conv, onOpen }: { conv: Row; onOpen(id: string): void }) 
   );
 }
 
+/**
+ * Поля обращения, которых нет среди полей темы: записаны внешней системой (результат анализа по API, данные
+ * формы внешнего канала, Ф9) — только чтение.
+ */
+function ExtraFields({ fields, defined }: { fields: Record<string, unknown>; defined: Row[] }) {
+  const keys = new Set(defined.map((f) => String(f.key)));
+  const extra = Object.entries(fields).filter(([k, v]) => !keys.has(k) && v !== null && v !== '');
+  if (!extra.length) return null;
+  return (
+    <Paper withBorder p={6} data-testid="extra-fields">
+      <Text size="xs" c="dimmed">
+        Данные внешних систем
+      </Text>
+      {extra.map(([k, v]) => (
+        <Text size="xs" key={k} data-testid={`extra-field-${k}`}>
+          <b>{k}:</b> {typeof v === 'object' ? JSON.stringify(v) : String(v)}
+        </Text>
+      ))}
+    </Paper>
+  );
+}
+
 function ConversationCard({ conv }: { conv: Row }) {
   const topics = useList('/topics');
   const enterprises = useList('/dict/enterprises');
@@ -719,6 +750,7 @@ function ConversationCard({ conv }: { conv: Row }) {
           disabled={closed}
         />
       ))}
+      <ExtraFields fields={(conv.fields as Record<string, unknown>) ?? {}} defined={fields.data ?? []} />
       <MultiSelect
         size="xs"
         label="Теги"
