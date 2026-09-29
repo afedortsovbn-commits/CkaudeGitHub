@@ -21,7 +21,8 @@
     "nats": "2.29.3",
     "pg": "8.23.0",
     "prom-client": "15.1.3",
-    "zod": "3.25.76"
+    "zod": "3.25.76",
+    "@cc/flow-engine": "workspace:*"
   },
   "devDependencies": {
     "@types/pg": "8.23.1"

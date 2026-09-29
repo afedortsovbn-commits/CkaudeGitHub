@@ -9,7 +9,10 @@ import { newId } from '@cc/contracts';
 import { createPool, migrate } from '@cc/db';
 import { hashPassword } from '../auth/passwords';
 import { withTx } from '../lib/db';
+import { join } from 'node:path';
+import { createS3Storage } from '../lib/storage';
 import { seedDemo } from './demo-seed';
+import { seedIvrDemo } from './ivr-demo-seed';
 
 const log = (msg: string, extra: Record<string, unknown> = {}) =>
   console.log(JSON.stringify({ level: 'info', service: 'bootstrap', msg, ...extra }));
@@ -46,6 +49,23 @@ async function main(): Promise<void> {
       const demoPassword = process.env.DEMO_PASSWORD ?? 'Demo12345!';
       const created = await withTx(pool, (tx) => seedDemo(tx, demoPassword));
       log(created ? 'демо-данные загружены' : 'демо-данные уже есть — пропуск');
+      // Демо IVR (Ф6) — отдельно: на стендах, где демо-данные загружены прежними версиями, тоже появится.
+      const storage = createS3Storage({
+        endpoint: process.env.S3_ENDPOINT ?? 'http://s3:8333',
+        bucket: process.env.S3_BUCKET ?? 'cc-files',
+        accessKey: process.env.S3_ACCESS_KEY ?? 'cc',
+        secretKey: process.env.S3_SECRET_KEY ?? 'cc-secret',
+      });
+      await storage.ensureBucket();
+      const ivr = await withTx(pool, (tx) =>
+        seedIvrDemo(tx, storage, {
+          assetsDir: join(__dirname, '../../assets/ivr-demo'),
+          selfserviceUrl: process.env.SELFSERVICE_URL ?? 'http://mock-selfservice:3000',
+          selfserviceToken: process.env.SELFSERVICE_TOKEN ?? 'demo-selfservice-token',
+          secretsKey: process.env.SECRETS_KEY,
+        }),
+      );
+      log(ivr ? 'демо-сценарий IVR загружен' : 'демо-сценарий IVR уже есть — пропуск');
     }
   } finally {
     await pool.end();

@@ -177,9 +177,14 @@ services:
       BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-}
       SEED_DEMO: ${SEED_DEMO:-false}
       DEMO_PASSWORD: ${DEMO_PASSWORD:-Demo12345!}
+      # Демо-сценарий IVR (Ф6): аудиофайлы — в S3-хранилище, операции — к моку самообслуживания.
+      S3_ENDPOINT: http://s3:8333
+      SELFSERVICE_URL: ${SELFSERVICE_URL:-http://mock-selfservice:3000}
+      SELFSERVICE_TOKEN: ${MOCK_SELFSERVICE_TOKEN:-demo-selfservice-token}
     networks: [cc]
     depends_on:
       postgres: { condition: service_healthy }
+      s3: { condition: service_healthy }
     restart: 'no'
     healthcheck: { disable: true }
 
@@ -427,6 +432,15 @@ services:
     restart: unless-stopped
     networks: [cc]
     ports: ['127.0.0.1:${MOCK_TELEGRAM_PORT:-8081}:3000']
+  # Мок внешней системы самообслуживания (баланс бонусов, история заправок) — демо-сценарий IVR и панель
+  # внешних данных клиента (Ф6). Профили test и demo.
+  mock-selfservice:
+    profiles: [test, demo]
+    image: cc/mock-selfservice:${MOCK_SELFSERVICE_TAG:-${MOCK_TELEGRAM_TAG:-dev}}
+    restart: unless-stopped
+    environment:
+      MOCK_TOKEN: ${MOCK_SELFSERVICE_TOKEN:-demo-selfservice-token}
+    networks: [cc]
   mail:
     profiles: [test]
     # GreenMail: тестовый SMTP (3025) + IMAP (3143), ящики создаются при первом входе.

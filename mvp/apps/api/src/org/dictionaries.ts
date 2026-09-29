@@ -1,6 +1,13 @@
 import { z, type ZodTypeAny } from 'zod';
 import type { ScopeColumns } from '@cc/auth';
 import { maskChannelRow, prepareChannelConfig } from './channel-config';
+import {
+  IntegrationAuthSchema,
+  IntegrationInputsSchema,
+  IntegrationOutputsSchema,
+  maskIntegration,
+  prepareIntegration,
+} from '../ivr/integrations';
 
 export interface FieldSpec {
   api: string;
@@ -20,7 +27,8 @@ export interface DictSpec {
   search: string[];
   /** Столбцы строки для областей видимости (алиас таблицы — t). */
   scope?: ScopeColumns;
-  writePerm: string;
+  /** Право на изменение (любое из перечисленных). */
+  writePerm: string | string[];
   /** Подготовка данных к записи (проверка, шифрование секретов); before — текущая строка при изменении. */
   prepare?: (
     data: Record<string, unknown>,
@@ -216,6 +224,47 @@ export const DICTIONARIES: Record<string, DictSpec> = {
       return { ...data, config: prepareChannelConfig(kind, config, prev, secretsKey) };
     },
     present: maskChannelRow,
+  },
+  // Ф6: глобальные объявления о сбоях (M-IVR-04) — включает и выключает менеджер (супервизор) без правки сценария.
+  announcements: {
+    table: 'announcement',
+    title: 'Объявление',
+    fields: [
+      f('name', name),
+      f('audioId', uuid),
+      f('startsAt', z.string().datetime({ offset: true }).nullable().optional()),
+      f('endsAt', z.string().datetime({ offset: true }).nullable().optional()),
+      f('flowIds', z.array(uuid).default([])),
+      f('sortOrder', z.number().int().default(0)),
+    ],
+    orderBy: 'sort_order, name',
+    search: ['name'],
+    writePerm: ['admin.directories', 'supervisor.monitor'],
+  },
+  // Ф6: интеграционные операции (M-INT-03); секрет авторизации шифруется, в ответах — маска.
+  integrations: {
+    table: 'integration_op',
+    title: 'Интеграционная операция',
+    fields: [
+      f('code', code),
+      f('name', name),
+      f('method', z.enum(['GET', 'POST', 'PUT']).default('GET')),
+      f('url', z.string().trim().min(8).max(2000)),
+      f('headers', z.record(z.string().max(2000)).default({}), { json: true }),
+      f('auth', IntegrationAuthSchema.default({ type: 'none' }), { json: true }),
+      f('body', z.string().max(20000).nullable().optional()),
+      f('inputs', IntegrationInputsSchema.default([]), { json: true }),
+      f('outputs', IntegrationOutputsSchema.default([]), { json: true }),
+      f('timeoutMs', z.number().int().min(100).max(30000).default(3000)),
+      f('fallback', z.record(z.string().max(2000)).default({}), { json: true }),
+      f('showInCard', z.boolean().default(false)),
+      f('cardInput', z.string().trim().max(64).nullable().optional()),
+    ],
+    orderBy: 'name',
+    search: ['code', 'name'],
+    writePerm: 'admin.directories',
+    prepare: prepareIntegration,
+    present: maskIntegration,
   },
   'scope-templates': {
     table: 'scope_template',

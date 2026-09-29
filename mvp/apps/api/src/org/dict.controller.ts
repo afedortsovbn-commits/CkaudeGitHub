@@ -88,7 +88,7 @@ export class DictController {
   @Post(':kind')
   async create(@CurrentUser() p: Principal, @Param('kind') kind: string, @Body() body: unknown) {
     const s = spec(kind);
-    if (!hasPerm(p, s.writePerm)) throw forbidden();
+    if (!hasPerm(p, ...[s.writePerm].flat())) throw forbidden();
     let data = parse(createSchema(s), body) as Record<string, unknown>;
     if (s.prepare) data = s.prepare(data, null, this.ctx.config.SECRETS_KEY);
     const { cols, vals } = values(s, data);
@@ -112,7 +112,7 @@ export class DictController {
     @Body() body: unknown,
   ) {
     const s = spec(kind);
-    if (!hasPerm(p, s.writePerm)) throw forbidden();
+    if (!hasPerm(p, ...[s.writePerm].flat())) throw forbidden();
     const data = parse(updateSchema(s), body) as Record<string, unknown>;
     return this.change(p, s, id, data, 'update');
   }
@@ -121,7 +121,7 @@ export class DictController {
   @HttpCode(200)
   async deactivate(@CurrentUser() p: Principal, @Param('kind') kind: string, @Param('id') id: string) {
     const s = spec(kind);
-    if (!hasPerm(p, s.writePerm)) throw forbidden();
+    if (!hasPerm(p, ...[s.writePerm].flat())) throw forbidden();
     return this.change(p, s, id, { isActive: false }, 'deactivate');
   }
 
@@ -129,7 +129,7 @@ export class DictController {
   @HttpCode(200)
   async activate(@CurrentUser() p: Principal, @Param('kind') kind: string, @Param('id') id: string) {
     const s = spec(kind);
-    if (!hasPerm(p, s.writePerm)) throw forbidden();
+    if (!hasPerm(p, ...[s.writePerm].flat())) throw forbidden();
     return this.change(p, s, id, { isActive: true }, 'activate');
   }
 

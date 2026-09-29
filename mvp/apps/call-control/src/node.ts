@@ -17,6 +17,7 @@ import {
   emitConversation,
   endCall,
   loadRef,
+  publishedFlowForDid,
   setCallHold,
   startInboundCall,
   startOutboundCall,
@@ -24,10 +25,12 @@ import {
   transferCallToQueue,
   transferCallToUser,
 } from '@cc/domain';
+import { type FlowGraph, startFlow } from '@cc/flow-engine';
 import { KvLease, type Logger } from '@cc/service-kit';
 import type { KV, Msg, NatsConnection, Subscription } from 'nats';
 import type { Pool, PoolClient } from 'pg';
 import { type Ari, type AriChannel, type AriEvent } from './ari';
+import { type IvrState, IvrRunner } from './ivr';
 import type { RecordingStore } from './recordings';
 
 export const STASIS_APP = 'cc';
@@ -45,6 +48,8 @@ export interface NodeOptions {
   sipProxy: string;
   tickMs: number;
   outboundCallerId: string;
+  /** Адрес call-control для Asterisk: аудиофайлы IVR (http://call-control:3000). */
+  mediaBaseUrl: string;
   onLeadership?: (node: string, leader: boolean) => void;
 }
 
@@ -53,13 +58,15 @@ interface CallRow {
   conversation_id: string;
   direction: 'in' | 'out';
   node: string;
-  state: 'queued' | 'dialing' | 'talking' | 'external' | 'ended';
+  state: 'ivr' | 'queued' | 'dialing' | 'talking' | 'external' | 'ended';
   client_channel: string;
   agent_channel: string | null;
   agent_user_id: string | null;
   bridge_id: string | null;
   on_hold: boolean;
   to_number: string | null;
+  flow_version_id: string | null;
+  ivr_state: IvrState | null;
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -86,8 +93,25 @@ export class MediaNode {
   /** Прослушивание супервизором: канал супервизора → snoop-канал и мост (эфемерно, не переживает переключение). */
   private readonly listens = new Map<string, { snoop: string; bridge: string | null; callId: string }>();
 
+  private readonly ivr: IvrRunner;
+
   constructor(private readonly o: NodeOptions) {
     this.lease = new KvLease(o.leases, `media.${o.name}`, o.instanceId);
+    this.ivr = new IvrRunner({
+      node: o.name,
+      ari: o.ari,
+      pool: o.pool,
+      nc: o.nc,
+      logger: o.logger,
+      store: o.store,
+      sipProxy: o.sipProxy,
+      outboundCallerId: o.outboundCallerId,
+      mediaBaseUrl: o.mediaBaseUrl,
+      stasisApp: STASIS_APP,
+      tx: (fn) => this.tx(fn),
+      enqueue: (fn) => void this.enqueue(fn),
+      isLeader: () => this.leader,
+    });
   }
 
   get name(): string {
@@ -210,10 +234,16 @@ export class MediaNode {
     // Мы никогда не возвращаем каналы в диалплан, поэтому StasisEnd = канал завершён.
     else if (e.type === 'StasisEnd' && e.channel) await this.gone(e.channel.id, 16);
     else if (e.type === 'ChannelDestroyed' && e.channel) await this.gone(e.channel.id, e.cause ?? 16);
-    else if (e.type === 'RecordingFinished' && e.recording)
+    else if (e.type === 'RecordingFinished' && e.recording) {
       await this.o.store.finished(this.o.name, e.recording);
-    else if (e.type === 'RecordingFailed' && e.recording)
+      if (e.recording.name.startsWith('vm-'))
+        await this.ivr.voicemailDone(e.recording.name.slice(3), (e.recording.duration ?? 1) > 0);
+    } else if (e.type === 'RecordingFailed' && e.recording) {
       await this.o.store.failed(this.o.name, e.recording.name);
+      if (e.recording.name.startsWith('vm-')) await this.ivr.voicemailDone(e.recording.name.slice(3), false);
+    } else if (e.type === 'PlaybackFinished' && e.playback) await this.ivr.playbackFinished(e.playback.id);
+    else if (e.type === 'ChannelDtmfReceived' && e.channel && e.digit)
+      await this.ivr.digit(e.channel.id, e.digit);
   }
 
   private async started(ch: AriChannel, args: string[]): Promise<void> {
@@ -246,6 +276,15 @@ export class MediaNode {
     if (opUser) return this.operatorOutbound(ch, opUser, did);
     const number = ch.caller.number?.startsWith('demo-') ? ch.caller.number.slice(5) : ch.caller.number;
     await this.o.ari.channels.answer(ch.id);
+    // Сценарий IVR, опубликованный для номера (M-IVR-07): вызов запоминает версию и доигрывает её (M-IVR-06).
+    const flow = await this.tx((tx) => publishedFlowForDid(tx, did));
+    const step = flow
+      ? startFlow(
+          flow.graph as FlowGraph,
+          { caller: normalizePhone(number ?? '') ?? number ?? '', did },
+          await this.ivr.context(),
+        )
+      : null;
     const r = await this.tx((tx) =>
       startInboundCall(tx, {
         node: this.o.name,
@@ -253,11 +292,29 @@ export class MediaNode {
         callerNumber: number || null,
         callerName: ch.caller.name || null,
         did,
+        ...(flow && step
+          ? {
+              ivr: {
+                flowVersionId: flow.versionId,
+                flowName: `${flow.flowName}, версия ${flow.version}`,
+                state: { flow: step.state, action: step.action, token: 'start' },
+              },
+            }
+          : {}),
       }),
     );
     if (!r) {
       this.o.logger.warn({ did }, 'нет голосового канала для номера — вызов отклонён');
       await this.o.ari.channels.hangup(ch.id, 'congestion');
+      return;
+    }
+    if (step) {
+      this.o.logger.info(
+        { node: this.o.name, callId: r.callId, did, flow: flow!.flowName },
+        'входящий вызов в IVR',
+      );
+      const c = await this.call('id = $2', [r.callId]);
+      if (c) await this.ivr.perform(c, step);
       return;
     }
     await this.o.ari.channels.mohStart(ch.id);
@@ -373,6 +430,7 @@ export class MediaNode {
     await this.startRecording(c);
     const name = await this.userName(c.agent_user_id);
     await this.tx((tx) => connectAgent(tx, callId, { bridgeId: bridge, userName: name }));
+    await this.ivr.agentConnected(c);
   }
 
   /** Абонент ответил на исходящий вызов оператора. */
@@ -437,6 +495,7 @@ export class MediaNode {
     const c = await this.call('(client_channel = $2 OR agent_channel = $2)', [channelId]);
     if (!c) return;
     if (c.client_channel === channelId) {
+      await this.ivr.clientGone(c);
       if (c.agent_channel) await this.o.ari.channels.hangup(c.agent_channel);
       await this.dropListeners(c.id);
       if (c.bridge_id) await this.o.ari.bridges.destroy(c.bridge_id);
@@ -456,6 +515,7 @@ export class MediaNode {
       await this.tx((tx) => agentLegFailed(tx, c.id, rejected || unreachable ? 'declined' : 'timeout', note));
       return;
     }
+    if (c.state === 'external' && c.on_hold && (await this.ivr.transferFailed(c.id))) return;
     if (c.state === 'external' && c.on_hold) {
       // Подразделение не ответило: звонок возвращается в очередь обращения.
       const q = await this.o.pool.query<{ queue_id: string | null }>(
@@ -473,8 +533,10 @@ export class MediaNode {
         return;
       }
     }
-    await this.o.ari.channels.hangup(c.client_channel);
     await this.dropListeners(c.id);
+    // Оператор завершил разговор, а у сценария есть продолжение (автосообщение, CSAT — M-TEL-09).
+    if (c.state === 'talking' && (await this.ivr.afterAgent(c))) return;
+    await this.o.ari.channels.hangup(c.client_channel);
     if (c.bridge_id) await this.o.ari.bridges.destroy(c.bridge_id);
     const reason =
       c.state === 'dialing' ? 'agent_cancel' : c.state === 'external' ? 'external_hangup' : 'agent_hangup';
@@ -495,6 +557,7 @@ export class MediaNode {
 
   private async tick(): Promise<void> {
     if (!this.leader) return;
+    await this.ivr.wake();
     await this.dialOffered();
     await this.dropStaleOffers();
     await this.o.store.uploadPending(this.o.name, this.o.ari);
@@ -608,7 +671,10 @@ export class MediaNode {
         await this.gone(c.client_channel, 16);
         continue;
       }
-      if (c.state === 'queued') {
+      if (c.state === 'ivr') {
+        await this.ivr.recover(c);
+      } else if (c.state === 'queued') {
+        if (c.ivr_state) await this.ivr.recover(c);
         await this.o.ari.channels.mohStart(c.client_channel);
       } else if (c.state === 'dialing') {
         const peer = byId.get(c.client_channel);

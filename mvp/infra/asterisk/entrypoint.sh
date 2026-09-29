@@ -18,5 +18,6 @@ for f in /opt/cc/asterisk/*.conf; do
       "$f" > "/etc/asterisk/$(basename "$f")"
 done
 rm -f /etc/asterisk/users.conf /etc/asterisk/sip.conf
-mkdir -p /var/spool/asterisk/recording
+mkdir -p /var/spool/asterisk/recording /var/cache/asterisk
+chown asterisk:asterisk /var/cache/asterisk
 exec /usr/local/bin/entrypoint.sh "$@"
