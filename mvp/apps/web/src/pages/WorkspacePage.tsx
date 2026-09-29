@@ -85,11 +85,19 @@ function AgentStatusBar() {
         size="xs"
         data-testid="agent-status"
         value={cur}
-        onChange={(v) =>
+        onChange={(v) => {
+          // Интеграция со статусом (Ф5b): «Готов» без подключённого телефона — звонки не придут, чаты — да.
+          if (v === 'ready' && softphone.getSnapshot().reg !== 'registered')
+            notifications.show({
+              color: 'yellow',
+              title: 'Телефон не подключён',
+              message: 'Звонки поступать не будут, пока софтфон не подключится; чаты — будут',
+              autoClose: 8000,
+            });
           setStatus.mutate(
             v === 'break' ? { status: 'break', reasonId: reasons.data?.[0]?.id } : { status: v },
-          )
-        }
+          );
+        }}
         data={[
           { value: 'ready', label: 'Готов' },
           { value: 'break', label: 'Перерыв' },
