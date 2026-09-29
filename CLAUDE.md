@@ -88,7 +88,9 @@
 - Телефония: образы `cc/asterisk`, `cc/kamailio` собирает `ops/build-images.sh` (тег `MEDIA_TAG`, `SKIP_MEDIA=1` —
   пропустить). Базы: `andrius/asterisk:22`, `kamailio/kamailio-store:6.0.5-centos-9.amd64`, `almalinux:9` (в облаке —
   через `mirror.gcr.io/...` + `docker tag`). ARI: после `StasisEnd` приложению не приходит `ChannelDestroyed`.
-  Kamailio должен слушать адрес интерфейса (не 0.0.0.0 — иначе Record-Route ломает диалоги). Браузер в e2e —
+  Kamailio должен слушать адрес интерфейса (не 0.0.0.0 — иначе Record-Route ломает диалоги).
+  Регистрации софтфона копятся (новая на каждую загрузку страницы, живут 300 с), а вызов рассылается максимум на
+  12 контактов — поэтому `usrloc desc_time_order=1` (новые первыми) и снятие регистрации на `pagehide`. Браузер в e2e —
   Chromium с `--use-fake-device-for-media-stream`; Asterisk в docker-сети доступен браузеру на хосте напрямую.
 - IVR: фразы Asterisk берёт по HTTP у call-control (`sound:http://call-control:3000/media/<id>.wav`,
   `res_http_media_cache`) — нужен `astcachedir` (иначе проигрывание мгновенно «заканчивается»). DTMF из браузера —
