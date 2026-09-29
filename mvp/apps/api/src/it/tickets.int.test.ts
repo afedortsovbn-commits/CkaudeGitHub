@@ -11,7 +11,6 @@ describe.skipIf(!ADMIN_URL)('Вторая линия Ф8 (интеграция)'
   const id: Record<string, string> = {};
   const tok: Record<string, string> = {};
   let seq = 0;
-  const ops = ['operator1@demo.local', 'operator2@demo.local', 'operator3@demo.local'];
 
   const one = async (sql: string, params: unknown[] = []) => (await t.pool.query(sql, params)).rows[0];
   const uid = async (email: string) =>
@@ -262,13 +261,11 @@ describe.skipIf(!ADMIN_URL)('Вторая линия Ф8 (интеграция)'
     });
     v = closed.body.version;
     // документ виден участникам; чужому без прав — нет (404 на тикет)
-    const file = await t
-      .http()
-      .inject({
-        method: 'GET',
-        url: `/api/v1/tickets/${tid}/files/${fileId}`,
-        headers: { authorization: `Bearer ${tok.op1}` },
-      });
+    const file = await t.http().inject({
+      method: 'GET',
+      url: `/api/v1/tickets/${tid}/files/${fileId}`,
+      headers: { authorization: `Bearer ${tok.op1}` },
+    });
     expect(file.statusCode).toBe(200);
     expect(file.body).toContain('%PDF');
     // согласующему (создателю) письмо и уведомление; в его списках тикет виден
