@@ -4,6 +4,7 @@ import { scopeFilter } from '@cc/auth';
 import { CurrentUser, hasPerm } from '../auth/guard';
 import type { Principal } from '@cc/auth';
 import { APP_CONTEXT, type AppContext } from '../context';
+import { openTicketsAffectedBy } from '@cc/domain';
 import { audit } from '../lib/audit';
 import { one, rows, toApi, withTx } from '../lib/db';
 import { forbidden, notFound, parse } from '../lib/errors';
@@ -122,7 +123,15 @@ export class DictController {
   async deactivate(@CurrentUser() p: Principal, @Param('kind') kind: string, @Param('id') id: string) {
     const s = spec(kind);
     if (!hasPerm(p, ...[s.writePerm].flat())) throw forbidden();
-    return this.change(p, s, id, { isActive: false }, 'deactivate');
+    // Предупреждение об открытых тикетах при отключении предприятия или подразделения (M-TKT-12a).
+    const openTickets =
+      s.table === 'enterprise'
+        ? await openTicketsAffectedBy(this.ctx.pool, { enterpriseId: id })
+        : s.table === 'department'
+          ? await openTicketsAffectedBy(this.ctx.pool, { departmentId: id })
+          : [];
+    const changed = await this.change(p, s, id, { isActive: false }, 'deactivate');
+    return openTickets.length ? { ...changed, openTickets } : changed;
   }
 
   @Post(':kind/:id/activate')

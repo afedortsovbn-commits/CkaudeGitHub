@@ -102,7 +102,7 @@ export class ConversationsController {
     };
     switch (q.tab ?? 'mine') {
       case 'mine':
-        add(`c.assignee_id = ? AND c.status NOT IN ('closed')`, p.id);
+        add(`c.assignee_id = ? AND c.status NOT IN ('closed', 'waiting_2nd_line')`, p.id);
         break;
       case 'queue':
         // Очередь: ожидающие без оператора — в очередях сотрудника (супервизор видит все очереди).
@@ -171,8 +171,14 @@ export class ConversationsController {
     return c;
   }
 
-  private ensureHandler(p: Principal, c: Conv): void {
+  private ensureHandler(p: Principal, c: Conv, strict = false): void {
     if (c.status === 'closed') throw badRequest('Обращение закрыто');
+    if (c.status === 'waiting_2nd_line' && strict)
+      throw new ApiError(
+        409,
+        'waiting_2nd_line',
+        'Обращение на 2-й линии: закроет его согласующий после принятия ответа',
+      );
     if (c.assignee_id !== p.id && !hasPerm(p, 'supervisor.monitor')) {
       throw new ApiError(
         409,
@@ -199,7 +205,18 @@ export class ConversationsController {
       'SELECT tag_id FROM conversation_tag WHERE conversation_id = $1',
       [id],
     );
-    return { ...toApi(c!), ...toApi(full!), tagIds: tags.map((t) => t.tag_id) };
+    const ticket = await one(
+      this.ctx.pool,
+      `SELECT id, number, status, to_char(due_date, 'YYYY-MM-DD') AS due_date FROM ticket
+        WHERE conversation_id = $1 ORDER BY (status <> 'closed') DESC, created_at DESC LIMIT 1`,
+      [id],
+    );
+    return {
+      ...toApi(c!),
+      ...toApi(full!),
+      tagIds: tags.map((t) => t.tag_id),
+      ticket: ticket ? toApi(ticket) : null,
+    };
   }
 
   @Get('conversations/:id/messages')
@@ -398,7 +415,7 @@ export class ConversationsController {
     const b = parse(TransferBody, body);
     await withTx(this.ctx.pool, async (tx) => {
       const c = await this.visible(p, id, tx, true);
-      this.ensureHandler(p, c);
+      this.ensureHandler(p, c, true);
       if (b.toUserId) {
         const u = await one<{ full_name: string }>(
           tx,
@@ -455,14 +472,15 @@ export class ConversationsController {
     const { dispositionId, callbackAt } = parse(CloseBody, body);
     await withTx(this.ctx.pool, async (tx) => {
       const c = await this.visible(p, id, tx, true);
-      this.ensureHandler(p, c);
+      this.ensureHandler(p, c, true);
       const d = await one<{ behavior: string; name: string }>(
         tx,
         'SELECT behavior, name FROM disposition WHERE id = $1 AND is_active',
         [dispositionId],
       );
       if (!d) throw notFound('Результат обработки');
-      if (d.behavior === 'escalate') throw badRequest('Передача на 2-ю линию появится в фазе Ф8');
+      if (d.behavior === 'escalate')
+        throw badRequest('Для передачи на 2-ю линию используйте форму передачи (POST …/escalate)');
       if (d.behavior === 'postponed' && !callbackAt) throw badRequest('Укажите дату и время перезвона');
       if (d.behavior === 'postponed' && new Date(callbackAt!).getTime() <= Date.now())
         throw badRequest('Дата перезвона должна быть в будущем');

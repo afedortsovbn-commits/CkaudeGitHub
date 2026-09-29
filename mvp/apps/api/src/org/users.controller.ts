@@ -7,6 +7,7 @@ import type { Principal } from '@cc/auth';
 import { APP_CONTEXT, type AppContext } from '../context';
 import { audit } from '../lib/audit';
 import { one, rows, toApi, withTx } from '../lib/db';
+import { handleUserDeactivated } from '@cc/domain';
 import { badRequest, notFound, parse } from '../lib/errors';
 
 const uuid = z.string().uuid();
@@ -138,7 +139,10 @@ export class UsersController {
           `UPDATE app_user SET ${cols.map((c, i) => `${c} = $${i + 2}`).join(', ')}, updated_at = now() WHERE id = $1 RETURNING *`,
           [id, ...Object.values(data)],
         );
-        if (data.canLogin === false) await this.revokeSessions(tx, id);
+        if (data.canLogin === false) {
+          await this.revokeSessions(tx, id);
+          await handleUserDeactivated(tx, id);
+        }
         await audit(tx, p, 'update', 'app_user', id, before, { ...after, password_hash: undefined });
       }
     });
@@ -269,22 +273,27 @@ export class UsersController {
     });
   }
 
-  /** Увольнение/отключение: сотрудник не может войти, сессии завершаются. Назначения в тикетах — Ф8 (M-TKT-12a). */
+  /**
+   * Увольнение/отключение: сотрудник не может войти, сессии завершаются; открытые тикеты пересчитываются
+   * (M-TKT-12a): исключение из назначений и рассылки, пересчёт по матрице, кураторы, отчёт «требуют переназначения».
+   */
   @Post(':id/deactivate')
   @HttpCode(200)
   async deactivate(@CurrentUser() p: Principal, @Param('id') id: string) {
     if (id === p.id) throw badRequest('Нельзя отключить собственную учётную запись');
-    await withTx(this.ctx.pool, async (tx) => {
+    const tickets = await withTx(this.ctx.pool, async (tx) => {
       const r = await tx.query(
         'UPDATE app_user SET is_active = false, updated_at = now() WHERE id = $1 AND is_active',
         [id],
       );
       if (!r.rowCount) throw notFound('Активный сотрудник');
       await this.revokeSessions(tx, id);
-      await audit(tx, p, 'deactivate', 'app_user', id, null, null);
+      const impact = await handleUserDeactivated(tx, id);
+      await audit(tx, p, 'deactivate', 'app_user', id, null, { tickets: impact });
+      return impact;
     });
     this.ctx.principals.invalidate();
-    return this.get(id);
+    return { ...(await this.get(id)), ticketImpact: tickets };
   }
 
   @Post(':id/activate')

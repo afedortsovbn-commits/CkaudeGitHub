@@ -1,6 +1,6 @@
 import type { Principal } from '@cc/auth';
 import { describe, expect, it } from 'vitest';
-import { deliver } from './routing';
+import { deliver, deliverTicket } from './routing';
 
 const E1 = 'e1';
 const base = {
@@ -55,5 +55,29 @@ describe('deliver', () => {
       conversationId: 'c1',
       status: 'closed',
     });
+  });
+});
+
+describe('deliverTicket (Ф8)', () => {
+  const tk = (notify: string[]) =>
+    ({
+      id: 'x',
+      type: 'ticket.assigned',
+      version: 1,
+      occurredAt: '',
+      source: 'tickets',
+      data: { ticketId: 't1', number: 1001, status: 'new', notifyUserIds: notify },
+    }) as never;
+
+  it('только адресатам уведомления, независимо от области видимости', () => {
+    expect(deliverTicket({ kind: 'operator', principal: op([]) }, tk(['u1']))).toEqual({
+      type: 'ticket',
+      event: 'ticket.assigned',
+      data: { ticketId: 't1', number: 1001, status: 'new' },
+    });
+    expect(deliverTicket({ kind: 'operator', principal: op([], true) }, tk(['u2']))).toBeNull();
+  });
+  it('клиенты события тикетов не получают', () => {
+    expect(deliverTicket({ kind: 'client', contactId: 'k1', channelId: 'c' }, tk(['u1']))).toBeNull();
   });
 });

@@ -13,6 +13,7 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
+    "@cc/auth": "workspace:*",
     "@cc/contracts": "workspace:*",
     "@cc/flow-engine": "workspace:*",
     "@cc/service-kit": "workspace:*",

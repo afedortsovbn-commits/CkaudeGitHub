@@ -1,5 +1,6 @@
 import { type ArgumentsHost, Catch, type ExceptionFilter, HttpException } from '@nestjs/common';
 import type { FastifyReply } from 'fastify';
+import { DomainError } from '@cc/domain';
 import { ZodError, type ZodTypeAny, type z } from 'zod';
 
 export class ApiError extends HttpException {
@@ -41,6 +42,10 @@ export class ErrorFilter implements ExceptionFilter {
       reply
         .status(err.getStatus())
         .send(typeof body === 'string' ? { error: 'http_error', message: body } : body);
+      return;
+    }
+    if (err instanceof DomainError) {
+      reply.status(err.status).send({ error: err.code, message: err.message });
       return;
     }
     if (err instanceof ZodError) {

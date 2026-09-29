@@ -17,6 +17,8 @@ import { MatrixController } from './org/matrix.controller';
 import { OrgController } from './org/org.controller';
 import { UsersController } from './org/users.controller';
 import { PingController } from './ping.controller';
+import { NotificationsController } from './tickets/notifications.controller';
+import { TicketsController } from './tickets/tickets.controller';
 
 @Module({})
 export class AppModule {
@@ -39,6 +41,8 @@ export class AppModule {
         TelephonyController,
         IvrController,
         AutomationController,
+        TicketsController,
+        NotificationsController,
       ],
       providers: [
         { provide: APP_CONTEXT, useValue: ctx },
