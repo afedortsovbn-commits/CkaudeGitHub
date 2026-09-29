@@ -25,6 +25,7 @@ interface Bot {
     text?: string;
     document?: string;
     caption?: string;
+    reply_markup?: unknown;
     message_id: number;
     at: number;
   }[];
@@ -122,6 +123,7 @@ async function botApi(token: string, method: string, req: IncomingMessage, res: 
         text: p.text as string | undefined,
         caption: p.caption as string | undefined,
         document: doc?.name,
+        reply_markup: p.reply_markup,
         message_id,
         at: Date.now(),
       });

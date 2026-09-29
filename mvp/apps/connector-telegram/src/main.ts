@@ -166,7 +166,7 @@ async function main(): Promise<void> {
       const runner = runners.get(msg.channelId);
       if (!runner) throw new Error('бот выключен или ещё не загружен');
       let last: { message_id: number } | undefined;
-      if (msg.body) last = await runner.api.sendMessage(msg.to, msg.body);
+      if (msg.body) last = await runner.api.sendMessage(msg.to, msg.body, msg.buttons);
       for (const a of msg.attachments) last = await runner.api.sendDocument(msg.to, await storage.read(a.id));
       return { externalId: last ? `tg-out:${msg.channelId}:${msg.to}:${last.message_id}` : null };
     },

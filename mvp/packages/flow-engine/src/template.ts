@@ -4,7 +4,7 @@
  * и в браузере (тестовый прогон сценария в редакторе).
  */
 
-const VAR = /\{\{\s*([\w.-]+)\s*\}\}/g;
+const VAR = /\{\{\s*([\p{L}\p{N}_.-]+)\s*\}\}/gu;
 
 export function render(
   template: string,

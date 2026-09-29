@@ -12,6 +12,7 @@ import { withTx } from '../lib/db';
 import { join } from 'node:path';
 import { createS3Storage } from '../lib/storage';
 import { seedDemo } from './demo-seed';
+import { seedBotDemo } from './bot-demo-seed';
 import { seedIvrDemo } from './ivr-demo-seed';
 
 const log = (msg: string, extra: Record<string, unknown> = {}) =>
@@ -66,6 +67,13 @@ async function main(): Promise<void> {
         }),
       );
       log(ivr ? 'демо-сценарий IVR загружен' : 'демо-сценарий IVR уже есть — пропуск');
+      // Демо Ф7: бот сайта, автоответы, шаблоны, база знаний, провайдер LLM (выключен).
+      const bot = await withTx(pool, (tx) =>
+        seedBotDemo(tx, {
+          llmUrl: `${(process.env.SELFSERVICE_URL ?? 'http://mock-selfservice:3000').replace(/\/$/, '')}/v1`,
+        }),
+      );
+      log(bot ? 'демо-бот и база знаний загружены' : 'демо-бот уже есть — пропуск');
     }
   } finally {
     await pool.end();

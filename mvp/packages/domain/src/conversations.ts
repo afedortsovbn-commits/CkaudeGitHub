@@ -8,6 +8,7 @@ import {
   type InboundMessage,
   makeEvent,
   type MessageDto,
+  type MessageMeta,
   newId,
   type OutboundMessage,
   outboundSubject,
@@ -69,6 +70,8 @@ export interface AppendInput {
   externalId?: string | null;
   sentAt?: Date;
   id?: string;
+  /** Служебные признаки (Ф7): автоответ/бот — не считается первым ответом оператора; кнопки; запрос оценки. */
+  meta?: MessageMeta;
 }
 
 /**
@@ -83,20 +86,21 @@ export async function appendMessage(tx: PoolClient, m: AppendInput): Promise<Mes
     ]);
     if (dup.rowCount) return null;
   }
+  const automated = !!m.meta?.auto;
   const { rows } = await tx.query<{ seq: string }>(
     `UPDATE conversation SET seq = seq + 1,
        last_message_at = CASE WHEN $2 IN ('in', 'out') THEN now() ELSE last_message_at END,
-       first_response_at = CASE WHEN $2 = 'out' AND first_response_at IS NULL THEN now() ELSE first_response_at END,
+       first_response_at = CASE WHEN $2 = 'out' AND NOT $3 AND first_response_at IS NULL THEN now() ELSE first_response_at END,
        updated_at = now()
      WHERE id = $1 RETURNING seq`,
-    [m.conversationId, m.direction],
+    [m.conversationId, m.direction, automated],
   );
   if (!rows[0]) throw new Error('обращение не найдено');
   const id = m.id ?? newId();
   const sentAt = m.sentAt ?? new Date();
   const ins = await tx.query<{ id: string }>(
-    `INSERT INTO message (id, conversation_id, seq, direction, author_user_id, body, attachments, channel_kind, external_id, sent_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+    `INSERT INTO message (id, conversation_id, seq, direction, author_user_id, body, attachments, channel_kind, external_id, sent_at, meta)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
      ON CONFLICT (channel_kind, external_id) WHERE external_id IS NOT NULL DO NOTHING RETURNING id`,
     [
       id,
@@ -109,6 +113,7 @@ export async function appendMessage(tx: PoolClient, m: AppendInput): Promise<Mes
       m.channelKind,
       m.externalId ?? null,
       sentAt,
+      JSON.stringify(m.meta ?? {}),
     ],
   );
   if (!ins.rowCount) return null;
@@ -128,6 +133,7 @@ export async function appendMessage(tx: PoolClient, m: AppendInput): Promise<Mes
     attachments: m.attachments ?? [],
     sentAt: sentAt.toISOString(),
     externalId: m.externalId ?? null,
+    ...(m.meta && Object.keys(m.meta).length ? { meta: m.meta } : {}),
   };
   if (m.direction === 'out' && (CONNECTOR_CHANNELS as readonly string[]).includes(m.channelKind)) {
     msg.deliveryStatus = await queueOutbound(tx, msg, m.channelKind as ConnectorChannel);
@@ -219,7 +225,7 @@ export async function resolveRouting(
 export async function ingestInbound(
   tx: PoolClient,
   m: InboundMessage,
-): Promise<{ conversationId: string; created: boolean; duplicate: boolean }> {
+): Promise<{ conversationId: string; created: boolean; duplicate: boolean; messageId?: string | null }> {
   await tx.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`${m.identity.kind}:${m.identity.value}`]);
   const dup = await tx.query<{ conversation_id: string }>(
     'SELECT conversation_id FROM message WHERE channel_kind = $1 AND external_id = $2',
@@ -276,9 +282,17 @@ export async function ingestInbound(
     conversationId = newId();
     created = true;
     const routing = await resolveRouting(tx, contactId, m.channelId, m.channelKind, m.body);
+    // Бот канала (Ф7, M-AUTO-04): новое обращение сначала ведёт опубликованная версия сценария бота —
+    // router его не видит (статус «bot»), пока бот не переведёт диалог на оператора.
+    const bot = await tx.query<{ version_id: string }>(
+      `SELECT f.published_version_id AS version_id FROM channel ch JOIN flow f ON f.id = ch.bot_flow_id
+        WHERE ch.id = $1 AND f.is_active AND f.kind = 'text' AND f.published_version_id IS NOT NULL`,
+      [m.channelId],
+    );
+    const botVersion = bot.rows[0]?.version_id ?? null;
     await tx.query(
-      `INSERT INTO conversation (id, channel_id, channel_kind, contact_id, status, queue_id, priority, is_urgent, queued_at)
-       VALUES ($1, $2, $3, $4, 'queued', $5, $6, $7, now())`,
+      `INSERT INTO conversation (id, channel_id, channel_kind, contact_id, status, queue_id, priority, is_urgent, queued_at, bot_flow_version_id)
+       VALUES ($1, $2, $3, $4, $8, $5, $6, $7, now(), $9)`,
       [
         conversationId,
         m.channelId,
@@ -287,9 +301,17 @@ export async function ingestInbound(
         routing.queueId,
         routing.priority,
         routing.isUrgent,
+        botVersion ? 'bot' : 'queued',
+        botVersion,
       ],
     );
     await emitConversation(tx, CONVERSATION_EVENTS.created, await loadRef(tx, conversationId));
+  } else {
+    // Клиент ответил — предупреждение о молчании (автозакрытие, M-AUTO-02) больше не действует.
+    await tx.query(
+      `UPDATE conversation SET auto_state = auto_state - 'inactivityWarnedAt' WHERE id = $1 AND auto_state ? 'inactivityWarnedAt'`,
+      [conversationId],
+    );
   }
   const msg = await appendMessage(tx, {
     conversationId,
@@ -317,7 +339,7 @@ export async function ingestInbound(
       ],
     );
   }
-  return { conversationId, created, duplicate: msg === null };
+  return { conversationId, created, duplicate: msg === null, messageId: msg?.id ?? null };
 }
 
 const REPLY_PREFIX = /^\s*(re|ответ|отв)\s*:/i;
@@ -362,6 +384,7 @@ async function queueOutbound(
     to: ident.rows[0].value,
     body: msg.body,
     attachments: msg.attachments,
+    ...(msg.meta?.buttons?.length ? { buttons: msg.meta.buttons.map((b) => b.label) } : {}),
     ...(kind === 'email'
       ? {
           email: {

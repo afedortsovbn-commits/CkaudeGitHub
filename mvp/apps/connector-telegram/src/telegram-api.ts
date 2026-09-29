@@ -80,8 +80,15 @@ export class TelegramApi {
     );
   }
 
-  sendMessage(chatId: string, text: string) {
-    return this.call<{ message_id: number }>('sendMessage', { chat_id: chatId, text });
+  /**
+   * Текст; кнопки бота (Ф7) — клавиатура ответа: нажатие приходит обычным сообщением с текстом кнопки,
+   * поэтому обработка ответа одинакова для всех каналов. Без кнопок клавиатура бота убирается.
+   */
+  sendMessage(chatId: string, text: string, buttons?: string[]) {
+    const reply_markup = buttons?.length
+      ? { keyboard: buttons.map((b) => [{ text: b }]), resize_keyboard: true, one_time_keyboard: true }
+      : { remove_keyboard: true };
+    return this.call<{ message_id: number }>('sendMessage', { chat_id: chatId, text, reply_markup });
   }
 
   sendDocument(

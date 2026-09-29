@@ -25,5 +25,11 @@ textarea{flex:1;resize:none;border:1px solid #ced4da;border-radius:8px;padding:8
 .primary:disabled{opacity:.5}
 .typing{font-size:12px;color:#868e96;padding:0 14px 6px}
 .err{color:#e03131;font-size:12px}
+.btns{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 8px}
+.btns button{background:#fff;border:1px solid #1c7ed6;color:#1c7ed6;border-radius:16px;padding:6px 12px;font-size:13px;cursor:pointer}
+.btns button:hover{background:#e7f5ff}
+.csat{text-align:center;margin:6px 0 10px;font-size:13px;color:#495057}
+.csat button{background:#fff;border:1px solid #ced4da;border-radius:8px;width:38px;height:34px;margin:4px 3px;cursor:pointer;font-size:14px}
+.csat button:hover{border-color:#f08c00;background:#fff4e6}
 .chip{font-size:12px;background:#e7f5ff;border-radius:6px;padding:3px 6px;margin:0 8px 6px}
 `;

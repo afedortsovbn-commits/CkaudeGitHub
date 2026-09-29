@@ -1,4 +1,4 @@
-import { render } from 'preact';
+import { Fragment, render } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { ChatApi, type Msg, store, uuid, type WidgetConfig } from './api';
 import { css } from './styles';
@@ -130,21 +130,33 @@ function Chat() {
     }
   };
 
-  const send = () => {
-    if (!text.trim() && !pendingFiles.length) return;
+  const rate = async (m: Msg, score: number) => {
+    try {
+      await api.csat(m.conversationId!, score);
+      setMsgs((cur) => cur.map((x) => (x.id === m.id ? { ...x, rated: true } : x)));
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
+
+  const send = (quick?: string) => {
+    const body = quick ?? text.trim();
+    if (!body && (quick !== undefined || !pendingFiles.length)) return;
     const id = uuid();
     const m: Msg = {
       id,
       clientMessageId: id,
       direction: 'in',
-      body: text.trim(),
-      attachments: pendingFiles,
+      body,
+      attachments: quick !== undefined ? [] : pendingFiles,
       sentAt: new Date().toISOString(),
       pending: true,
     };
     setMsgs((cur) => [...cur, m]);
-    setText('');
-    setPendingFiles([]);
+    if (quick === undefined) {
+      setText('');
+      setPendingFiles([]);
+    }
     void deliver(m);
   };
 
@@ -209,28 +221,59 @@ function Chat() {
         <>
           <div class="body" ref={bodyRef}>
             {msgs.length === 0 && <div class="m system">{cfg?.greeting}</div>}
-            {msgs.map((m) => (
-              <div
-                key={m.id}
-                class={`m ${m.direction}${m.failed ? ' failed' : ''}`}
-                data-testid={`cc-msg-${m.direction}`}
-              >
-                {m.direction === 'out' && m.authorName && <div class="who">{m.authorName}</div>}
-                {m.body}
-                {m.attachments.map((a) => (
-                  <div key={a.id}>
-                    📎{' '}
-                    {a.id === 'uploading' ? (
-                      a.filename
+            {msgs.map((m, i) => (
+              <Fragment key={m.id}>
+                <div
+                  class={`m ${m.direction}${m.failed ? ' failed' : ''}`}
+                  data-testid={`cc-msg-${m.direction}`}
+                >
+                  {m.direction === 'out' && (m.meta?.auto || m.authorName) && (
+                    <div class="who">
+                      {m.meta?.auto === 'bot' ? 'Бот' : m.meta?.auto ? 'Автоответ' : m.authorName}
+                    </div>
+                  )}
+                  {m.body}
+                  {m.attachments.map((a) => (
+                    <div key={a.id}>
+                      📎{' '}
+                      {a.id === 'uploading' ? (
+                        a.filename
+                      ) : (
+                        <a href={api.fileUrl(a.id)} target="_blank" rel="noopener">
+                          {a.filename}
+                        </a>
+                      )}
+                    </div>
+                  ))}
+                  {m.failed && <div class="err">не отправлено, повторяем…</div>}
+                </div>
+                {/* Кнопки бота — только у последнего сообщения: нажатие отправляет текст кнопки. */}
+                {i === msgs.length - 1 && m.meta?.buttons?.length ? (
+                  <div class="btns" data-testid="cc-buttons">
+                    {m.meta.buttons.map((b) => (
+                      <button key={b.id} onClick={() => send(b.label)}>
+                        {b.label}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+                {m.meta?.csat && m.conversationId && (
+                  <div class="csat" data-testid="cc-csat">
+                    {m.rated ? (
+                      'Спасибо за оценку!'
                     ) : (
-                      <a href={api.fileUrl(a.id)} target="_blank" rel="noopener">
-                        {a.filename}
-                      </a>
+                      <>
+                        <div>Оцените, пожалуйста, обслуживание:</div>
+                        {[1, 2, 3, 4, 5].map((n) => (
+                          <button key={n} onClick={() => void rate(m, n)} data-testid={`cc-csat-${n}`}>
+                            {n}
+                          </button>
+                        ))}
+                      </>
                     )}
                   </div>
-                ))}
-                {m.failed && <div class="err">не отправлено, повторяем…</div>}
-              </div>
+                )}
+              </Fragment>
             ))}
           </div>
           {typing && <div class="typing">Оператор печатает…</div>}
@@ -266,7 +309,7 @@ function Chat() {
                 }
               }}
             />
-            <button class="icon send" title="Отправить" data-testid="cc-send" onClick={send}>
+            <button class="icon send" title="Отправить" data-testid="cc-send" onClick={() => send()}>
               ➤
             </button>
           </div>

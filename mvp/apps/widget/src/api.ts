@@ -17,6 +17,11 @@ export interface Msg {
   failed?: boolean;
   clientMessageId?: string;
   externalId?: string | null;
+  conversationId?: string;
+  /** Ф7: автоответ/бот, кнопки бота, запрос оценки. */
+  meta?: { auto?: string; buttons?: { id: string; label: string }[]; csat?: boolean };
+  /** Оценка по этому запросу уже поставлена. */
+  rated?: boolean;
 }
 
 export class ChatApi {
@@ -60,6 +65,8 @@ export class ChatApi {
     this.req<Msg[]>('GET', `/messages${after ? `?after=${encodeURIComponent(after)}` : ''}`);
   send = (clientMessageId: string, body: string, attachmentIds: string[]) =>
     this.req('POST', '/messages', { clientMessageId, body, attachmentIds });
+  csat = (conversationId: string, score: number) =>
+    this.req<{ ok: boolean }>('POST', '/csat', { conversationId, score });
   upload = (file: File) =>
     this.req<Msg['attachments'][number]>('POST', '/attachments', undefined, {
       data: file,

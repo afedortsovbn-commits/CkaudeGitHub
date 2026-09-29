@@ -20,6 +20,7 @@ import { ChannelsPage } from './pages/ChannelsPage';
 import { DemoCallPage } from './pages/DemoCallPage';
 import { FlowEditorPage, FlowListPage } from './pages/FlowEditorPage';
 import { AnnouncementsPage, AudioLibraryPage, IntegrationsPage } from './pages/IvrAdminPages';
+import { AssistProvidersPage, AutoRepliesPage, KnowledgePage, TemplatesPage } from './pages/AutomationPages';
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } },
@@ -44,9 +45,15 @@ function App() {
         <Route path="workspace" element={<WorkspacePage />} />
         <Route path="supervisor" element={<SupervisorPage />} />
         <Route path="channels" element={<ChannelsPage />} />
-        <Route path="ivr" element={<FlowListPage />} />
+        <Route path="ivr" element={<FlowListPage kind="voice" key="voice" />} />
         <Route path="ivr/:id" element={<FlowEditorPage />} />
         <Route path="ivr-audio" element={<AudioLibraryPage />} />
+        <Route path="bots" element={<FlowListPage kind="text" key="text" />} />
+        <Route path="bots/:id" element={<FlowEditorPage />} />
+        <Route path="templates" element={<TemplatesPage />} />
+        <Route path="kb" element={<KnowledgePage />} />
+        <Route path="auto-replies" element={<AutoRepliesPage />} />
+        <Route path="assist" element={<AssistProvidersPage />} />
         <Route path="announcements" element={<AnnouncementsPage />} />
         <Route path="integrations" element={<IntegrationsPage />} />
         <Route path="enterprises" element={<EnterprisesPage />} />

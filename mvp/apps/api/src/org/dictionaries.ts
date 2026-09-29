@@ -1,6 +1,8 @@
 import { z, type ZodTypeAny } from 'zod';
 import type { ScopeColumns } from '@cc/auth';
 import { maskChannelRow, prepareChannelConfig } from './channel-config';
+import { maskProvider, prepareProvider } from '../automation/assist';
+import { badRequest } from '../lib/errors';
 import {
   IntegrationAuthSchema,
   IntegrationInputsSchema,
@@ -210,6 +212,8 @@ export const DICTIONARIES: Record<string, DictSpec> = {
       f('kind', z.enum(['webchat', 'app', 'telegram', 'email', 'api', 'voice'])),
       f('name', name),
       f('queueId', uuid.nullable().optional()),
+      // Ф7: бот канала (текстовый сценарий flow-engine) — ведёт новые обращения до перевода на оператора.
+      f('botFlowId', uuid.nullable().optional()),
       // Проверка по типу канала и шифрование секретов — prepareChannelConfig (hooks.prepare).
       f('config', z.record(z.unknown()).default({}), { json: true }),
     ],
@@ -265,6 +269,93 @@ export const DICTIONARIES: Record<string, DictSpec> = {
     writePerm: 'admin.directories',
     prepare: prepareIntegration,
     present: maskIntegration,
+  },
+  // Ф7: правила автоответов (M-AUTO-02) — действуют сразу: worker читает их на каждом сообщении.
+  'auto-replies': {
+    table: 'auto_reply_rule',
+    title: 'Правило автоответа',
+    fields: [
+      f('name', name),
+      f('kind', z.enum(['greeting', 'queued', 'after_hours', 'keyword', 'inactivity'])),
+      f('channelIds', z.array(uuid).default([])),
+      f('channelKinds', z.array(z.enum(['webchat', 'app', 'telegram', 'email', 'api'])).default([])),
+      f('scheduleId', uuid.nullable().optional()),
+      f('matchType', z.enum(['keyword', 'regex']).nullable().optional()),
+      f('pattern', z.string().trim().max(500).nullable().optional()),
+      f('text', z.string().trim().max(4000).default('')),
+      f(
+        'params',
+        z
+          .object({
+            warnAfterSec: z.number().int().min(10).max(86400).optional(),
+            closeAfterSec: z.number().int().min(10).max(86400).optional(),
+            closeText: z.string().max(2000).optional(),
+          })
+          .strict()
+          .default({}),
+        { json: true },
+      ),
+      f('sortOrder', z.number().int().default(0)),
+    ],
+    orderBy: 'kind, sort_order, name',
+    search: ['name', 'text', 'pattern'],
+    writePerm: 'admin.directories',
+    prepare: (data, before) => {
+      const pick = (api: string, col: string) => (api in data ? data[api] : before?.[col]);
+      const kind = pick('kind', 'kind');
+      const pattern = pick('pattern', 'pattern');
+      if (kind === 'after_hours' && !pick('scheduleId', 'schedule_id'))
+        throw badRequest('Для правила «нерабочее время» выберите расписание');
+      if (kind === 'keyword') {
+        if (!pattern) throw badRequest('Укажите ключевые слова или регулярное выражение');
+        if (pick('matchType', 'match_type') === 'regex')
+          try {
+            new RegExp(String(pattern), 'i');
+          } catch {
+            throw badRequest('Некорректное регулярное выражение');
+          }
+      }
+      if (kind !== 'inactivity' && !String(pick('text', 'text') ?? '').trim())
+        throw badRequest('Введите текст автоответа');
+      return data;
+    },
+  },
+  // Ф7: рубрики базы знаний (M-AUTO-05).
+  'kb-categories': {
+    table: 'kb_category',
+    title: 'Рубрика базы знаний',
+    fields: [
+      f('name', name),
+      f('parentId', uuid.nullable().optional()),
+      f('sortOrder', z.number().int().default(0)),
+    ],
+    orderBy: 'sort_order, name',
+    search: ['name'],
+    writePerm: 'admin.directories',
+  },
+  // Ф7: провайдеры подсказок (Assist API, M-AI-01); ключи шифруются, в ответах — маска.
+  'assist-providers': {
+    table: 'assist_provider',
+    title: 'Провайдер подсказок',
+    fields: [
+      f('name', name),
+      f('kind', z.enum(['builtin', 'openai', 'http'])),
+      f('config', z.record(z.unknown()).default({}), { json: true }),
+      f(
+        'functions',
+        z
+          .array(z.enum(['suggest', 'draft']))
+          .min(1)
+          .default(['suggest']),
+      ),
+      f('timeoutMs', z.number().int().min(100).max(60000).default(1500)),
+      f('sortOrder', z.number().int().default(0)),
+    ],
+    orderBy: 'sort_order, name',
+    search: ['name'],
+    writePerm: 'admin.directories',
+    prepare: prepareProvider,
+    present: maskProvider,
   },
   'scope-templates': {
     table: 'scope_template',

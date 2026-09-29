@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "@cc/contracts": "workspace:*",
+    "@cc/flow-engine": "workspace:*",
     "@cc/service-kit": "workspace:*",
     "pg": "8.23.0"
   },

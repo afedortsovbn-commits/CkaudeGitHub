@@ -2,6 +2,7 @@ import { type DynamicModule, Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { AuthController } from './auth/auth.controller';
 import { AuthGuard } from './auth/guard';
+import { AutomationController } from './automation/automation.controller';
 import { APP_CONTEXT, type AppContext } from './context';
 import { AgentStatusController } from './chat/agent-status.controller';
 import { ClientChatController } from './chat/client.controller';
@@ -37,6 +38,7 @@ export class AppModule {
         SupervisorController,
         TelephonyController,
         IvrController,
+        AutomationController,
       ],
       providers: [
         { provide: APP_CONTEXT, useValue: ctx },

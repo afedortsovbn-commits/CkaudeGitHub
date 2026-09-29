@@ -1,11 +1,19 @@
 import {
+  type AskParams,
+  type AskValidation,
+  type BotButton,
+  buttonExit,
+  buttonsOf,
+  type ButtonsParams,
   type ConditionParams,
   type CsatParams,
   digitExit,
   type FlowGraph,
   type FlowNode,
+  type HandoffParams,
   type HangupParams,
   type HttpParams,
+  type MessageParams,
   type MenuParams,
   nextNode,
   nodeById,
@@ -52,7 +60,15 @@ export type Action =
     }
   | { type: 'voicemail'; mode: 'voicemail' | 'callback'; media: Media[]; maxSec: number; queueId: string }
   | { type: 'transfer'; number: string }
-  | { type: 'hangup'; media: Media[] };
+  /** Завершить звонок / диалог; text — прощальное сообщение текстового сценария. */
+  | { type: 'hangup'; media: Media[]; text?: string }
+  // ---- текстовые сценарии (боты, Ф7)
+  /** Отправить сообщение клиенту и сразу продолжить (событие done). */
+  | { type: 'say'; text: string }
+  /** Отправить вопрос (с кнопками или без) и ждать ответа клиента (событие text). */
+  | { type: 'prompt'; text: string; buttons: BotButton[] }
+  /** Перевести диалог на оператора: очередь (null — очередь канала), тема, надбавка приоритета. */
+  | { type: 'handoff'; queueId: string | null; topicId: string | null; priority: number; text: string };
 
 export type FlowEvent =
   | { type: 'done' }
@@ -60,9 +76,14 @@ export type FlowEvent =
   | { type: 'timeout' }
   | { type: 'http'; ok: boolean; outputs: Record<string, string> }
   | { type: 'queue'; result: 'after' | 'timeout' | 'noAgents' }
-  | { type: 'transfer'; ok: false };
+  | { type: 'transfer'; ok: false }
+  /** Ответ клиента в текстовом канале. */
+  | { type: 'text'; text: string };
 
-export type Effect = { type: 'csat'; score: number };
+export type Effect =
+  | { type: 'csat'; score: number }
+  /** Бот собрал поле клиента — записать в карточку (телефон/email — ещё и идентификатор). */
+  | { type: 'contact'; field: 'phone' | 'email' | 'name'; value: string };
 
 export interface FlowState {
   /** Текущий узел. */
@@ -127,15 +148,25 @@ class Run {
     if (last && last.nodeId === this.state.node && !last.exit) last.exit = exit;
     else this.path.push({ nodeId: this.state.node, type: this.node()?.type ?? '', exit });
     const target = nextNode(this.graph, this.state.node, exit);
-    if (!target) return this.result(END);
+    if (!target) return this.result(this.end());
     return this.enter(target);
+  }
+
+  /**
+   * Сценарий закончился неподключённым выходом. Звонок завершается; текстовый диалог не обрывается —
+   * бот передаёт его оператору очереди канала (клиент не остаётся без ответа).
+   */
+  end(): Action {
+    return this.graph.kind === 'text'
+      ? { type: 'handoff', queueId: null, topicId: null, priority: 0, text: '' }
+      : END;
   }
 
   enter(id: string): StepResult {
     let target: string | null = id;
     for (let i = 0; i < MAX_INSTANT_STEPS && target; i++) {
       const node = nodeById(this.graph, target);
-      if (!node) return this.result(END);
+      if (!node) return this.result(this.end());
       const stackAt = this.state.menuStack.indexOf(node.id);
       this.state = {
         ...this.state,
@@ -148,8 +179,8 @@ class Run {
       const exit = this.instantExit(node);
       if (exit === null) {
         const action = this.actionFor(node);
-        // Пустая фраза (например, не задана единица и значение не число) — сразу дальше.
-        if (action.type === 'play' && !action.media.length) {
+        // Пустая фраза (например, не задана единица и значение не число) или пустое сообщение — сразу дальше.
+        if ((action.type === 'play' && !action.media.length) || (action.type === 'say' && !action.text)) {
           target = this.follow(node, 'next');
           continue;
         }
@@ -157,7 +188,7 @@ class Run {
       }
       target = this.follow(node, exit);
     }
-    return this.result(END);
+    return this.result(this.end());
   }
 
   private follow(node: FlowNode, exit: string): string | null {
@@ -258,8 +289,35 @@ class Run {
           type: 'transfer',
           number: String((p as unknown as TransferParams).number).replace(/[\s()-]/g, ''),
         };
-      case 'hangup':
-        return { type: 'hangup', media: audio((p as unknown as HangupParams).audio) };
+      case 'hangup': {
+        const hp = p as unknown as HangupParams;
+        return this.graph.kind === 'text'
+          ? { type: 'hangup', media: [], text: render(hp.text ?? '', this.state.vars) }
+          : { type: 'hangup', media: audio(hp.audio) };
+      }
+      case 'message':
+        return { type: 'say', text: render((p as unknown as MessageParams).text ?? '', this.state.vars) };
+      case 'buttons':
+      case 'ask': {
+        const bp = p as unknown as ButtonsParams | AskParams;
+        const question = render(bp.text ?? '', this.state.vars);
+        const retry = this.state.sub === 'invalid' ? render(bp.retryText ?? '', this.state.vars) : '';
+        return {
+          type: 'prompt',
+          text: [retry, question].filter(Boolean).join('\n\n'),
+          buttons: node.type === 'buttons' ? buttonsOf(node) : [],
+        };
+      }
+      case 'handoff': {
+        const hp = p as unknown as HandoffParams;
+        return {
+          type: 'handoff',
+          queueId: hp.queueId || null,
+          topicId: hp.topicId || null,
+          priority: Number(hp.priority ?? 0) || 0,
+          text: render(hp.text ?? '', this.state.vars),
+        };
+      }
       default:
         return END;
     }
@@ -269,10 +327,56 @@ class Run {
   retry(node: FlowNode, invalid: boolean): StepResult {
     const retries = Number((node.params as { retries?: number }).retries ?? 0);
     const attempt = this.state.attempt + 1;
-    if (attempt > retries) return this.exit(node.type === 'menu' ? 'noinput' : 'next');
-    this.state = { ...this.state, attempt, sub: invalid && node.type === 'menu' ? 'invalid' : undefined };
+    if (attempt > retries) return this.exit(RETRY_EXIT[node.type] ?? 'next');
+    const withInvalidPhrase =
+      invalid && (node.type === 'menu' || node.type === 'buttons' || node.type === 'ask');
+    this.state = { ...this.state, attempt, sub: withInvalidPhrase ? 'invalid' : undefined };
     this.path.push({ nodeId: node.id, type: node.type, ...(node.name ? { name: node.name } : {}) });
     return this.result(this.actionFor(node));
+  }
+}
+
+const RETRY_EXIT: Partial<Record<string, string>> = { menu: 'noinput', buttons: 'other', ask: 'invalid' };
+
+const norm = (s: string) =>
+  s
+    .toLowerCase()
+    .replace(/ё/g, 'е')
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .trim();
+
+/** Кнопка по ответу клиента: текст кнопки (без учёта регистра и знаков) или её номер. */
+export function matchButton(buttons: BotButton[], answer: string): BotButton | undefined {
+  const a = norm(answer);
+  if (!a) return undefined;
+  const byLabel = buttons.find((b) => norm(b.label) === a);
+  if (byLabel) return byLabel;
+  const n = Number(a);
+  return Number.isInteger(n) && n >= 1 && n <= buttons.length ? buttons[n - 1] : undefined;
+}
+
+/** Проверка и нормализация ответа «Сбор поля»; null — формат не подходит. */
+export function validateAnswer(kind: AskValidation, answer: string): string | null {
+  const v = answer.trim();
+  if (!v) return null;
+  switch (kind) {
+    case 'phone': {
+      if (!/^[+\d\s()-]{5,25}$/.test(v)) return null;
+      const digits = v.replace(/\D/g, '');
+      if (digits.length < 7 || digits.length > 15) return null;
+      if (v.startsWith('+')) return `+${digits}`;
+      // Белорусский номер в местном формате: 80 29 123-45-67 → +375291234567.
+      if (digits.length === 11 && digits.startsWith('80')) return `+375${digits.slice(2)}`;
+      return digits.length >= 11 ? `+${digits}` : digits;
+    }
+    case 'email':
+      return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v) && v.length <= 200 ? v.toLowerCase() : null;
+    case 'number': {
+      const n = Number(v.replace(/\s/g, '').replace(',', '.'));
+      return Number.isFinite(n) ? String(n) : null;
+    }
+    default:
+      return v.slice(0, 2000);
   }
 }
 
@@ -398,7 +502,27 @@ export function resumeFlow(
       return event.type === 'queue' ? run.exit(event.result) : null;
     case 'transfer':
       return event.type === 'transfer' ? run.exit('failed') : null;
+    case 'message':
+      return event.type === 'done' ? run.exit('next') : null;
+    case 'buttons': {
+      if (event.type !== 'text') return null;
+      const b = matchButton(buttonsOf(node), event.text);
+      if (!b) return run.retry(node, true);
+      const variable = (node.params as unknown as ButtonsParams).variable;
+      if (variable) run.state = { ...run.state, vars: { ...run.state.vars, [variable]: b.label } };
+      return run.exit(buttonExit(b.id));
+    }
+    case 'ask': {
+      if (event.type !== 'text') return null;
+      const ap = node.params as unknown as AskParams;
+      const value = validateAnswer(ap.validation ?? 'text', event.text);
+      if (value === null) return run.retry(node, true);
+      run.state = { ...run.state, vars: { ...run.state.vars, [ap.variable]: value } };
+      if (ap.saveTo) run.effects.push({ type: 'contact', field: ap.saveTo, value });
+      return run.exit('next');
+    }
     case 'hangup':
+    case 'handoff':
       return null;
     default:
       return run.enter(node.id);

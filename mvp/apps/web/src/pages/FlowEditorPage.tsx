@@ -18,6 +18,7 @@ import {
   Table,
   TagsInput,
   Text,
+  Textarea,
   TextInput,
   Title,
 } from '@mantine/core';
@@ -67,22 +68,25 @@ import { AudioPreview } from './IvrAdminPages';
 
 // ------------------------------------------------------------------ список сценариев
 
-export function FlowListPage() {
+export function FlowListPage({ kind = 'voice' }: { kind?: FlowKind }) {
   const { can } = useAuth();
   const nav = useNavigate();
-  const list = useList('/flows');
+  const text = kind === 'text';
+  const base = text ? '/bots' : '/ivr';
+  const list = useList(`/flows?kind=${kind}`);
+  const channels = useList('/dict/channels', text);
   const [open, setOpen] = useState(false);
   const [name, setName] = useState('');
   const [dids, setDids] = useState<string[]>([]);
   const create = useAction(
-    () => post<Row>('/flows', { name, kind: 'voice', dids }).then((f) => nav(`/ivr/${f.id}`)),
+    () => post<Row>('/flows', { name, kind, dids: text ? [] : dids }).then((f) => nav(`${base}/${f.id}`)),
     'Сценарий создан',
   );
   const toggle = useAction((r: Row) => post(`/flows/${r.id}/${r.isActive ? 'deactivate' : 'activate'}`));
   return (
     <>
       <Group justify="space-between" mb="md">
-        <Title order={3}>Сценарии IVR</Title>
+        <Title order={3}>{text ? 'Боты текстовых каналов' : 'Сценарии IVR'}</Title>
         {can('admin.directories') && (
           <Button onClick={() => setOpen(true)} data-testid="flow-new">
             Новый сценарий
@@ -93,7 +97,7 @@ export function FlowListPage() {
         <Table.Thead>
           <Table.Tr>
             <Table.Th>Название</Table.Th>
-            <Table.Th>Номера (DID)</Table.Th>
+            <Table.Th>{text ? 'Каналы' : 'Номера (DID)'}</Table.Th>
             <Table.Th>Опубликована</Table.Th>
             <Table.Th>Статус</Table.Th>
             <Table.Th />
@@ -103,9 +107,16 @@ export function FlowListPage() {
           {(list.data ?? []).map((f) => (
             <Table.Tr key={f.id}>
               <Table.Td>
-                <Link to={`/ivr/${f.id}`}>{String(f.name)}</Link>
+                <Link to={`${base}/${f.id}`}>{String(f.name)}</Link>
               </Table.Td>
-              <Table.Td>{((f.dids as string[]) ?? []).join(', ') || '—'}</Table.Td>
+              <Table.Td>
+                {text
+                  ? (channels.data ?? [])
+                      .filter((c) => c.botFlowId === f.id)
+                      .map((c) => String(c.name))
+                      .join(', ') || '— (назначается в «Каналах»)'
+                  : ((f.dids as string[]) ?? []).join(', ') || '—'}
+              </Table.Td>
               <Table.Td>
                 {f.publishedVersion ? (
                   `версия ${String(f.publishedVersion)}`
@@ -133,7 +144,7 @@ export function FlowListPage() {
           ))}
         </Table.Tbody>
       </Table>
-      <Modal opened={open} onClose={() => setOpen(false)} title="Новый сценарий IVR">
+      <Modal opened={open} onClose={() => setOpen(false)} title={text ? 'Новый бот' : 'Новый сценарий IVR'}>
         <Stack>
           <TextInput
             label="Название"
@@ -141,12 +152,14 @@ export function FlowListPage() {
             onChange={(e) => setName(e.currentTarget.value)}
             data-testid="flow-name"
           />
-          <TagsInput
-            label="Номера (DID), на которые отвечает сценарий"
-            description="Можно назначить позже; номер должен быть у голосового канала"
-            value={dids}
-            onChange={setDids}
-          />
+          {!text && (
+            <TagsInput
+              label="Номера (DID), на которые отвечает сценарий"
+              description="Можно назначить позже; номер должен быть у голосового канала"
+              value={dids}
+              onChange={setDids}
+            />
+          )}
           <Button
             disabled={!name.trim()}
             onClick={() => create.mutate(undefined)}
@@ -214,6 +227,9 @@ const COLORS: Partial<Record<NodeType, string>> = {
   voicemail: '#c2255c',
   schedule: '#0c8599',
   condition: '#0c8599',
+  buttons: '#1971c2',
+  ask: '#5f3dc4',
+  handoff: '#e8590c',
 };
 
 const NodeView = memo(function NodeView({ data, selected }: NodeProps<CcNode>) {
@@ -239,7 +255,7 @@ const NodeView = memo(function NodeView({ data, selected }: NodeProps<CcNode>) {
       <Box p={6} pb={exits.length ? 18 : 6}>
         {(data.name || data.type === 'start') && (
           <Text size="xs" fw={600} truncate>
-            {data.name || 'Звонок поступил'}
+            {data.name || 'Начало'}
           </Text>
         )}
         {data.summary && (
@@ -284,9 +300,17 @@ function summary(n: { type: NodeType; params: Record<string, unknown> }, refs: R
   const p = n.params;
   const names = (ids: unknown) => ((ids as string[]) ?? []).map((id) => audioName(refs, id)).join(', ');
   switch (n.type) {
-    case 'play':
     case 'hangup':
+      return p.text ? String(p.text) : names(p.audio);
+    case 'play':
       return names(p.audio);
+    case 'message':
+    case 'ask':
+      return String(p.text ?? '');
+    case 'buttons':
+      return String(p.text ?? '');
+    case 'handoff':
+      return String(refs.queues.find((q) => q.id === p.queueId)?.name ?? 'очередь канала');
     case 'menu':
       return `${names(p.audio)} · ${((p.digits as string[]) ?? []).join(' ')}`;
     case 'queue':
@@ -315,10 +339,12 @@ function summary(n: { type: NodeType; params: Record<string, unknown> }, refs: R
 function NodeParams({
   node,
   refs,
+  kind,
   onChange,
 }: {
   node: CcNode;
   refs: Refs;
+  kind: FlowKind;
   onChange(patch: Partial<NodeData>): void;
 }) {
   const p = node.data.params;
@@ -374,7 +400,9 @@ function NodeParams({
           data-testid="param-name"
         />
       )}
-      {(t === 'play' || t === 'hangup') && audioMulti('audio', t === 'hangup' ? 'Прощальная фраза' : 'Фразы')}
+      {(t === 'play' || (t === 'hangup' && kind === 'voice')) &&
+        audioMulti('audio', t === 'hangup' ? 'Прощальная фраза' : 'Фразы')}
+      {kind === 'text' && <TextNodeParams t={t} p={p} refs={refs} set={set} />}
       {t === 'announcements' && (
         <Text size="xs" c="dimmed">
           Звучат действующие объявления из раздела «Объявления о сбоях». Если их нет — сценарий сразу идёт
@@ -560,6 +588,170 @@ function NodeParams({
   );
 }
 
+/** Свойства текстовых узлов бота (Ф7): сообщение, кнопки, сбор поля, перевод на оператора, завершение. */
+function TextNodeParams({
+  t,
+  p,
+  refs,
+  set,
+}: {
+  t: NodeType;
+  p: Record<string, unknown>;
+  refs: Refs;
+  set(k: string, v: unknown): void;
+}) {
+  const textArea = (key: string, label: string, description?: string) => (
+    <Textarea
+      label={label}
+      description={description ?? 'Можно вставлять переменные: {{name}}, {{phone}}, {{переменная}}'}
+      autosize
+      minRows={2}
+      value={String(p[key] ?? '')}
+      onChange={(e) => set(key, e.currentTarget.value)}
+      data-testid={`param-${key}`}
+    />
+  );
+  const num = (key: string, label: string, min: number, max: number) => (
+    <NumberInput
+      label={label}
+      min={min}
+      max={max}
+      value={Number(p[key] ?? 0)}
+      onChange={(v) => set(key, v === '' ? 0 : Number(v))}
+    />
+  );
+  const buttons = (p.buttons as { id: string; label: string }[] | undefined) ?? [];
+  switch (t) {
+    case 'message':
+      return textArea('text', 'Текст сообщения');
+    case 'hangup':
+      return textArea('text', 'Прощальное сообщение (необязательно)', 'Диалог закрывается после него');
+    case 'buttons':
+      return (
+        <>
+          {textArea('text', 'Вопрос')}
+          <Text size="sm" fw={500}>
+            Кнопки
+          </Text>
+          {buttons.map((b, i) => (
+            <Group key={b.id} gap={4} wrap="nowrap">
+              <TextInput
+                style={{ flex: 1 }}
+                value={b.label}
+                onChange={(e) =>
+                  set(
+                    'buttons',
+                    buttons.map((x, j) => (j === i ? { ...x, label: e.currentTarget.value } : x)),
+                  )
+                }
+                data-testid={`param-button-${i}`}
+              />
+              <Button
+                size="compact-xs"
+                variant="subtle"
+                color="red"
+                onClick={() =>
+                  set(
+                    'buttons',
+                    buttons.filter((_, j) => j !== i),
+                  )
+                }
+              >
+                ✕
+              </Button>
+            </Group>
+          ))}
+          <Button
+            size="compact-xs"
+            variant="light"
+            disabled={buttons.length >= 10}
+            onClick={() =>
+              set('buttons', [
+                ...buttons,
+                { id: `b${Math.random().toString(36).slice(2, 7)}`, label: `Вариант ${buttons.length + 1}` },
+              ])
+            }
+            data-testid="param-button-add"
+          >
+            + кнопка
+          </Button>
+          <TextInput
+            label="Сохранить выбор в переменную"
+            value={String(p.variable ?? '')}
+            onChange={(e) => set('variable', e.currentTarget.value)}
+          />
+          {textArea('retryText', 'Если ответ не совпал с кнопкой', ' ')}
+          {num('retries', 'Повторов вопроса (затем выход «другое»)', 0, 10)}
+        </>
+      );
+    case 'ask':
+      return (
+        <>
+          {textArea('text', 'Вопрос')}
+          <TextInput
+            label="Переменная для ответа"
+            value={String(p.variable ?? '')}
+            onChange={(e) => set('variable', e.currentTarget.value)}
+            data-testid="param-variable"
+          />
+          <Select
+            label="Формат ответа"
+            data={[
+              { value: 'text', label: 'Любой текст' },
+              { value: 'phone', label: 'Телефон' },
+              { value: 'email', label: 'Email' },
+              { value: 'number', label: 'Число' },
+            ]}
+            value={String(p.validation ?? 'text')}
+            onChange={(v) => set('validation', v ?? 'text')}
+          />
+          <Select
+            label="Сохранить в карточку клиента"
+            data={[
+              { value: 'phone', label: 'Телефон (и узнавать клиента по нему)' },
+              { value: 'email', label: 'Email (и узнавать клиента по нему)' },
+              { value: 'name', label: 'Имя' },
+            ]}
+            value={(p.saveTo as string) || null}
+            onChange={(v) => set('saveTo', v)}
+            clearable
+          />
+          {textArea('retryText', 'Если формат не подошёл', ' ')}
+          {num('retries', 'Повторов (затем выход «не получено»)', 0, 10)}
+        </>
+      );
+    case 'handoff':
+      return (
+        <>
+          {textArea('text', 'Сообщение клиенту при переводе')}
+          <Select
+            label="Очередь"
+            description="Пусто — очередь канала по умолчанию"
+            data={options(refs.queues)}
+            value={(p.queueId as string) || null}
+            onChange={(v) => set('queueId', v ?? '')}
+            clearable
+            data-testid="param-queue"
+          />
+          <Select
+            label="Тема (навык)"
+            data={refs.topics.map((x) => ({ value: x.id, label: String(x.pathName ?? x.name) }))}
+            value={(p.topicId as string) || null}
+            onChange={(v) => set('topicId', v)}
+            clearable
+            searchable
+          />
+          {num('priority', 'Надбавка приоритета', 0, 10000)}
+          <Text size="xs" c="dimmed">
+            Оператор увидит всю переписку с ботом и заметку с собранными данными.
+          </Text>
+        </>
+      );
+    default:
+      return null;
+  }
+}
+
 function HttpParamsEditor({
   p,
   refs,
@@ -670,6 +862,8 @@ function TestRun({ graph, refs, onClose }: { graph: FlowGraph; refs: Refs; onClo
         return `Перевод на номер ${a.number}`;
       case 'hangup':
         return a.media.length ? `Звучит: ${media(a.media)} — отбой` : 'Отбой';
+      default:
+        return a.type;
     }
   };
   const apply = (r: StepResult | null, input?: string) => {
@@ -677,7 +871,8 @@ function TestRun({ graph, refs, onClose }: { graph: FlowGraph; refs: Refs; onClo
     const lines: LogLine[] = [];
     if (input) lines.push({ kind: 'input', text: input });
     for (const p of r.path) if (!p.exit) lines.push({ kind: 'node', text: `→ ${nodeName(p.nodeId)}` });
-    for (const e of r.effects) lines.push({ kind: 'system', text: `Оценка сохранена: ${e.score}` });
+    for (const e of r.effects)
+      if (e.type === 'csat') lines.push({ kind: 'system', text: `Оценка сохранена: ${e.score}` });
     lines.push({ kind: r.action.type === 'hangup' ? 'system' : 'say', text: describe(r.action) });
     setLog((l) => [...l, ...lines]);
     setStep(r);
@@ -817,6 +1012,193 @@ function TestRun({ graph, refs, onClose }: { graph: FlowGraph; refs: Refs; onClo
               </Button>
             )}
           </Card>
+        )}
+        {step && (
+          <Text size="xs" c="dimmed">
+            Переменные: {JSON.stringify(step.state.vars)}
+          </Text>
+        )}
+      </Stack>
+    </Drawer>
+  );
+}
+
+interface ChatLine {
+  from: 'bot' | 'client' | 'system';
+  text: string;
+  buttons?: { id: string; label: string }[];
+}
+
+/**
+ * Тестовый прогон бота (Ф7) в виде чата — тем же исполнителем flow-engine, что и worker. Сообщения бота
+ * идут подряд до вопроса; запрос во внешнюю систему — настоящий, через api.
+ */
+function ChatTestRun({ graph, refs, onClose }: { graph: FlowGraph; refs: Refs; onClose(): void }) {
+  const [name, setName] = useState('Анна');
+  const [lines, setLines] = useState<ChatLine[]>([]);
+  const [step, setStep] = useState<StepResult | null>(null);
+  const [input, setInput] = useState('');
+  const [busy, setBusy] = useState(false);
+  const schedules = useMemo<Record<string, Schedule>>(
+    () =>
+      Object.fromEntries(
+        refs.schedules.map((x) => [
+          x.id,
+          {
+            timezone: String(x.timezone),
+            week: x.week as Schedule['week'],
+            holidays: (x.holidays as string[]) ?? [],
+          },
+        ]),
+      ),
+    [refs.schedules],
+  );
+  const ctx = () => ({ now: new Date(), schedules });
+  /** Выполнить действия бота до ожидания ввода клиента / внешней системы / конца сценария. */
+  const drive = (first: StepResult | null, out: ChatLine[]) => {
+    let r = first;
+    for (let i = 0; r && i < 100; i++) {
+      for (const e of r.effects)
+        if (e.type === 'contact')
+          out.push({ from: 'system', text: `В карточку клиента: ${e.field} = ${e.value}` });
+      const a = r.action;
+      if (a.type === 'say') {
+        out.push({ from: 'bot', text: a.text });
+        r = resumeFlow(graph, r.state, { type: 'done' }, ctx());
+        continue;
+      }
+      if (a.type === 'prompt') out.push({ from: 'bot', text: a.text, buttons: a.buttons });
+      else if (a.type === 'http')
+        out.push({ from: 'system', text: `Запрос во внешнюю систему: ${JSON.stringify(a.input)}` });
+      else if (a.type === 'handoff') {
+        if (a.text) out.push({ from: 'bot', text: a.text });
+        const q = a.queueId
+          ? String(refs.queues.find((x) => x.id === a.queueId)?.name ?? '')
+          : 'очередь канала';
+        out.push({
+          from: 'system',
+          text: `Перевод на оператора: ${q}. Переменные: ${JSON.stringify(r.state.vars)}`,
+        });
+      } else if (a.type === 'hangup') {
+        if (a.text) out.push({ from: 'bot', text: a.text });
+        out.push({ from: 'system', text: 'Бот закрыл диалог' });
+      }
+      break;
+    }
+    setLines((l) => [...l, ...out]);
+    setStep(r);
+  };
+  const answer = (text: string) => {
+    if (!step || !text.trim()) return;
+    setInput('');
+    const r = resumeFlow(graph, step.state, { type: 'text', text }, ctx());
+    drive(r, [{ from: 'client', text }]);
+  };
+  const runHttp = async (a: Extract<Action, { type: 'http' }>, fail = false) => {
+    if (!step) return;
+    setBusy(true);
+    let ev: FlowEvent = { type: 'http', ok: false, outputs: {} };
+    let note = 'Ошибка (имитация)';
+    if (!fail)
+      try {
+        const r = await post<{ ok: boolean; outputs: Record<string, string>; error?: string }>(
+          `/integrations/${a.operationId}/test`,
+          { input: a.input },
+        );
+        ev = { type: 'http', ok: r.ok, outputs: r.outputs };
+        note = r.ok ? `Ответ: ${JSON.stringify(r.outputs)}` : `Ошибка: ${r.error}`;
+      } catch (e) {
+        note = `Ошибка: ${errorText(e)}`;
+      }
+    setBusy(false);
+    drive(resumeFlow(graph, step.state, ev, ctx()), [{ from: 'system', text: note }]);
+  };
+  const a = step?.action;
+  return (
+    <Drawer opened onClose={onClose} title="Тестовый прогон бота" position="right" size="lg">
+      <Stack>
+        <Group align="end">
+          <TextInput
+            label="Имя клиента ({{name}})"
+            value={name}
+            onChange={(e) => setName(e.currentTarget.value)}
+          />
+          <Button
+            onClick={() => {
+              setLines([]);
+              drive(startFlow(graph, { name, 'client.name': name, channel: 'webchat' }, ctx()), [
+                { from: 'system', text: 'Клиент написал в чат' },
+              ]);
+            }}
+            data-testid="test-start"
+          >
+            {step ? 'Начать заново' : 'Начать'}
+          </Button>
+        </Group>
+        <ScrollArea h={380} type="auto">
+          <Stack gap={6} data-testid="test-log">
+            {lines.map((l, i) => (
+              <Box
+                key={i}
+                style={{
+                  alignSelf: l.from === 'client' ? 'flex-end' : l.from === 'bot' ? 'flex-start' : 'center',
+                  maxWidth: '85%',
+                }}
+              >
+                <Text
+                  size="sm"
+                  c={l.from === 'system' ? 'orange' : undefined}
+                  p={l.from === 'system' ? 0 : 6}
+                  style={{
+                    whiteSpace: 'pre-wrap',
+                    borderRadius: 8,
+                    background:
+                      l.from === 'client'
+                        ? 'var(--mantine-color-blue-1)'
+                        : l.from === 'bot'
+                          ? 'var(--mantine-color-gray-1)'
+                          : undefined,
+                  }}
+                >
+                  {l.text}
+                </Text>
+                {l.buttons && l.buttons.length > 0 && i === lines.length - 1 && (
+                  <Group gap={4} mt={4}>
+                    {l.buttons.map((b) => (
+                      <Button key={b.id} size="compact-xs" variant="light" onClick={() => answer(b.label)}>
+                        {b.label}
+                      </Button>
+                    ))}
+                  </Group>
+                )}
+              </Box>
+            ))}
+          </Stack>
+        </ScrollArea>
+        {a?.type === 'prompt' && (
+          <Group gap="xs">
+            <TextInput
+              style={{ flex: 1 }}
+              placeholder="Ответ клиента…"
+              value={input}
+              onChange={(e) => setInput(e.currentTarget.value)}
+              onKeyDown={(e) => e.key === 'Enter' && answer(input)}
+              data-testid="test-input"
+            />
+            <Button onClick={() => answer(input)} data-testid="test-send">
+              Отправить
+            </Button>
+          </Group>
+        )}
+        {a?.type === 'http' && (
+          <Group>
+            <Button onClick={() => void runHttp(a)} loading={busy} data-testid="test-http">
+              Выполнить запрос
+            </Button>
+            <Button variant="light" color="red" onClick={() => void runHttp(a, true)}>
+              Имитировать ошибку
+            </Button>
+          </Group>
         )}
         {step && (
           <Text size="xs" c="dimmed">
@@ -990,6 +1372,15 @@ function Editor({ flow }: { flow: FlowRow }) {
             (patchData.params!.digits as string[]).includes(e.sourceHandle.slice(6)),
         ),
       );
+    // У кнопок бота убрана кнопка — удаляем связь от её выхода.
+    if (patchData.params?.buttons) {
+      const ids = (patchData.params.buttons as { id: string }[]).map((b) => `btn:${b.id}`);
+      setEdges((es) =>
+        es.filter(
+          (e) => e.source !== id || !e.sourceHandle?.startsWith('btn:') || ids.includes(e.sourceHandle),
+        ),
+      );
+    }
     setDirty(true);
   };
 
@@ -1012,7 +1403,7 @@ function Editor({ flow }: { flow: FlowRow }) {
     setServerIssues(null);
     notifications.show({
       color: 'green',
-      message: `Опубликована версия ${r.version} — новые звонки идут по ней`,
+      message: `Опубликована версия ${r.version} — новые ${flow.kind === 'text' ? 'диалоги' : 'звонки'} идут по ней`,
     });
     void qc.invalidateQueries({ queryKey: [`/flows/${flow.id}`] });
   }, setServerIssues);
@@ -1032,14 +1423,16 @@ function Editor({ flow }: { flow: FlowRow }) {
             w={260}
             readOnly={!writable}
           />
-          <TagsInput
-            value={dids}
-            onChange={(v) => (setDids(v), setDirty(true))}
-            placeholder="Номера (DID)"
-            w={220}
-            readOnly={!writable}
-            data-testid="flow-dids"
-          />
+          {flow.kind === 'voice' && (
+            <TagsInput
+              value={dids}
+              onChange={(v) => (setDids(v), setDirty(true))}
+              placeholder="Номера (DID)"
+              w={220}
+              readOnly={!writable}
+              data-testid="flow-dids"
+            />
+          )}
           <Badge variant="light" data-testid="flow-published">
             {flow.publishedVersion ? `опубликована версия ${flow.publishedVersion}` : 'не опубликован'}
           </Badge>
@@ -1158,7 +1551,12 @@ function Editor({ flow }: { flow: FlowRow }) {
                     <Text size="xs">{m}</Text>
                   </Alert>
                 ))}
-                <NodeParams node={sel} refs={refs} onChange={(pd) => updateNode(sel.id, pd)} />
+                <NodeParams
+                  node={sel}
+                  refs={refs}
+                  kind={flow.kind}
+                  onChange={(pd) => updateNode(sel.id, pd)}
+                />
               </>
             ) : (
               <Text size="sm" c="dimmed">
@@ -1210,7 +1608,12 @@ function Editor({ flow }: { flow: FlowRow }) {
           </Stack>
         </ScrollArea>
       </Group>
-      {testing && <TestRun graph={graph} refs={refs} onClose={() => setTesting(false)} />}
+      {testing &&
+        (flow.kind === 'text' ? (
+          <ChatTestRun graph={graph} refs={refs} onClose={() => setTesting(false)} />
+        ) : (
+          <TestRun graph={graph} refs={refs} onClose={() => setTesting(false)} />
+        ))}
       {versions && (
         <Versions
           flow={flow}
