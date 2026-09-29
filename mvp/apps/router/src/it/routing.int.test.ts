@@ -233,4 +233,18 @@ describe.skipIf(!ADMIN_URL)('Маршрутизация (ACD), Ф3', () => {
     await assignQueued(t.pool, { maxChatsFallback: 5, batchSize: 10 }, noopOnOffer);
     expect(await st(v2)).toMatchObject({ status: 'offered', assignee_id: op });
   });
+  it('задача «перезвонить» из IVR (Ф6) не занимает голосовую ёмкость: живой звонок предлагается тому же оператору', async () => {
+    const q = await t.queue({ name: 'Перезвон и звонки', channels: ['voice'] });
+    const ch = await t.channel(q);
+    const contact = await t.contact();
+    const op = await t.operator(q);
+    const task = await t.queuedConversation(q, ch, contact, { kind: 'voice', ageS: 30 });
+    await t.pool.query(`UPDATE conversation SET callback_requested = true WHERE id = $1`, [task]);
+    const live = await t.queuedConversation(q, ch, contact, { kind: 'voice', ageS: 10 });
+    await assignQueued(t.pool, { maxChatsFallback: 5, batchSize: 10 }, noopOnOffer);
+    const st = async (id: string) =>
+      (await t.pool.query(`SELECT status, assignee_id FROM conversation WHERE id = $1`, [id])).rows[0];
+    expect(await st(task)).toMatchObject({ status: 'offered', assignee_id: op });
+    expect(await st(live)).toMatchObject({ status: 'offered', assignee_id: op });
+  });
 });

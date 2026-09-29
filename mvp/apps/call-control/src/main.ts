@@ -14,6 +14,7 @@ import { Gauge } from 'prom-client';
 import { z } from 'zod';
 import { Ari } from './ari';
 import { MediaNode } from './node';
+import { MediaFiles } from './media';
 import { RecordingStore } from './recordings';
 
 const ConfigSchema = BaseConfigSchema.extend({
@@ -34,13 +35,15 @@ const ConfigSchema = BaseConfigSchema.extend({
   S3_ACCESS_KEY: z.string().default('cc'),
   S3_SECRET_KEY: z.string().default('cc-secret'),
   INSTANCE_ID: z.string().default(process.env.HOSTNAME ?? 'call-control'),
+  /** Адрес, по которому Asterisk забирает аудиофайлы IVR у call-control (любой экземпляр). */
+  MEDIA_BASE_URL: z.string().url().default('http://call-control:3000'),
 });
 
 /**
  * call-control: ARI-приложение «cc» (02-архитектура 2.2, 4.2, 6.3). На каждый узел Asterisk — активный
  * экземпляр (аренда узла в NATS KV) и резервный; разговоры держит мост Asterisk, поэтому переключение
- * экземпляров их не прерывает. Пока без IVR (Ф6): вызов → обращение → очередь с музыкой → router →
- * звонок оператору → мост и запись → выгрузка записи → журнал вызова.
+ * экземпляров их не прерывает. Вызов → обращение → сценарий IVR номера (Ф6) → очередь с музыкой → router →
+ * звонок оператору → мост и запись → (после разговора — продолжение сценария: CSAT) → выгрузка записи → журнал.
  */
 async function main(): Promise<void> {
   const config = loadConfig(ConfigSchema);
@@ -61,8 +64,6 @@ async function main(): Promise<void> {
     help: 'Узлы Asterisk, для которых этот экземпляр call-control — активный',
     registers: [metrics.registry],
   });
-  const server = startHealthServer({ port: config.PORT, lifecycle, metrics });
-
   const pool = createPool(config.DATABASE_URL, { max: 10 });
   pool.on('error', (err) => logger.error({ err: String(err) }, 'ошибка соединения с PostgreSQL'));
   const nc = await connectNats({ servers: natsServers(config), name: config.SERVICE_NAME, logger });
@@ -82,6 +83,15 @@ async function main(): Promise<void> {
     secretKey: config.S3_SECRET_KEY,
   });
 
+  // Аудиофайлы IVR для Asterisk (res_http_media_cache): неизменяемы по id, кэшируются и узлом, и здесь.
+  const media = new MediaFiles(pool, store, logger);
+  const server = startHealthServer({
+    port: config.PORT,
+    lifecycle,
+    metrics,
+    handler: (req, res) => media.handle(req, res),
+  });
+
   const nodes = config.MEDIA_NODES.split(',')
     .map((s) => s.trim())
     .filter(Boolean)
@@ -99,6 +109,7 @@ async function main(): Promise<void> {
         sipProxy: config.SIP_PROXY,
         tickMs: config.CALL_TICK_MS,
         outboundCallerId: config.OUTBOUND_CALLER_ID,
+        mediaBaseUrl: config.MEDIA_BASE_URL,
         onLeadership: (_node, leader) => leading.inc(leader ? 1 : -1),
       });
     });

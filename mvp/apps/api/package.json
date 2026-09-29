@@ -4,7 +4,8 @@
   "private": true,
   "main": "dist/main.js",
   "files": [
-    "dist"
+    "dist",
+    "assets"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
@@ -32,7 +33,8 @@
     "papaparse": "5.5.5",
     "@cc/auth": "workspace:*",
     "@aws-sdk/client-s3": "3.1141.0",
-    "@cc/domain": "workspace:*"
+    "@cc/domain": "workspace:*",
+    "@cc/flow-engine": "workspace:*"
   },
   "devDependencies": {
     "@types/pg": "8.23.1",

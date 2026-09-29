@@ -24,6 +24,7 @@ interface DemoCreds {
 export function DemoCallPage() {
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
+  const [did, setDid] = useState('');
   const [state, setState] = useState<'idle' | 'calling' | 'talking' | 'ended'>('idle');
   const [info, setInfo] = useState('');
   const ua = useRef<UA | null>(null);
@@ -57,7 +58,7 @@ export function DemoCallPage() {
     ua.current = u;
     u.on('connected', () => {
       setState('calling');
-      const s = u.call(`sip:${c.did}@${c.domain}`, {
+      const s = u.call(`sip:${did.trim() || c.did}@${c.domain}`, {
         mediaConstraints: { audio: AUDIO_CONSTRAINTS, video: false },
         pcConfig: { iceServers: c.iceServers },
       });
@@ -96,6 +97,14 @@ export function DemoCallPage() {
             onChange={(e) => setPhone(e.currentTarget.value)}
             data-testid="demo-phone"
           />
+          <TextInput
+            label="Номер контакт-центра"
+            description="2000 — через IVR (демо-сценарий), 1000 — сразу в очередь; пусто — номер по умолчанию"
+            placeholder="2000"
+            value={did}
+            onChange={(e) => setDid(e.currentTarget.value)}
+            data-testid="demo-did"
+          />
           {state === 'idle' || state === 'ended' ? (
             <Button color="green" onClick={() => void call()} data-testid="demo-call">
               Позвонить
@@ -105,7 +114,15 @@ export function DemoCallPage() {
               <Text data-testid="demo-state">{state === 'talking' ? 'Идёт разговор' : 'Соединение…'}</Text>
               <SimpleGrid cols={3} spacing={4}>
                 {'123456789*0#'.split('').map((d) => (
-                  <Button key={d} variant="default" onClick={() => session.current?.sendDTMF(d)}>
+                  <Button
+                    key={d}
+                    variant="default"
+                    // RFC 4733 (как у транка), а не SIP INFO: цифры идут в медиапотоке.
+                    onClick={() =>
+                      session.current?.sendDTMF(d, { transportType: JsSIP.C.DTMF_TRANSPORT.RFC2833 })
+                    }
+                    data-testid={`demo-dtmf-${d === '*' ? 'star' : d === '#' ? 'hash' : d}`}
+                  >
                     {d}
                   </Button>
                 ))}

@@ -16,7 +16,7 @@
 
 ## Текущее состояние (29.09.2026)
 
-- **Выполнены Ф0–Ф5** (PR #1–#3, #5–#7 и PR Ф5b, см. `mvp/docs/PROGRESS.md`). Код — в `mvp/`, как запустить —
+- **Выполнены Ф0–Ф6** (PR #1–#3, #5–#8 и PR Ф6, см. `mvp/docs/PROGRESS.md`). Код — в `mvp/`, как запустить —
   `mvp/README.md`.
 - **Ф5a** добавила телефонию: `infra/asterisk` (2 узла, образ на `andrius/asterisk:22`), `infra/kamailio` (Kamailio 6
   из RPM на AlmaLinux 9, WSS 8443, auth_ephemeral, dispatcher), coturn ×2, сервис `call-control` (ARI, активный/
@@ -25,7 +25,13 @@
 - **Ф5b** добавила в софтфон модуль аудиоустройств (`apps/web/src/lib/audio-devices.ts`: выбор, горячая замена через
   `replaceTrack`, тест), кнопки гарнитур по WebHID (`lib/headset.ts`, стандартная HID Telephony page, без Jabra SDK),
   качество связи по `getStats` и ICE restart, горячие клавиши Ctrl+Alt+A/H/M; чек-лист гарнитур — в PROGRESS.md.
-- **Следующая — Ф6**: flow-engine, конструктор и исполнение IVR, интеграционные операции.
+- **Ф6** добавила `packages/flow-engine` (граф, проверка, пошаговый исполнитель — общий для call-control и
+  тестового прогона в браузере; узлы ботов для текста — задел Ф7), исполнение IVR в call-control (`src/ivr.ts`,
+  состояние шага — `call.ivr_state` в БД), конструктор IVR на React Flow (`/ivr`), аудиобиблиотеку, объявления о
+  сбоях, интеграционные операции (выполняет api, вызов из call-control — NATS `cc.integration.execute`), панель
+  внешних данных в карточке, CSAT после разговора, голосовое сообщение → задача «перезвонить», `mock-selfservice`.
+  Демо-IVR — номер **2000** (1000 — сразу в очередь).
+- **Следующая — Ф7**: шаблоны, автоответы, БЗ, подсказки, бот (узлы текста в flow-engine, исполнение в worker).
 - Ждём от заказчика: параметры SIP-транка МТС (подключается переменной `TRUNK_HOST`), описание API Rocket Data и
   источника справочника объектов (к Ф13). Их отсутствие работу не блокирует — см. соответствующие фазы в плане.
 
@@ -72,8 +78,14 @@
   через `mirror.gcr.io/...` + `docker tag`). ARI: после `StasisEnd` приложению не приходит `ChannelDestroyed`.
   Kamailio должен слушать адрес интерфейса (не 0.0.0.0 — иначе Record-Route ломает диалоги). Браузер в e2e —
   Chromium с `--use-fake-device-for-media-stream`; Asterisk в docker-сети доступен браузеру на хосте напрямую.
+- IVR: фразы Asterisk берёт по HTTP у call-control (`sound:http://call-control:3000/media/<id>.wav`,
+  `res_http_media_cache`) — нужен `astcachedir` (иначе проигрывание мгновенно «заканчивается»). DTMF из браузера —
+  RFC 4733, из SIPp — SIP INFO (`ops/test/sipp/ivr-scenario.mjs`). Файлы аудиобиблиотеки — WAV 8 кГц моно, приводит
+  браузер. web подключает исходники `packages/flow-engine` псевдонимом Vite (`vite.config.ts`, `tsconfig paths`).
+  Расширить CHECK в expand-миграции: `DROP CONSTRAINT IF EXISTS x` + `ADD CONSTRAINT x CHECK … NOT VALID` в том
+  же файле (исключение линтера). Задача «перезвонить» (голосовое обращение без вызова) не занимает голос в router.
 - Стек для e2e Ф4/Ф5 и проверок: `COMPOSE_PROFILES=test MOCK_TELEGRAM_TAG=<тег> PUBLIC_BASE_URL=https://traefik TRUNK_HOST=trunk-sim:5060`,
-  образ мока — `APPS="mock-telegram" ops/build-images.sh <тег>`. Проверки, оставляющие операторов «Готов»
+  образы моков — `APPS="mock-telegram mock-selfservice" ops/build-images.sh <тег>`. Проверки, оставляющие операторов «Готов»
   (`route-under-rollout.mjs`), влияют на последующие: router сам предлагает новые обращения.
 
 ## Облачное окружение Claude (если нужно поднимать стек)

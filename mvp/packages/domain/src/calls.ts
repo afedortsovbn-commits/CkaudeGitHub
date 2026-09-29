@@ -105,11 +105,17 @@ export interface InboundCallInput {
   callerNumber: string | null;
   callerName?: string | null;
   did: string;
+  /**
+   * Сценарий IVR для номера (Ф6): вызов начинается в сценарии (состояние 'ivr', обращение — 'bot'), в
+   * очередь его ставит узел «Поставить в очередь». Без сценария — сразу в очередь канала (как в Ф5).
+   */
+  ivr?: { flowVersionId: string; flowName: string; state: unknown };
 }
 
 /**
  * Входящий вызов (02-архитектура 4.2): клиент по АОН, новое обращение голосового канала в очереди канала
- * (правила маршрутизации проверяются по набранному номеру), запись вызова в состоянии «ожидает».
+ * (правила маршрутизации проверяются по набранному номеру), запись вызова в состоянии «ожидает»
+ * или «в IVR», если на номер назначен сценарий.
  */
 export async function startInboundCall(
   tx: PoolClient,
@@ -123,23 +129,44 @@ export async function startInboundCall(
     : await anonymousContact(tx, input.callerName);
   const routing = await resolveRouting(tx, contactId, channel.id, 'voice', input.did);
   const conversationId = newId();
+  const ivr = input.ivr;
   await tx.query(
     `INSERT INTO conversation (id, channel_id, channel_kind, contact_id, status, queue_id, priority, is_urgent, queued_at)
-     VALUES ($1, $2, 'voice', $3, 'queued', $4, $5, $6, now())`,
-    [conversationId, channel.id, contactId, routing.queueId, routing.priority, routing.isUrgent],
+     VALUES ($1, $2, 'voice', $3, $7, $4, $5, $6, now())`,
+    [
+      conversationId,
+      channel.id,
+      contactId,
+      routing.queueId,
+      routing.priority,
+      routing.isUrgent,
+      ivr ? 'bot' : 'queued',
+    ],
   );
   const callId = input.callId ?? newId();
   await tx.query(
-    `INSERT INTO call (id, conversation_id, direction, node, state, from_number, to_number, did, client_channel)
-     VALUES ($1, $2, 'in', $3, 'queued', $4, $5, $5, $6)`,
-    [callId, conversationId, input.node, phone ?? input.callerNumber, input.did, input.clientChannel],
+    `INSERT INTO call (id, conversation_id, direction, node, state, from_number, to_number, did, client_channel,
+                       flow_version_id, ivr_state)
+     VALUES ($1, $2, 'in', $3, $7, $4, $5, $5, $6, $8, $9)`,
+    [
+      callId,
+      conversationId,
+      input.node,
+      phone ?? input.callerNumber,
+      input.did,
+      input.clientChannel,
+      ivr ? 'ivr' : 'queued',
+      ivr?.flowVersionId ?? null,
+      ivr ? JSON.stringify(ivr.state) : null,
+    ],
   );
-  await callEvent(tx, callId, 'queued', null, { did: input.did, queueId: routing.queueId });
+  if (ivr) await callEvent(tx, callId, 'ivr_start', null, { did: input.did, flow: ivr.flowName });
+  else await callEvent(tx, callId, 'queued', null, { did: input.did, queueId: routing.queueId });
   await emitConversation(tx, CONVERSATION_EVENTS.created, await loadRef(tx, conversationId));
   await appendMessage(tx, {
     conversationId,
     direction: 'system',
-    body: `Входящий звонок${phone ? ` с номера ${phone}` : ''} на ${input.did}`,
+    body: `Входящий звонок${phone ? ` с номера ${phone}` : ''} на ${input.did}${ivr ? ` — IVR «${ivr.flowName}»` : ''}`,
     channelKind: 'voice',
   });
   await emitCallState(tx, callId);
@@ -308,19 +335,42 @@ export async function endCall(tx: PoolClient, callId: string, reason: string): P
   const { rows } = await tx.query<CallRow>(`SELECT * FROM call WHERE id = $1 FOR UPDATE`, [callId]);
   const c = rows[0];
   if (!c || c.state === 'ended') return false;
-  const neverConnected = c.state === 'queued' || (c.state === 'dialing' && c.direction === 'in');
+  const neverConnected =
+    c.state === 'queued' || c.state === 'ivr' || (c.state === 'dialing' && c.direction === 'in');
   await tx.query(
     `UPDATE call SET state = 'ended', ended_at = now(), end_reason = $2, on_hold = false,
        version = version + 1, updated_at = now() WHERE id = $1`,
     [callId, reason],
   );
   await callEvent(tx, callId, 'ended', null, { reason });
-  const conv = await tx.query<{ status: string; assignee_id: string | null }>(
-    `SELECT status, assignee_id FROM conversation WHERE id = $1 FOR UPDATE`,
+  const conv = await tx.query<{ status: string; assignee_id: string | null; callback_requested: boolean }>(
+    `SELECT status, assignee_id, callback_requested FROM conversation WHERE id = $1 FOR UPDATE`,
     [c.conversation_id],
   );
   const cs = conv.rows[0];
-  if (neverConnected && c.direction === 'in' && cs && ['queued', 'offered'].includes(cs.status)) {
+  if (cs?.status === 'bot') {
+    // Клиент завершил звонок в IVR, не дойдя до оператора (самообслуживание или отказ) — обращение закрыто.
+    await tx.query(
+      `UPDATE conversation SET status = 'closed', closed_at = now(), version = version + 1, updated_at = now() WHERE id = $1`,
+      [c.conversation_id],
+    );
+    await appendMessage(tx, {
+      conversationId: c.conversation_id,
+      direction: 'system',
+      body: 'Звонок завершён в IVR (без соединения с оператором)',
+      channelKind: 'voice',
+    });
+    await emitConversation(tx, CONVERSATION_EVENTS.updated, await loadRef(tx, c.conversation_id), {
+      action: 'closed',
+      disposition: 'IVR',
+    });
+  } else if (
+    neverConnected &&
+    c.direction === 'in' &&
+    cs &&
+    !cs.callback_requested &&
+    ['queued', 'offered'].includes(cs.status)
+  ) {
     await tx.query(
       `UPDATE routing_offer SET outcome = 'superseded', decided_at = now() WHERE conversation_id = $1 AND outcome IS NULL`,
       [c.conversation_id],
@@ -460,7 +510,13 @@ export async function transferCallToUser(
 export async function transferCallExternal(
   tx: PoolClient,
   callId: string,
-  o: { extChannel: string; number: string; byUserId: string; message: string; data: Record<string, unknown> },
+  o: {
+    extChannel: string;
+    number: string;
+    byUserId: string | null;
+    message: string;
+    data: Record<string, unknown>;
+  },
 ): Promise<void> {
   const { rows } = await tx.query<{ conversation_id: string }>(
     // on_hold = true — клиент слушает музыку, пока подразделение не ответит.

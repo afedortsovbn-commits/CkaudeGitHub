@@ -19,6 +19,7 @@ import { TokenService } from '@cc/auth';
 import { ApiConfigSchema, type AppContext } from './context';
 import { originsCache } from './chat/origins';
 import { createS3Storage } from './lib/storage';
+import { serveIntegrations } from './ivr/responder';
 
 async function bootstrap(): Promise<void> {
   const config = loadConfig(ApiConfigSchema);
@@ -79,6 +80,8 @@ async function bootstrap(): Promise<void> {
     allowedOrigins: originsCache(pool),
   };
   const app = await createApp(ctx);
+  // Интеграционные операции для IVR и ботов (NATS request/reply, группа очереди — любой экземпляр api).
+  const integrations = serveIntegrations(nc, { pool, secretsKey: config.SECRETS_KEY, logger });
   const fastify = app.getHttpAdapter().getInstance();
 
   // Освободившиеся keep-alive соединения закрываем сами, иначе закрытие ждало бы keepAliveTimeout.
@@ -91,6 +94,7 @@ async function bootstrap(): Promise<void> {
     }
   });
   lifecycle.onShutdown('outbox-relay', 20, () => relay.stop());
+  lifecycle.onShutdown('integrations', 25, () => integrations.stop());
   lifecycle.onShutdown('nats', 30, () => nc.drain());
   lifecycle.onShutdown('postgres', 31, () => pool.end());
 

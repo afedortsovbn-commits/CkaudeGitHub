@@ -1,4 +1,4 @@
-import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { CONVERSATION_EVENTS } from '@cc/contracts';
 import { emitConversation, loadRef } from '@cc/domain';
 import type { Logger } from '@cc/service-kit';
@@ -31,6 +31,12 @@ export class RecordingStore {
       forcePathStyle: true,
       credentials: { accessKeyId: o.accessKey, secretAccessKey: o.secretKey },
     });
+  }
+
+  /** Файл из S3-хранилища (аудиобиблиотека IVR). */
+  async object(key: string): Promise<Buffer> {
+    const r = await this.s3.send(new GetObjectCommand({ Bucket: this.o.bucket, Key: key }));
+    return Buffer.from(await r.Body!.transformToByteArray());
   }
 
   async finished(node: string, rec: { name: string; duration?: number }): Promise<void> {

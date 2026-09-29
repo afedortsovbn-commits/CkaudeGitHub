@@ -9,7 +9,8 @@
     "noUncheckedIndexedAccess": true,
     "skipLibCheck": true,
     "noEmit": true,
-    "types": ["vite/client"]
+    "types": ["vite/client"],
+    "paths": { "@cc/flow-engine": ["../../packages/flow-engine/src/index.ts"] }
   },
   "include": ["src", "vite.config.ts"]
 }

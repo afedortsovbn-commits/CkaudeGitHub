@@ -27,6 +27,10 @@ export interface AriEvent {
   cause_txt?: string;
   recording?: { name: string; state: string; duration?: number; target_uri?: string };
   bridge?: AriBridge;
+  /** PlaybackStarted/PlaybackFinished. */
+  playback?: { id: string; state: string; target_uri?: string; media_uri?: string };
+  /** ChannelDtmfReceived. */
+  digit?: string;
 }
 
 export class AriError extends Error {
@@ -113,6 +117,20 @@ export class Ari {
         beep: false,
         terminateOn: 'none',
       }),
+    /** Воспроизведение списка файлов одним проигрыванием (IVR); id проигрывания задаём сами. */
+    play: (id: string, playbackId: string, media: string[]) =>
+      this.req('POST', `/channels/${id}/play/${playbackId}`, { media: media.join(',') }),
+    /** Голосовое сообщение клиента (M-TEL-08): сигнал, запись до # / тишины / максимальной длительности. */
+    recordMessage: (id: string, name: string, maxSec: number) =>
+      this.req('POST', `/channels/${id}/record`, {
+        name,
+        format: 'wav',
+        ifExists: 'overwrite',
+        beep: true,
+        terminateOn: '#',
+        maxDurationSeconds: maxSec,
+        maxSilenceSeconds: 5,
+      }),
     snoop: (id: string, o: { snoopId: string; app: string; appArgs: string }) =>
       this.req<AriChannel>('POST', `/channels/${id}/snoop`, {
         spy: 'both',
@@ -142,7 +160,12 @@ export class Ari {
       }),
   };
 
+  playbacks = {
+    stop: (id: string) => this.quiet('DELETE', `/playbacks/${encodeURIComponent(id)}`),
+  };
+
   recordings = {
+    stopLive: (name: string) => this.quiet('POST', `/recordings/live/${encodeURIComponent(name)}/stop`),
     storedFile: async (name: string): Promise<Buffer> => {
       const r = await fetch(`${this.baseUrl}/recordings/stored/${encodeURIComponent(name)}/file`, {
         headers: { authorization: this.auth },

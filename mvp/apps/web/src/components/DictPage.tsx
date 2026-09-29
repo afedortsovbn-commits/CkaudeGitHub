@@ -17,7 +17,7 @@ interface Props {
   title: string;
   columns: Column[];
   fields: FormField[];
-  writePerm?: string;
+  writePerm?: string | string[];
   toolbar?: ReactNode;
   /** Действия строки (например, «Предприятия» у подразделения). */
   rowActions?(row: Row): ReactNode;
@@ -60,7 +60,7 @@ export function DictPage({
   const toggle = useAction((r: Row) =>
     post(`/dict/${kind}/${r.id}/${r.isActive ? 'deactivate' : 'activate'}`),
   );
-  const writable = can(writePerm);
+  const writable = can(...[writePerm].flat());
   const initial = useMemo(
     () => (editing && editing !== 'new' ? (toForm ? toForm(editing) : editing) : (createDefaults ?? {})),
     [editing, toForm, createDefaults],

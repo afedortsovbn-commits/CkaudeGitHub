@@ -69,7 +69,7 @@ interface Conv {
 }
 
 const LIST_SQL = `SELECT c.id, c.status, c.channel_kind, c.queue_id, c.assignee_id, c.topic_id, c.enterprise_id,
-    c.is_important, c.is_urgent, c.last_message_at, c.created_at, c.assigned_at, c.closed_at, c.seq, c.contact_id,
+    c.is_important, c.is_urgent, c.callback_requested, c.last_message_at, c.created_at, c.assigned_at, c.closed_at, c.seq, c.contact_id,
     COALESCE(ct.display_name, ct.phone, ct.email, 'Клиент') AS contact_name, q.name AS queue_name, u.full_name AS assignee_name,
     t.name AS topic_name,
     (SELECT left(m.body, 140) FROM message m WHERE m.conversation_id = c.id AND m.direction IN ('in','out')
@@ -123,6 +123,8 @@ export class ConversationsController {
         throw badRequest('Неизвестная вкладка');
     }
     if (q.contactId) add('c.contact_id = ?', q.contactId);
+    // Задачи «перезвонить» из IVR (голосовое сообщение / заказ обратного звонка, M-TEL-08).
+    if (q.callback === 'true') add('c.callback_requested');
     if (q.important === 'true') add('c.is_important');
     if (q.q)
       add(

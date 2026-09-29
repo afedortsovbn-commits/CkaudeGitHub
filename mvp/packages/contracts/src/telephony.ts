@@ -35,7 +35,8 @@ export const VoiceChannelConfigSchema = z
   .passthrough();
 export type VoiceChannelConfig = z.infer<typeof VoiceChannelConfigSchema>;
 
-export const CALL_STATES = ['queued', 'dialing', 'talking', 'external', 'ended'] as const;
+/** ivr — клиент в сценарии IVR (до очереди, после разговора — оценка, голосовое сообщение), Ф6. */
+export const CALL_STATES = ['ivr', 'queued', 'dialing', 'talking', 'external', 'ended'] as const;
 export type CallState = (typeof CALL_STATES)[number];
 
 /** Состояние вызова в событии обращения `conversation.call` (для рабочего места и панели супервизора). */

@@ -9,6 +9,7 @@ import { ConversationsController } from './chat/conversations.controller';
 import { SupervisorController } from './chat/supervisor.controller';
 import { TelephonyController } from './chat/telephony.controller';
 import { HealthController } from './health.controller';
+import { IvrController } from './ivr/ivr.controller';
 import { ChannelsController } from './org/channels.controller';
 import { DictController } from './org/dict.controller';
 import { MatrixController } from './org/matrix.controller';
@@ -35,6 +36,7 @@ export class AppModule {
         AgentStatusController,
         SupervisorController,
         TelephonyController,
+        IvrController,
       ],
       providers: [
         { provide: APP_CONTEXT, useValue: ctx },

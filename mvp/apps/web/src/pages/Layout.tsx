@@ -11,6 +11,10 @@ const MENU: { to: string; label: string; perms?: string[] }[] = [
   { to: '/workspace', label: 'Рабочее место оператора', perms: ['conversations.work'] },
   { to: '/supervisor', label: 'Супервизор', perms: ['supervisor.monitor'] },
   { to: '/channels', label: 'Каналы', perms: ['admin.directories'] },
+  { to: '/ivr', label: 'Сценарии IVR', perms: ['admin.directories', 'supervisor.monitor'] },
+  { to: '/ivr-audio', label: 'Аудиобиблиотека', perms: ['admin.directories'] },
+  { to: '/announcements', label: 'Объявления о сбоях', perms: ['admin.directories', 'supervisor.monitor'] },
+  { to: '/integrations', label: 'Интеграции', perms: ['admin.directories'] },
   { to: '/enterprises', label: t.nav.enterprises, perms: ['admin.directories'] },
   { to: '/departments', label: t.nav.departments, perms: ['admin.directories'] },
   { to: '/topics', label: t.nav.topics, perms: ['admin.directories'] },
@@ -62,7 +66,7 @@ export function Layout() {
               component={RouterLink}
               to={m.to}
               label={m.label}
-              active={loc.pathname === m.to}
+              active={loc.pathname === m.to || (m.to !== '/' && loc.pathname.startsWith(`${m.to}/`))}
             />
           ))}
         </ScrollArea>
@@ -83,7 +87,7 @@ export function HomePage() {
         Здравствуйте, {me?.fullName}!
       </Text>
       <Text c="dimmed">
-        Рабочие места оператора и второй линии появятся в следующих фазах. Сейчас доступны администрирование
+        Разделы — в меню слева: рабочее место оператора, панель супервизора, настройка IVR, каналов,
         оргструктуры, прав и справочников.
       </Text>
     </>

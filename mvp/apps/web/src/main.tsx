@@ -18,6 +18,8 @@ import { UsersPage } from './pages/UsersPage';
 import { WorkspacePage } from './pages/WorkspacePage';
 import { ChannelsPage } from './pages/ChannelsPage';
 import { DemoCallPage } from './pages/DemoCallPage';
+import { FlowEditorPage, FlowListPage } from './pages/FlowEditorPage';
+import { AnnouncementsPage, AudioLibraryPage, IntegrationsPage } from './pages/IvrAdminPages';
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } },
@@ -42,6 +44,11 @@ function App() {
         <Route path="workspace" element={<WorkspacePage />} />
         <Route path="supervisor" element={<SupervisorPage />} />
         <Route path="channels" element={<ChannelsPage />} />
+        <Route path="ivr" element={<FlowListPage />} />
+        <Route path="ivr/:id" element={<FlowEditorPage />} />
+        <Route path="ivr-audio" element={<AudioLibraryPage />} />
+        <Route path="announcements" element={<AnnouncementsPage />} />
+        <Route path="integrations" element={<IntegrationsPage />} />
         <Route path="enterprises" element={<EnterprisesPage />} />
         <Route path="departments" element={<DepartmentsPage />} />
         <Route path="topics" element={<TopicsPage />} />
