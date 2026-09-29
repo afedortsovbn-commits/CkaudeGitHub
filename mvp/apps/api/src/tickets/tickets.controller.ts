@@ -1,5 +1,5 @@
 import { Body, Controller, Get, HttpCode, Inject, Param, Post, Query, Req, Res } from '@nestjs/common';
-import { scopeFilter, type Principal } from '@cc/auth';
+import { inScope, scopeFilter, type Principal } from '@cc/auth';
 import {
   applyMatrixToOpenTickets,
   approveTicket,
@@ -33,7 +33,11 @@ import { one, rows, toApi, withTx } from '../lib/db';
 import { ApiError, badRequest, forbidden, notFound, parse } from '../lib/errors';
 
 const uuid = z.string().uuid();
-const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Дата вида ГГГГ-ММ-ДД');
+/** Календарная дата ГГГГ-ММ-ДД (31.02 и подобные отклоняются здесь, а не ошибкой базы). */
+const day = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, 'Дата вида ГГГГ-ММ-ДД')
+  .refine((v) => new Date(`${v}T00:00:00Z`).toISOString().startsWith(v), 'Такой даты нет');
 const version = z.number().int().positive();
 const ids = z.array(uuid).max(20).default([]);
 
@@ -310,8 +314,9 @@ export class TicketsController {
   @RequirePerm('supervisor.approvals', 'admin.matrix')
   async reassignmentReport(@CurrentUser() p: Principal) {
     const all = await ticketsNeedingReassignment(this.ctx.pool);
-    void p;
-    return all.map((t) => ({ id: t.id, number: Number(t.number), status: t.status, dueDate: t.due }));
+    return all
+      .filter((t) => this.inTicketScope(p, t))
+      .map((t) => ({ id: t.id, number: Number(t.number), status: t.status, dueDate: t.due }));
   }
 
   @Post('tickets/apply-matrix')
@@ -528,17 +533,13 @@ export class TicketsController {
     );
   }
 
+  /** Тикет в области видимости сотрудника — тот же предикат, что у SQL-фильтра (`inScope`). */
   private inTicketScope(p: Principal, t: TicketRow): boolean {
-    return (
-      p.scope.all ||
-      p.scope.rules.some((r) => {
-        return (
-          (!r.enterpriseIds || r.enterpriseIds.includes(t.enterprise_id)) &&
-          (!r.departmentIds || r.departmentIds.includes(t.department_id)) &&
-          (!r.topicIds || t.topic_path.some((x) => r.topicIds!.includes(x)))
-        );
-      })
-    );
+    return inScope(p.scope, {
+      enterpriseId: t.enterprise_id,
+      departmentId: t.department_id,
+      topicPath: t.topic_path,
+    });
   }
 
   /** Вложения, загруженные этим сотрудником и ещё не привязанные ни к обращению, ни к тикету. */

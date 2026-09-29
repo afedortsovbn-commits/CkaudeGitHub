@@ -20,7 +20,7 @@ import {
   approvalRecipients,
   loadCard,
   queueNotifications,
-  usersWithPermission,
+  supervisorsFor,
   type NotificationKind,
 } from './ticket-notify';
 import { localDate } from './ticket-time';
@@ -335,6 +335,38 @@ async function notifyAssigned(
   });
 }
 
+/** Уведомление только в интерфейсе (колокольчик, M-TKT-12) — участникам о событиях тикета. */
+async function notifyUi(
+  tx: PoolClient,
+  t: TicketRow,
+  userIds: string[],
+  kind: NotificationKind,
+  dedupe: string,
+  actorId: string | null,
+  extra: { comment?: string; actorName?: string } = {},
+): Promise<void> {
+  const to = uniq(userIds).filter((u) => u !== actorId);
+  if (!to.length) return;
+  await queueNotifications(tx, {
+    ticketId: t.id,
+    userIds: to,
+    kind,
+    dedupe,
+    card: await loadCard(tx, t.id),
+    extra,
+    email: false,
+  });
+}
+
+/** Тема (или её предок) помечена «особо важной» — отметка ставится автоматически (M-CARD-08). */
+async function topicImportant(db: Db, topicPath: string[]): Promise<boolean> {
+  const { rows } = await db.query<{ v: boolean }>(
+    'SELECT COALESCE(bool_or(is_important), false) AS v FROM topic WHERE id = ANY($1)',
+    [topicPath],
+  );
+  return rows[0]!.v;
+}
+
 async function actorName(db: Db, id: string | null): Promise<string> {
   if (!id) return '';
   const { rows } = await db.query<{ full_name: string }>('SELECT full_name FROM app_user WHERE id = $1', [
@@ -431,14 +463,12 @@ export async function createTicket(tx: PoolClient, i: CreateTicketInput): Promis
   const due = i.dueDate ?? (await defaultDueDate(tx, topic.path, now));
   if (due < localDate(now, tz)) throw bad('Срок ответа не может быть в прошлом');
 
-  const auto = (
-    await tx.query<{ v: boolean }>(
-      'SELECT COALESCE(bool_or(is_important), false) AS v FROM topic WHERE id = ANY($1)',
-      [topic.path],
-    )
-  ).rows[0]!.v;
-  const important = auto || conv.is_important || i.isImportant === true;
-  const manual = conv.important_manual || (i.isImportant === true && !auto);
+  // «Особо важное» (M-CARD-08, M-TKT-02): автоматически по теме тикета; вручную можно отметить тикет по любой
+  // другой теме — явным флагом формы или перенесённой ручной отметкой обращения. Автоматическую не снять.
+  const auto = await topicImportant(tx, topic.path);
+  const manualMark = i.isImportant ?? (conv.important_manual ? conv.is_important : false);
+  const important = auto || manualMark;
+  const manual = !auto && manualMark;
 
   const id = newId();
   await tx.query(
@@ -554,7 +584,11 @@ export async function openTicket(tx: PoolClient, id: string, actorId: string): P
     [id],
   );
   await transition(tx, t, actorId, 'opened', t.status, 'in_work');
-  return statusChanged(tx, t, actorId, 'opened', [t.created_by]);
+  const next = await statusChanged(tx, t, actorId, 'opened', [t.created_by]);
+  await notifyUi(tx, next, [t.created_by], 'opened', `opened:${id}:${next.version}`, actorId, {
+    actorName: await actorName(tx, actorId),
+  });
+  return next;
 }
 
 export interface CloseTicketInput {
@@ -795,13 +829,8 @@ export async function redirectTicket(
     throw bad('По матрице ответственных не найдено — выберите ответственного вручную');
   await assertAssignable(tx, [...responsibleIds, ...curatorIds]);
 
-  const auto = (
-    await tx.query<{ v: boolean }>(
-      'SELECT COALESCE(bool_or(is_important), false) AS v FROM topic WHERE id = ANY($1)',
-      [topicPath],
-    )
-  ).rows[0]!.v;
-  const important = t.important_manual ? t.is_important : auto;
+  const auto = await topicImportant(tx, topicPath);
+  const important = auto || (t.important_manual && t.is_important);
   await tx.query(
     `UPDATE ticket SET enterprise_department_id = $2, enterprise_id = $3, department_id = $4, topic_id = $5, topic_path = $6,
             is_important = $7, version = version + 1, updated_at = now() WHERE id = $1`,
@@ -811,8 +840,9 @@ export async function redirectTicket(
   if (dimsChanged)
     await tx.query(
       `UPDATE conversation SET topic_id = $2, topic_path = $3, enterprise_id = $4, department_id = $5,
+              is_important = CASE WHEN important_manual THEN is_important ELSE $6 END,
               version = version + 1, updated_at = now() WHERE id = $1`,
-      [t.conversation_id, topicId, topicPath, enterpriseId, departmentId],
+      [t.conversation_id, topicId, topicPath, enterpriseId, departmentId, auto],
     );
   await addComment(tx, id, actorId, 'redirect', comment);
   await transition(tx, t, actorId, 'redirected', t.status, t.status, {
@@ -828,6 +858,20 @@ export async function redirectTicket(
     actorName: await actorName(tx, actorId),
   });
   const everyone = uniq([...(await participantIds(tx, next)), ...change.removed, next.created_by]);
+  const name = await actorName(tx, actorId);
+  await notifyUi(
+    tx,
+    next,
+    everyone.filter((u) => !change.added.includes(u) && !change.removed.includes(u)),
+    'assignees_changed',
+    `redirected:${id}:${next.version}`,
+    actorId,
+    { comment, actorName: name },
+  );
+  await notifyUi(tx, next, change.removed, 'unassigned', `unassigned:${id}:${next.version}`, actorId, {
+    comment,
+    actorName: name,
+  });
   await emitTicket(tx, TICKET_EVENTS.redirected, next, actorId, everyone, {
     added: change.added,
     removed: change.removed,
@@ -882,9 +926,14 @@ export async function reassignTicket(
     if (i.dueDate < localDate(i.now ?? new Date(), tz)) throw bad('Срок ответа не может быть в прошлом');
     set('due_date', i.dueDate);
   }
-  if (i.isImportant !== undefined && i.isImportant !== t.is_important) {
-    set('is_important', i.isImportant);
-    set('important_manual', true);
+  if (i.isImportant !== undefined) {
+    // Автоматическую отметку по теме не снять; вручную — отметить тикет по любой другой теме.
+    const auto = await topicImportant(tx, t.topic_path);
+    const important = auto || i.isImportant;
+    if (important !== t.is_important) {
+      set('is_important', important);
+      set('important_manual', !auto && important);
+    }
   }
   const change = await setAssignees(tx, id, { responsibleIds, curatorIds }, actorId, 'reassigned');
   if (!change.changed && !sets.length) throw bad('Нечего менять');
@@ -906,6 +955,10 @@ export async function reassignTicket(
     actorName: await actorName(tx, actorId),
   });
   const everyone = uniq([...(await participantIds(tx, next)), ...change.removed]);
+  await notifyUi(tx, next, change.removed, 'unassigned', `unassigned:${id}:${next.version}`, actorId, {
+    comment,
+    actorName: await actorName(tx, actorId),
+  });
   await emitTicket(tx, TICKET_EVENTS.assigned, next, actorId, everyone, {
     added: change.added,
     removed: change.removed,
@@ -972,6 +1025,12 @@ export async function handleUserDeactivated(
     'UPDATE approval_substitute SET is_active = false WHERE (user_id = $1 OR substitute_id = $1) AND is_active',
     [userId],
   );
+  // Исключается и из рассылки: письма, ещё не ушедшие из очереди, не отправляются.
+  await tx.query(
+    `UPDATE notification SET status = 'skipped', last_error = 'сотрудник деактивирован'
+      WHERE user_id = $1 AND channel = 'email' AND status = 'pending'`,
+    [userId],
+  );
   const { rows } = await tx.query<{ id: string }>(
     `SELECT t.id FROM ticket t JOIN ticket_assignee a ON a.ticket_id = t.id AND a.user_id = $1 AND a.is_active
       WHERE t.status <> 'closed' ORDER BY t.number`,
@@ -986,18 +1045,24 @@ export async function handleUserDeactivated(
         WHERE ticket_id = $1 AND user_id = $2`,
       [id, userId],
     );
+    // Состав назначенных изменился — открытые у других формы должны получить «тикет уже изменён».
+    await tx.query('UPDATE ticket SET version = version + 1, updated_at = now() WHERE id = $1', [id]);
     const left = await activeAssignees(tx, id);
     let responsibles = left.filter((a) => a.kind === 'responsible').map((a) => a.user_id);
     const curators = left.filter((a) => a.kind === 'curator').map((a) => a.user_id);
     let how = 'kept';
     if (!responsibles.length) {
       const d = await matrixDefaults(tx, t.enterprise_department_id, t.topic_path);
-      if (d.responsibles.length) {
-        responsibles = d.responsibles.filter((u) => u !== userId);
+      const byMatrix = d.responsibles.filter((u) => u !== userId);
+      const byCurators = uniq([...curators, ...d.curators]).filter((u) => u !== userId);
+      if (byMatrix.length) {
+        responsibles = byMatrix;
         how = 'matrix';
         res.reassigned++;
-      } else if (curators.length || d.curators.length) {
-        responsibles = uniq([...curators, ...d.curators]).filter((u) => u !== userId);
+      } else if (byCurators.length) {
+        // Матрица не дала ответственных — тикет ведут кураторы (M-TKT-12a): они становятся ответственными,
+        // чтобы тикет не числился в «требуют переназначения» и письма о сроках шли им.
+        responsibles = byCurators;
         how = 'curators';
         res.promotedCurators++;
       }
@@ -1026,6 +1091,10 @@ export async function handleUserDeactivated(
       await flagNeedsReassign(tx, t, userId);
     } else {
       await transition(tx, t, null, 'assignee_removed', t.status, t.status, { userId });
+      await emitTicket(tx, TICKET_EVENTS.assigned, await reload(tx, id), null, responsibles, {
+        added: [],
+        removed: [userId],
+      });
     }
   }
   // Согласование у уволенного создателя — супервизорам: уведомляем о тикетах, которые ждут решения.
@@ -1050,7 +1119,8 @@ export async function handleUserDeactivated(
 
 async function flagNeedsReassign(tx: PoolClient, t: TicketRow, byUserId: string | null): Promise<void> {
   await transition(tx, t, null, 'needs_reassign', t.status, t.status, { userId: byUserId });
-  const sups = (await usersWithPermission(tx, 'supervisor.approvals')).map((u) => u.id);
+  // Супервизорам, в чью область попадает тикет (администратор с полной областью — тоже).
+  const sups = await supervisorsFor(tx, t);
   await queueNotifications(tx, {
     ticketId: t.id,
     userIds: sups,

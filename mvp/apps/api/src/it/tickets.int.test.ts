@@ -637,6 +637,110 @@ describe.skipIf(!ADMIN_URL)('Вторая линия Ф8 (интеграция)'
     expect(msgs.some((m: { body: string }) => m.body === 'А что с моим вопросом?')).toBe(true);
   });
 
+  it('важность по теме, некорректная дата, уведомления участникам, отчёт по области, письма уволенному не уходят', async () => {
+    const staff = (await one(`SELECT id FROM topic WHERE name = 'Жалобы на персонал АЗС'`)).id as string;
+    const base = { enterpriseId: id.e1, departmentId: id.ops, summary: 'Суть', responsibleIds: [id.r1] };
+    // Обращение по особо важной теме (отметка автоматическая), тикет — по обычной: отметка не переносится.
+    const c1 = await conversation('op1', staff);
+    const plain = await call('POST', `/conversations/${c1}/escalate`, 'op1', { ...base, topicId: id.fuel });
+    expect(plain.status, JSON.stringify(plain.body)).toBe(200);
+    expect(plain.body.isImportant).toBe(false);
+    // Ручная отметка обращения переносится в тикет; некорректная дата срока — 400, а не ошибка базы.
+    const c2 = await conversation('op1');
+    await call('PATCH', `/conversations/${c2}`, 'op1', { isImportant: true });
+    const bad = await call('POST', `/conversations/${c2}/escalate`, 'op1', {
+      ...base,
+      topicId: id.fuel,
+      dueDate: '2026-02-31',
+    });
+    expect(bad.status).toBe(400);
+    const marked = await call('POST', `/conversations/${c2}/escalate`, 'op1', {
+      ...base,
+      topicId: id.fuel,
+      curatorIds: [id.c1],
+    });
+    expect(marked.body.isImportant).toBe(true);
+    // Автоматическую отметку особо важной темы не снять.
+    const c3 = await conversation('op1', staff);
+    const imp = await call('POST', `/conversations/${c3}/escalate`, 'op1', {
+      ...base,
+      departmentId: id.client,
+      topicId: staff,
+    });
+    expect(imp.body.isImportant).toBe(true);
+    const off = await call('POST', `/tickets/${imp.body.id}/reassign`, 'op1', {
+      version: imp.body.version,
+      isImportant: false,
+    });
+    expect(off.status).toBe(400);
+    expect((await one('SELECT is_important FROM ticket WHERE id = $1', [imp.body.id])).is_important).toBe(
+      true,
+    );
+
+    // Уведомления участникам (M-TKT-12): взят в работу — создателю; снят с тикета — снятому.
+    const tid = marked.body.id as string;
+    const opened = await call('POST', `/tickets/${tid}/open`, 'r1', {});
+    const count = async (user: string, kind: string) =>
+      (
+        await one(
+          `SELECT count(*)::int AS n FROM notification WHERE ticket_id = $1 AND user_id = $2 AND kind = $3 AND channel = 'ui'`,
+          [tid, user, kind],
+        )
+      ).n as number;
+    expect(await count(id.op1!, 'opened')).toBe(1);
+    const re = await call('POST', `/tickets/${tid}/reassign`, 'op1', {
+      version: opened.body.version,
+      curatorIds: [],
+    });
+    expect(re.status, JSON.stringify(re.body)).toBe(200);
+    expect(await count(id.c1!, 'unassigned')).toBe(1);
+
+    // Отчёт «требуют переназначения» — только в области видимости (супервизор «Севера» не видит «Юг»).
+    const c4 = await conversation('op1');
+    const south = await call('POST', `/conversations/${c4}/escalate`, 'op1', {
+      ...base,
+      enterpriseId: id.e2,
+      topicId: id.fuel,
+      responsibleIds: [id.r2],
+    });
+    await t.pool.query('UPDATE ticket_assignee SET is_active = false WHERE ticket_id = ANY($1)', [
+      [south.body.id, tid],
+    ]);
+    const supReport = (await call('GET', '/tickets/reassignment-report', 'sup')).body.map(
+      (x: { id: string }) => x.id,
+    );
+    expect(supReport).toContain(tid);
+    expect(supReport).not.toContain(south.body.id);
+    const adminReport = (await call('GET', '/tickets/reassignment-report', 'admin')).body.map(
+      (x: { id: string }) => x.id,
+    );
+    expect(adminReport).toEqual(expect.arrayContaining([tid, south.body.id]));
+
+    // Уволенному не уходят письма, уже стоящие в очереди.
+    const u = await call('POST', '/users', 'admin', {
+      fullName: 'Временный ответственный',
+      email: `tmp-${seq}@demo.local`,
+      password: 'Demo12345!',
+      roles: ['responsible'],
+    });
+    expect(u.status, JSON.stringify(u.body)).toBe(201);
+    const c5 = await conversation('op1');
+    await call('POST', `/conversations/${c5}/escalate`, 'op1', {
+      ...base,
+      topicId: id.fuel,
+      curatorIds: [u.body.id],
+    });
+    const pending = async () =>
+      (await one(
+        `SELECT count(*) FILTER (WHERE status = 'pending')::int AS p, count(*) FILTER (WHERE status = 'skipped')::int AS s
+             FROM notification WHERE user_id = $1 AND channel = 'email'`,
+        [u.body.id],
+      )) as { p: number; s: number };
+    expect((await pending()).p).toBe(1);
+    expect((await call('POST', `/users/${u.body.id}/deactivate`, 'admin')).status).toBe(200);
+    expect(await pending()).toEqual({ p: 0, s: 1 });
+  });
+
   it('«применить матрицу к открытым тикетам»: состав пересчитывается по текущей матрице', async () => {
     const { ticket } = await newTicket('op1');
     // изменяем матрицу: на «Топливо» в E1/OPS — ответственный r3 вместо r1
@@ -822,6 +926,19 @@ describe.skipIf(!ADMIN_URL)('Ежедневная рассылка Ф8 (инте
     )[0];
     expect(row).toMatchObject({ status: 'failed', attempts: 1 });
     expect(row.last_error).toContain('SMTP недоступен');
+
+    // Ежедневное письмо, не ушедшее за сутки, устарело и не отправляется.
+    await t.pool.query(
+      `INSERT INTO notification (id, user_id, ticket_id, kind, channel, dedupe_key, subject, body, data, created_at)
+       VALUES ($1, $2, $3, 'daily', 'email', 'test-stale', 'Вчерашнее', 'тело', '{}', now() - interval '1 day')`,
+      [newId(), r1, tid],
+    );
+    const late: OutgoingMail[] = [];
+    await processEmailQueue(t.pool, { send: async (m) => void late.push(m) });
+    expect(late.map((m) => m.subject)).not.toContain('Вчерашнее');
+    expect((await sql(`SELECT status FROM notification WHERE dedupe_key = 'test-stale'`))[0].status).toBe(
+      'skipped',
+    );
   });
 
   it('после закрытия ответственным рассылка прекращается (остаётся напоминание согласующему), после возврата — возобновляется', async () => {

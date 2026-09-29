@@ -159,6 +159,14 @@ test.describe.serial('Ф8: вторая линия', () => {
     await cf.getByTestId('close-submit').click();
     await expect(r1.getByTestId('ticket-status')).toHaveText('На согласовании');
 
+    // Оператору — всплывающее уведомление по событию realtime (без перезагрузки страницы, M-TKT-12).
+    await expect(
+      op
+        .locator('.mantine-Notification-root')
+        .filter({ hasText: `Тикет №${number}` })
+        .first(),
+    ).toBeVisible({ timeout: 10_000 });
+
     // Оператор во вкладке «На согласовании» возвращает на доработку.
     await op.goto('/workspace');
     await op.getByTestId('tabs-2nd-line').getByText('На согласовании').click();

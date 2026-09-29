@@ -19,7 +19,9 @@ export type NotificationKind =
   | 'client_message'
   | 'comment'
   | 'needs_reassign'
-  | 'assignees_changed';
+  | 'assignees_changed'
+  | 'opened'
+  | 'unassigned';
 
 /** Карточка тикета для текста писем и уведомлений. */
 export interface TicketCard {
@@ -105,9 +107,16 @@ function cardText(c: TicketCard, extra: MailExtra): string {
  */
 export function renderMail(kind: NotificationKind, c: TicketCard, extra: MailExtra = {}): MailText {
   const n = c.number;
-  const high = !['approval_request', 'approval_reminder', 'approved', 'client_message', 'comment'].includes(
-    kind,
-  );
+  const high = ![
+    'approval_request',
+    'approval_reminder',
+    'approved',
+    'client_message',
+    'comment',
+    'opened',
+    'unassigned',
+    'assignees_changed',
+  ].includes(kind);
   const withImportant = (s: string) => (high ? `Важно! ${s}` : s);
   let subject: string;
   switch (kind) {
@@ -116,7 +125,13 @@ export function renderMail(kind: NotificationKind, c: TicketCard, extra: MailExt
       subject = withImportant(`Вам назначен тикет №${n}: ${topicLine(c)}`);
       break;
     case 'assignees_changed':
-      subject = withImportant(`Изменён состав назначенных по тикету №${n}`);
+      subject = `Тикет №${n}: изменены ответственные или тема`;
+      break;
+    case 'opened':
+      subject = `Тикет №${n} взят в работу`;
+      break;
+    case 'unassigned':
+      subject = `Вы сняты с тикета №${n}`;
       break;
     case 'daily':
       subject = withImportant(`Тикет №${n}: ${deadlinePhrase(extra.daysLeft ?? 0)}`);
@@ -279,11 +294,13 @@ export async function loadApprovalContext(
   const mode = await db.query<{ value: string }>(
     `SELECT value #>> '{}' AS value FROM system_setting WHERE key = 'ticket.approval_mode'`,
   );
-  const creator = await db.query<{ is_active: boolean }>('SELECT is_active FROM app_user WHERE id = $1', [
-    t.created_by,
-  ]);
+  // Уволенный или лишённый входа создатель не согласует — его тикеты у супервизоров (M-TKT-09).
+  const creator = await db.query<{ is_active: boolean }>(
+    'SELECT is_active AND can_login AS is_active FROM app_user WHERE id = $1',
+    [t.created_by],
+  );
   const subs = await db.query<{ substitute_id: string }>(
-    `SELECT s.substitute_id FROM approval_substitute s JOIN app_user u ON u.id = s.substitute_id AND u.is_active
+    `SELECT s.substitute_id FROM approval_substitute s JOIN app_user u ON u.id = s.substitute_id AND u.is_active AND u.can_login
       WHERE s.user_id = $1 AND s.is_active
         AND (s.valid_from IS NULL OR s.valid_from <= $2::date) AND (s.valid_to IS NULL OR s.valid_to >= $2::date)`,
     [t.created_by, today],
@@ -317,14 +334,9 @@ export function canApprove(
   return (t.created_by === user.id && ctx.creatorActive) || ctx.substituteIds.includes(user.id);
 }
 
-/** Получатели уведомлений о согласовании: `main` — письмо и интерфейс, `uiOnly` — только интерфейс. */
-export async function approvalRecipients(
-  db: Db,
-  t: TicketDims,
-  today: string,
-): Promise<{ main: string[]; uiOnly: string[] }> {
-  const ctx = await loadApprovalContext(db, t, today);
-  const sups = (await usersWithPermission(db, 'supervisor.approvals'))
+/** Супервизоры (право `supervisor.approvals`), в чью область видимости попадает тикет. */
+export async function supervisorsFor(db: Db, t: Omit<TicketDims, 'created_by'>): Promise<string[]> {
+  return (await usersWithPermission(db, 'supervisor.approvals'))
     .filter((u) =>
       inScope(u.scope, {
         enterpriseId: t.enterprise_id,
@@ -333,6 +345,16 @@ export async function approvalRecipients(
       }),
     )
     .map((u) => u.id);
+}
+
+/** Получатели уведомлений о согласовании: `main` — письмо и интерфейс, `uiOnly` — только интерфейс. */
+export async function approvalRecipients(
+  db: Db,
+  t: TicketDims,
+  today: string,
+): Promise<{ main: string[]; uiOnly: string[] }> {
+  const ctx = await loadApprovalContext(db, t, today);
+  const sups = await supervisorsFor(db, t);
   if (ctx.mode === 'supervisor' || !ctx.creatorActive) {
     // Создатель не согласует (режим или увольнение): тикет у супервизоров, заместитель — если действует.
     const main = ctx.mode === 'supervisor' ? sups : [...sups, ...ctx.substituteIds];
@@ -479,6 +501,13 @@ export function retryDelaySeconds(attempt: number): number {
 export async function processEmailQueue(pool: Pool, o: EmailQueueOptions): Promise<number> {
   const maxAttempts = o.maxAttempts ?? 8;
   let sent = 0;
+  // Ежедневные письма и напоминания, не ушедшие за сутки (SMTP долго недоступен или ещё не настроен), устарели:
+  // «осталось N дней» во вчерашнем письме вводит в заблуждение — их заменит сегодняшняя рассылка.
+  await pool.query(
+    `UPDATE notification SET status = 'skipped', last_error = 'устарело: не отправлено за сутки'
+      WHERE channel = 'email' AND status = 'pending' AND kind IN ('daily', 'approval_reminder')
+        AND created_at < now() - interval '20 hours'`,
+  );
   for (;;) {
     if (o.shouldStop?.()) break;
     const claimed = await pool.query<{

@@ -381,9 +381,16 @@ function TicketCard({ t, selected, onOpen }: { t: Row; selected?: boolean; onOpe
 /** Список тикетов для вкладок оператора и супервизора; клик — переход в тикет. */
 export function TicketList({ view, extra = '' }: { view: string; extra?: string }) {
   const nav = useNavigate();
-  const list = useList(`/tickets?view=${view}${extra}`);
+  const [important, setImportant] = useState(false);
+  const list = useList(`/tickets?view=${view}${extra}${important ? '&important=true' : ''}`);
   return (
     <Stack gap={6}>
+      <Checkbox
+        size="xs"
+        label="Только особо важные"
+        checked={important}
+        onChange={(e) => setImportant(e.currentTarget.checked)}
+      />
       {(list.data ?? []).length === 0 && (
         <Text c="dimmed" size="sm">
           Нет тикетов
@@ -405,7 +412,7 @@ export function useTicketCount(view: string, extra = ''): number {
 // ---------------------------------------------------------------- кабинет ответственного
 
 const QUICK: { value: string; label: string; q: string }[] = [
-  { value: 'all', label: 'Все мои', q: '' },
+  { value: 'all', label: 'Все', q: '' },
   { value: 'resp', label: 'Я ответственный', q: '&role=responsible' },
   { value: 'cur', label: 'Я куратор', q: '&role=curator' },
   { value: 'overdue', label: 'Просроченные', q: '&overdue=true' },
