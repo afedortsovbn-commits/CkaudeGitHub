@@ -14,6 +14,7 @@
     "format:check": "prettier --check .",
     "licenses:check": "node ops/licenses/check.mjs",
     "migrations:lint": "node ops/test/migrations-lint.mjs",
+    "i18n:check": "node ops/test/i18n-lint.mjs",
     "compat:check": "node ops/compat/check.mjs",
     "test:ops": "node --test ops/compat/*.test.mjs"
   },

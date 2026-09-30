@@ -12,14 +12,19 @@ import {
 import {
   agentLegFailed,
   callEvent,
+  completeConsult,
+  type ConsultTarget,
   connectAgent,
+  consultConnected,
   directTransferData,
   emitCallState,
   emitConversation,
   endCall,
+  endConsult,
   loadRef,
   publishedFlowForDid,
   setCallHold,
+  startConsult,
   startInboundCall,
   startOutboundCall,
   transferCallExternal,
@@ -68,6 +73,10 @@ interface CallRow {
   to_number: string | null;
   flow_version_id: string | null;
   ivr_state: IvrState | null;
+  consult_channel: string | null;
+  consult_state: 'dialing' | 'talking' | null;
+  consult_user_id: string | null;
+  consult_target: ConsultTarget | null;
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -256,6 +265,8 @@ export class MediaNode {
         return this.peerAnswered(a1, ch);
       case 'external':
         return this.externalAnswered(a1, ch);
+      case 'consult':
+        return this.consultAnswered(a1, ch);
       case 'listen':
         return this.listenAnswered(a1, a2, ch);
       case 'snoop':
@@ -493,11 +504,22 @@ export class MediaNode {
       if (l.bridge) await this.o.ari.bridges.destroy(l.bridge);
       return;
     }
-    const c = await this.call('(client_channel = $2 OR agent_channel = $2)', [channelId]);
+    const c = await this.call('(client_channel = $2 OR agent_channel = $2 OR consult_channel = $2)', [
+      channelId,
+    ]);
     if (!c) return;
+    if (c.consult_channel === channelId) {
+      // Адресат консультации не ответил или положил трубку — оператор снова с клиентом.
+      await this.tx((tx) =>
+        endConsult(tx, c.id, c.consult_state === 'talking' ? 'hangup' : 'no_answer', null),
+      );
+      await this.resumeClient(c);
+      return;
+    }
     if (c.client_channel === channelId) {
       await this.ivr.clientGone(c);
       if (c.agent_channel) await this.o.ari.channels.hangup(c.agent_channel);
+      if (c.consult_channel) await this.o.ari.channels.hangup(c.consult_channel);
       await this.dropListeners(c.id);
       if (c.bridge_id) await this.o.ari.bridges.destroy(c.bridge_id);
       const reason = c.direction === 'out' && c.state === 'dialing' ? causeReason(cause) : 'client_hangup';
@@ -533,6 +555,16 @@ export class MediaNode {
         );
         return;
       }
+    }
+    if (c.consult_channel && c.state === 'talking') {
+      // Оператор положил трубку во время консультации: адресат на связи — клиент соединяется с ним (как в
+      // офисной АТС); адресату ещё звонят — консультация отменяется, звонок завершается как обычно.
+      if (c.consult_state === 'talking') {
+        await this.finishConsult(c, null);
+        return;
+      }
+      await this.tx((tx) => endConsult(tx, c.id, 'cancel', c.agent_user_id));
+      await this.o.ari.channels.hangup(c.consult_channel);
     }
     await this.dropListeners(c.id);
     // Оператор завершил разговор, а у сценария есть продолжение (автосообщение, CSAT — M-TEL-09).
@@ -667,6 +699,7 @@ export class MediaNode {
     for (const c of calls) {
       known.add(c.client_channel);
       if (c.agent_channel) known.add(c.agent_channel);
+      if (c.consult_channel) known.add(c.consult_channel);
       const agent = c.agent_channel ? byId.get(c.agent_channel) : undefined;
       if (!byId.has(c.client_channel)) {
         await this.gone(c.client_channel, 16);
@@ -690,6 +723,13 @@ export class MediaNode {
             await this.o.ari.bridges.add(bridge, [agent.id]);
             await this.o.ari.channels.mohStart(c.client_channel);
           } else await this.o.ari.bridges.add(bridge, [c.client_channel, agent.id]);
+          // Консультация: адресат — в мосту с оператором; завершилась или ответили за время переключения.
+          if (c.consult_channel) {
+            const cc = byId.get(c.consult_channel);
+            if (!cc) await this.gone(c.consult_channel, 16);
+            else if (c.consult_state === 'talking') await this.o.ari.bridges.add(bridge, [cc.id]);
+            else if (cc.state === 'Up') await this.consultAnswered(c.id, cc);
+          }
         }
       } else if (c.state === 'external') {
         if (!agent) await this.gone(c.agent_channel ?? '', 16);
@@ -739,6 +779,7 @@ export class MediaNode {
         return;
       case 'unhold':
         if (!c.on_hold) return;
+        if (c.consult_channel) throw new CommandError('Идёт консультация — вернитесь к клиенту или соедините его');
         await this.o.ari.channels.mohStop(c.client_channel);
         await this.o.ari.bridges.add(bridge, [c.client_channel]);
         await this.tx((tx) => setCallHold(tx, c.id, false, cmd.userId));
@@ -747,8 +788,176 @@ export class MediaNode {
         await this.o.ari.channels.hangup(c.agent_channel);
         return;
       case 'transfer':
+        if (c.consult_channel) throw new CommandError('Идёт консультация — соедините клиента или вернитесь к нему');
         return this.transfer(c, bridge, cmd);
+      case 'consult':
+        return this.consult(c, bridge, cmd);
+      case 'consult_complete':
+        if (!c.consult_channel) throw new CommandError('Консультация не идёт');
+        if (c.consult_state !== 'talking') throw new CommandError('Адресат ещё не ответил');
+        return this.finishConsult(c, cmd.userId);
+      case 'consult_cancel':
+        if (!c.consult_channel) throw new CommandError('Консультация не идёт');
+        await this.tx((tx) => endConsult(tx, c.id, 'cancel', cmd.userId));
+        await this.o.ari.channels.hangup(c.consult_channel);
+        await this.resumeClient(c);
+        return;
     }
+  }
+
+  /** Клиент снова в разговоре с оператором (конец консультации без перевода). */
+  private async resumeClient(c: CallRow): Promise<void> {
+    if (c.state !== 'talking' || !c.agent_channel) return;
+    const bridge = await this.ensureBridge(c);
+    await this.o.ari.channels.mohStop(c.client_channel);
+    await this.o.ari.bridges.add(bridge, [c.client_channel]);
+  }
+
+  /**
+   * Консультация (M-OP-05, M-TKT-11): клиент на удержании, оператору звонит адресат — оператор (софтфон),
+   * свободный оператор очереди или подразделения, внешний номер подразделения. Оператор и адресат говорят в мосту
+   * вызова; клиент вне моста слушает музыку, запись разговора продолжается.
+   */
+  private async consult(c: CallRow, bridge: string, cmd: Extract<CallControlCommand, { op: 'consult' }>) {
+    if (c.consult_channel) throw new CommandError('Консультация уже идёт');
+    const target = await this.consultTarget(c, cmd.userId, cmd.target);
+    const by = await this.userName(cmd.userId);
+    const channel = newId();
+    if (!c.on_hold) {
+      await this.o.ari.bridges.remove(bridge, [c.client_channel]);
+      await this.o.ari.channels.mohStart(c.client_channel);
+    }
+    await this.tx((tx) => startConsult(tx, c.id, { channel, byUserId: cmd.userId, byName: by, target }));
+    try {
+      if (target.userId)
+        await this.o.ari.channels.originate({
+          endpoint: `PJSIP/webrtc/sip:${sipUserOf(target.userId)}@${this.o.sipProxy}`,
+          channelId: channel,
+          app: STASIS_APP,
+          appArgs: `consult,${c.id}`,
+          callerId: `"Консультация: ${by.replace(/["<>]/g, '')}" <consult>`,
+          timeout: 30,
+          variables: {
+            'PJSIP_HEADER(add,X-CC-Consult)': c.id,
+            'PJSIP_HEADER(add,X-CC-Call)': c.id,
+            'PJSIP_HEADER(add,X-CC-Conversation)': c.conversation_id,
+          },
+        });
+      else
+        await this.o.ari.channels.originate({
+          endpoint: `PJSIP/trunk/sip:${target.number}@${this.o.sipProxy}`,
+          channelId: channel,
+          app: STASIS_APP,
+          appArgs: `consult,${c.id}`,
+          callerId: this.o.outboundCallerId,
+          timeout: 40,
+        });
+    } catch (err) {
+      this.o.logger.warn({ err: String(err), callId: c.id }, 'не удалось позвонить адресату консультации');
+      await this.tx((tx) => endConsult(tx, c.id, 'failed', cmd.userId));
+      await this.resumeClient(c);
+      throw new CommandError('Не удалось позвонить адресату консультации');
+    }
+  }
+
+  /** Адресат консультации: оператор, свободный оператор очереди/подразделения или внешний номер подразделения. */
+  private async consultTarget(
+    c: CallRow,
+    byUserId: string,
+    t: Extract<CallControlCommand, { op: 'consult' }>['target'],
+  ): Promise<ConsultTarget> {
+    const operator = async (userId: string) => {
+      if (userId === byUserId) throw new CommandError('Нельзя консультироваться с самим собой');
+      const u = await this.o.pool.query<{ full_name: string }>(
+        `SELECT u.full_name FROM app_user u WHERE u.id = $1 AND u.is_active AND u.can_login
+           AND EXISTS (SELECT 1 FROM user_role ur JOIN role r ON r.code = ur.role_code
+                        WHERE ur.user_id = u.id AND 'conversations.work' = ANY(r.permissions))`,
+        [userId],
+      );
+      if (!u.rows[0]) throw new CommandError('Оператор не найден');
+      return u.rows[0].full_name;
+    };
+    /** Свободный оператор очереди: «Готов», без звонка; дольше всех без обращений — первым. */
+    const freeInQueue = async (queueId: string) => {
+      const { rows } = await this.o.pool.query<{ id: string; full_name: string }>(
+        `SELECT u.id, u.full_name FROM agent_status s JOIN app_user u ON u.id = s.user_id
+          WHERE s.status = 'ready' AND u.id <> $2 AND u.is_active
+            AND EXISTS (SELECT 1 FROM user_queue uq WHERE uq.user_id = u.id AND uq.queue_id = $1)
+            AND NOT EXISTS (SELECT 1 FROM conversation v WHERE v.assignee_id = u.id AND v.channel_kind = 'voice'
+                             AND v.status IN ('active', 'offered'))
+            AND NOT EXISTS (SELECT 1 FROM call k WHERE k.consult_user_id = u.id AND k.state <> 'ended')
+          ORDER BY s.last_assigned_at NULLS FIRST LIMIT 1`,
+        [queueId, byUserId],
+      );
+      if (!rows[0])
+        throw new CommandError('Нет свободного оператора для консультации — переведите звонок без консультации');
+      return rows[0];
+    };
+    if (t.kind === 'user') return { label: `оператор ${await operator(t.userId)}`, userId: t.userId };
+    if (t.kind === 'queue') {
+      const q = await this.o.pool.query<{ name: string }>(`SELECT name FROM queue WHERE id = $1 AND is_active`, [
+        t.queueId,
+      ]);
+      if (!q.rows[0]) throw new CommandError('Очередь не найдена');
+      const u = await freeInQueue(t.queueId);
+      return { label: `оператор ${u.full_name} (очередь «${q.rows[0].name}»)`, userId: u.id };
+    }
+    const { rows } = await this.o.pool.query<{
+      transfer_number: string | null;
+      transfer_queue_id: string | null;
+      enterprise: string;
+      department: string;
+    }>(
+      `SELECT ed.transfer_number, ed.transfer_queue_id, e.name AS enterprise, d.name AS department
+         FROM enterprise_department ed JOIN enterprise e ON e.id = ed.enterprise_id JOIN department d ON d.id = ed.department_id
+        WHERE ed.enterprise_id = $1 AND ed.department_id = $2 AND ed.is_active`,
+      [t.enterpriseId, t.departmentId],
+    );
+    const ed = rows[0];
+    if (!ed) throw new CommandError('Подразделение не найдено на этом предприятии');
+    const where = `подразделение «${ed.department}» (предприятие «${ed.enterprise}»)`;
+    const data = { enterpriseId: t.enterpriseId, departmentId: t.departmentId, direct: true };
+    await this.o.pool.query(
+      `UPDATE conversation SET enterprise_id = COALESCE(enterprise_id, $2), department_id = COALESCE(department_id, $3) WHERE id = $1`,
+      [c.conversation_id, t.enterpriseId, t.departmentId],
+    );
+    if (ed.transfer_queue_id) {
+      const u = await freeInQueue(ed.transfer_queue_id);
+      return { label: `${where}, оператор ${u.full_name}`, userId: u.id, data };
+    }
+    const number = ed.transfer_number ? normalizePhone(ed.transfer_number) : null;
+    if (!number) throw new CommandError('У подразделения не задан номер или очередь для перевода');
+    return { label: `${where}, номер ${number}`, number, data };
+  }
+
+  /** Адресат консультации ответил: он в мосту с оператором, клиент по-прежнему на удержании. */
+  private async consultAnswered(callId: string, ch: AriChannel): Promise<void> {
+    const c = await this.call('id = $2', [callId]);
+    if (!c || c.consult_channel !== ch.id || c.state !== 'talking') {
+      await this.o.ari.channels.hangup(ch.id);
+      return;
+    }
+    const bridge = await this.ensureBridge(c);
+    await this.o.ari.bridges.add(bridge, [ch.id]);
+    await this.tx((tx) => consultConnected(tx, callId));
+  }
+
+  /**
+   * «Соединить»: клиент — в мосту с адресатом консультации, консультировавший оператор отключается. byUserId=null —
+   * оператор сам положил трубку во время консультации (его канал уже завершён).
+   */
+  private async finishConsult(c: CallRow, byUserId: string | null): Promise<void> {
+    const by = byUserId ?? c.agent_user_id;
+    const name = await this.userName(by);
+    const done = await this.tx((tx) => completeConsult(tx, c.id, { byUserId: by!, byName: name }));
+    if (!done) return;
+    const bridge = await this.ensureBridge(c);
+    if (byUserId && c.agent_channel) {
+      await this.o.ari.bridges.remove(bridge, [c.agent_channel]).catch(() => undefined);
+      await this.o.ari.channels.hangup(c.agent_channel);
+    }
+    await this.o.ari.channels.mohStop(c.client_channel);
+    await this.o.ari.bridges.add(bridge, [c.client_channel]);
   }
 
   private async transfer(c: CallRow, bridge: string, cmd: Extract<CallControlCommand, { op: 'transfer' }>) {

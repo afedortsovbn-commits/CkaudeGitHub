@@ -135,7 +135,16 @@ export function SoftphoneStatus() {
   );
 }
 
-function Transfer({ callId, onClose }: { callId: string | null; onClose(): void }) {
+/** Перевод звонка или консультация перед переводом (Ф12b) — адресат выбирается одинаково. */
+function Transfer({
+  callId,
+  consult = false,
+  onClose,
+}: {
+  callId: string | null;
+  consult?: boolean;
+  onClose(): void;
+}) {
   const [kind, setKind] = useState<string | null>('user');
   const [target, setTarget] = useState<string | null>(null);
   const [ent, setEnt] = useState<string | null>(null);
@@ -151,11 +160,11 @@ function Transfer({ callId, onClose }: { callId: string | null; onClose(): void 
         : kind === 'queue'
           ? { kind, queueId: target }
           : { kind: 'department', enterpriseId: ent, departmentId: target };
-    await command(callId, 'transfer', { target: t });
+    await command(callId, consult ? 'consult' : 'transfer', { target: t });
     onClose();
   };
   return (
-    <Modal opened onClose={onClose} title="Перевести звонок">
+    <Modal opened onClose={onClose} title={consult ? 'Консультация перед переводом' : 'Перевести звонок'}>
       <Stack>
         <Select
           label="Куда"
@@ -168,6 +177,12 @@ function Transfer({ callId, onClose }: { callId: string | null; onClose(): void 
           onChange={(v) => (setKind(v), setTarget(null))}
           data-testid="transfer-kind"
         />
+        {consult && (
+          <Text size="xs" c="dimmed">
+            Клиент будет на удержании, пока вы говорите с адресатом. Затем соедините клиента с ним или
+            вернитесь к клиенту. Очередь и подразделение с очередью — звонок свободному оператору.
+          </Text>
+        )}
         {kind === 'department' && (
           <Select
             label="Предприятие"
@@ -199,7 +214,7 @@ function Transfer({ callId, onClose }: { callId: string | null; onClose(): void 
             Отмена
           </Button>
           <Button onClick={() => void submit()} disabled={!target} data-testid="transfer-submit">
-            Перевести
+            {consult ? 'Позвонить адресату' : 'Перевести'}
           </Button>
         </Group>
       </Stack>
@@ -211,7 +226,7 @@ function Transfer({ callId, onClose }: { callId: string | null; onClose(): void 
 export function SoftphoneCall() {
   const { call } = useSoftphone();
   const [now, setNow] = useState(Date.now());
-  const [transfer, setTransfer] = useState(false);
+  const [transfer, setTransfer] = useState<false | 'transfer' | 'consult'>(false);
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
@@ -220,9 +235,12 @@ export function SoftphoneCall() {
   const talking = call.state === 'active';
   const title = call.listen
     ? 'Прослушивание разговора'
-    : call.direction === 'incoming'
-      ? 'Входящий звонок'
-      : 'Исходящий звонок';
+    : call.consultOf
+      ? 'Консультация коллеги'
+      : call.direction === 'incoming'
+        ? 'Входящий звонок'
+        : 'Исходящий звонок';
+  const consult = call.consult;
   return (
     <Paper
       shadow="lg"
@@ -285,17 +303,50 @@ export function SoftphoneCall() {
             </Button>
           </Group>
         )}
-        {talking && !call.listen && (
+        {talking && consult && (
+          <Paper withBorder p={6} data-testid="consult-panel" data-state={consult.state}>
+            <Text size="sm" fw={600}>
+              Консультация: {consult.label}
+            </Text>
+            <Text size="xs" c="dimmed" mb={4}>
+              {consult.state === 'dialing'
+                ? 'Звоним адресату… Клиент на удержании'
+                : 'Разговор с адресатом. Клиент на удержании'}
+            </Text>
+            <Group grow gap={6}>
+              <Button
+                size="xs"
+                color="green"
+                disabled={consult.state !== 'talking'}
+                onClick={() => void command(call.callId, 'consult_complete')}
+                data-testid="consult-complete"
+              >
+                Соединить
+              </Button>
+              <Button
+                size="xs"
+                variant="light"
+                onClick={() => void command(call.callId, 'consult_cancel')}
+                data-testid="consult-cancel"
+              >
+                Вернуться к клиенту
+              </Button>
+            </Group>
+          </Paper>
+        )}
+        {talking && !call.listen && !consult && (
           <Group gap={6}>
-            <Button
-              size="xs"
-              variant={call.onHold ? 'filled' : 'light'}
-              color="yellow"
-              onClick={() => void command(call.callId, call.onHold ? 'unhold' : 'hold')}
-              data-testid="call-hold"
-            >
-              {call.onHold ? 'Снять с удержания' : 'Удержание'}
-            </Button>
+            {!call.consultOf && (
+              <Button
+                size="xs"
+                variant={call.onHold ? 'filled' : 'light'}
+                color="yellow"
+                onClick={() => void command(call.callId, call.onHold ? 'unhold' : 'hold')}
+                data-testid="call-hold"
+              >
+                {call.onHold ? 'Снять с удержания' : 'Удержание'}
+              </Button>
+            )}
             <Button
               size="xs"
               variant={call.muted ? 'filled' : 'light'}
@@ -320,9 +371,26 @@ export function SoftphoneCall() {
                 </SimpleGrid>
               </Popover.Dropdown>
             </Popover>
-            <Button size="xs" variant="light" onClick={() => setTransfer(true)} data-testid="call-transfer">
-              Перевести
-            </Button>
+            {!call.consultOf && (
+              <>
+                <Button
+                  size="xs"
+                  variant="light"
+                  onClick={() => setTransfer('transfer')}
+                  data-testid="call-transfer"
+                >
+                  Перевести
+                </Button>
+                <Button
+                  size="xs"
+                  variant="light"
+                  onClick={() => setTransfer('consult')}
+                  data-testid="call-consult"
+                >
+                  Консультация
+                </Button>
+              </>
+            )}
           </Group>
         )}
         {call.state !== 'ended' && !(call.state === 'ringing' && call.direction === 'incoming') && (
@@ -331,7 +399,9 @@ export function SoftphoneCall() {
           </Button>
         )}
       </Stack>
-      {transfer && <Transfer callId={call.callId} onClose={() => setTransfer(false)} />}
+      {transfer && (
+        <Transfer callId={call.callId} consult={transfer === 'consult'} onClose={() => setTransfer(false)} />
+      )}
     </Paper>
   );
 }

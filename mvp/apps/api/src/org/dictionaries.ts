@@ -157,6 +157,8 @@ export const DICTIONARIES: Record<string, DictSpec> = {
       f('overflowAfterS', z.number().int().min(1).nullable().optional()),
       f('offerTimeoutS', z.number().int().min(1).max(600).default(20)),
       f('wrapUpS', z.number().int().min(0).max(3600).default(15)),
+      // Обязательный тег при закрытии обращения очереди (M-CARD-06).
+      f('requireTag', z.boolean().default(false)),
     ],
     orderBy: 'priority DESC, name',
     search: ['name'],

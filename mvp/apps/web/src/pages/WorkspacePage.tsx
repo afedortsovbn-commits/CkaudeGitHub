@@ -33,6 +33,7 @@ import { AssistPanel, renderTemplate, SlashList, useSlashTemplates } from '../co
 import { softphone, useSoftphone } from '../lib/softphone';
 import { setDraft } from '../lib/app-version';
 import { EscalateModal, SubstitutesPanel, TicketList, useTicketCount } from './TicketPages';
+import { MergeContactModal } from '../components/MergeContactModal';
 
 const CHANNEL: Record<string, string> = {
   webchat: 'Сайт',
@@ -125,6 +126,16 @@ function AgentStatusBar() {
       )}
     </Group>
   );
+}
+
+/** Число обращений во вкладке (для подписи вкладки). */
+function useCount(tab: string): number {
+  const q = useQuery({
+    queryKey: [`/conversations?tab=${tab}`],
+    queryFn: () => get<Row[]>(`/conversations?tab=${tab}`),
+    refetchInterval: 30_000,
+  });
+  return q.data?.length ?? 0;
 }
 
 function List({
@@ -534,7 +545,8 @@ function Messages({ conv, typing, onTyping }: { conv: Row; typing: boolean; onTy
 }
 
 function ContactCard({ conv, onOpen }: { conv: Row; onOpen(id: string): void }) {
-  const { me } = useAuth();
+  const { me, can } = useAuth();
+  const [merging, setMerging] = useState(false);
   const c = useQuery({
     queryKey: [`/contacts/${conv.contactId}`],
     queryFn: () => get<Row>(`/contacts/${conv.contactId}`),
@@ -587,9 +599,23 @@ function ContactCard({ conv, onOpen }: { conv: Row; onOpen(id: string): void }) 
         value={v.email ?? ''}
         onChange={(e) => setV({ ...v, email: e.currentTarget.value })}
       />
-      <Button size="xs" variant="light" onClick={() => save.mutate(undefined)}>
-        Сохранить клиента
-      </Button>
+      <Group grow>
+        <Button size="xs" variant="light" onClick={() => save.mutate(undefined)}>
+          Сохранить клиента
+        </Button>
+        {can('contacts.merge') && c.data && (
+          <Button
+            size="xs"
+            variant="light"
+            color="orange"
+            onClick={() => setMerging(true)}
+            data-testid="contact-merge"
+          >
+            Объединить с…
+          </Button>
+        )}
+      </Group>
+      {c.data && <MergeContactModal contact={c.data} opened={merging} onClose={() => setMerging(false)} />}
       {((c.data?.consents as Row[] | undefined) ?? []).slice(0, 1).map((k) => (
         <Text size="xs" c="dimmed" key="consent" data-testid="contact-consent">
           Согласие на обработку ПДн: версия {String(k.textVersion)} от{' '}
@@ -689,6 +715,7 @@ function ConversationCard({ conv }: { conv: Row }) {
     label: `${'— '.repeat(Number(t.level) - 1)}${String(t.name)}${t.isImportant ? ' ❗' : ''}`,
   }));
   const closed = conv.status === 'closed';
+  const tagMissing = !!conv.queueRequireTag && !((conv.tagIds as string[]) ?? []).length;
   const ticket = conv.ticket as { id: string; number: number; status: string } | null;
   return (
     <Stack gap="xs">
@@ -766,11 +793,13 @@ function ConversationCard({ conv }: { conv: Row }) {
       <ExtraFields fields={(conv.fields as Record<string, unknown>) ?? {}} defined={fields.data ?? []} />
       <MultiSelect
         size="xs"
-        label="Теги"
+        label={conv.queueRequireTag ? 'Теги *' : 'Теги'}
+        description={conv.queueRequireTag ? 'В этой очереди тег обязателен при закрытии' : undefined}
         data={options(tags.data)}
         value={(conv.tagIds as string[]) ?? []}
         onChange={(v) => upd.mutate({ tagIds: v })}
         disabled={closed}
+        data-testid="tags"
       />
       <Group>
         <Tooltip label="Ставится автоматически по теме; можно выставить вручную">
@@ -818,6 +847,7 @@ function ConversationCard({ conv }: { conv: Row }) {
                 mt="xs"
                 fullWidth
                 color="violet"
+                disabled={tagMissing}
                 onClick={() => setEscalating(true)}
                 data-testid="escalate"
               >
@@ -829,7 +859,7 @@ function ConversationCard({ conv }: { conv: Row }) {
                 mt="xs"
                 fullWidth
                 color="green"
-                disabled={!disp || (isPostponed && !callbackAt)}
+                disabled={!disp || (isPostponed && !callbackAt) || tagMissing}
                 onClick={() => close.mutate(undefined)}
                 data-testid="close"
               >
@@ -906,6 +936,9 @@ const CALL_EVENT: Record<string, string> = {
   callback_requested: 'заказ перезвона',
   transfer_failed: 'перевод не состоялся',
   ivr_resumed: 'продолжен после переключения',
+  consult_start: 'консультация',
+  consult_connected: 'адресат консультации ответил',
+  consult_end: 'консультация без перевода',
 };
 /** В кратком журнале стадий — без шагов IVR (они — отдельной строкой «Путь по IVR»). */
 const IVR_STEP = new Set(['ivr', 'ivr_dtmf', 'ivr_http']);
@@ -998,7 +1031,7 @@ function CallsPanel({ conv }: { conv: Row }) {
               .filter((e) => !IVR_STEP.has(e.type))
               .map(
                 (e) =>
-                  `${time(e.at)} ${CALL_EVENT[e.type] ?? e.type}${e.type === 'csat' ? ` ${String(e.data?.score)} из 5` : ''}`,
+                  `${time(e.at)} ${CALL_EVENT[e.type] ?? e.type}${e.data?.consult ? ' после консультации' : ''}${e.type === 'csat' ? ` ${String(e.data?.score)} из 5` : ''}`,
               )
               .join(' → ')}
           </Text>
@@ -1110,7 +1143,12 @@ export function WorkspacePage() {
   );
 
   const secondLine = tab === 'approvals' || tab === 'created';
+  const workTab = tab === 'hold' || tab === 'wrapup';
   const nApprovals = useTicketCount('approvals');
+  // Счётчики «Удержание»/«Постобработка» (M-OP-02): списки обновляются по событиям realtime и раз в 30 с —
+  // чат попадает в «Постобработку» по времени молчания клиента, без события.
+  const nHold = useCount('hold');
+  const nWrapup = useCount('wrapup');
   const tabs = useMemo(
     () => [
       { value: 'mine', label: 'Мои' },
@@ -1138,10 +1176,22 @@ export function WorkspacePage() {
           fullWidth
           size="xs"
           data={tabs}
-          value={secondLine ? '' : tab}
+          value={secondLine || workTab ? '' : tab}
           onChange={setTab}
           mb={4}
           data-testid="tabs"
+        />
+        <SegmentedControl
+          fullWidth
+          size="xs"
+          data={[
+            { value: 'hold', label: nHold ? `Удержание (${nHold})` : 'Удержание' },
+            { value: 'wrapup', label: nWrapup ? `Постобработка (${nWrapup})` : 'Постобработка' },
+          ]}
+          value={workTab ? tab : ''}
+          onChange={setTab}
+          mb={4}
+          data-testid="tabs-work"
         />
         <SegmentedControl
           fullWidth
@@ -1155,7 +1205,7 @@ export function WorkspacePage() {
           mb="xs"
           data-testid="tabs-2nd-line"
         />
-        <ScrollArea h="calc(100vh - 220px)">
+        <ScrollArea h="calc(100vh - 250px)">
           {secondLine ? (
             <Stack gap="xs">
               <TicketList view={tab} extra={tab === 'created' ? '&status=new,in_work,approval,rework' : ''} />

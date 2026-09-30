@@ -47,6 +47,18 @@ export interface CallStateEvent {
   onHold: boolean;
   agentUserId: string | null;
   endReason?: string | null;
+  /** Идёт консультация (Ф12b): оператор говорит с адресатом, клиент на удержании. */
+  consult?: CallConsultState | null;
+}
+
+/** Консультация оператора перед переводом (M-OP-05, M-TKT-11). */
+export interface CallConsultState {
+  /** dialing — адресату звонят, talking — оператор говорит с адресатом. */
+  state: 'dialing' | 'talking';
+  /** Кому: ФИО оператора или подразделение и номер. */
+  label: string;
+  /** Адресат-оператор (для внешнего номера — null). */
+  userId: string | null;
 }
 
 /** SIP-пользователь оператора в Kamailio: op-<id сотрудника>. */
@@ -58,6 +70,17 @@ export const userIdOfSip = (sipUser: string): string | null =>
  * Команда call-control от api (NATS request/reply на `cc.callctl.<узел>`; отвечает только активный
  * экземпляр узла). Ответ — CallControlReply.
  */
+/** Адресат перевода или консультации: оператор, очередь, подразделение предприятия (очередь или внешний номер). */
+export const CallTransferTargetSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('user'), userId: z.string().uuid() }),
+  z.object({ kind: z.literal('queue'), queueId: z.string().uuid() }),
+  z.object({
+    kind: z.literal('department'),
+    enterpriseId: z.string().uuid(),
+    departmentId: z.string().uuid(),
+  }),
+]);
+
 export const CallControlCommandSchema = z.discriminatedUnion('op', [
   z.object({ op: z.literal('hold'), callId: z.string().uuid(), userId: z.string().uuid() }),
   z.object({ op: z.literal('unhold'), callId: z.string().uuid(), userId: z.string().uuid() }),
@@ -78,6 +101,15 @@ export const CallControlCommandSchema = z.discriminatedUnion('op', [
     comment: z.string().max(1000).optional(),
   }),
   z.object({ op: z.literal('listen'), callId: z.string().uuid(), userId: z.string().uuid() }),
+  // Консультативный перевод (Ф12b): консультация с адресатом → соединить клиента с ним или вернуться к клиенту.
+  z.object({
+    op: z.literal('consult'),
+    callId: z.string().uuid(),
+    userId: z.string().uuid(),
+    target: CallTransferTargetSchema,
+  }),
+  z.object({ op: z.literal('consult_complete'), callId: z.string().uuid(), userId: z.string().uuid() }),
+  z.object({ op: z.literal('consult_cancel'), callId: z.string().uuid(), userId: z.string().uuid() }),
 ]);
 export type CallControlCommand = z.infer<typeof CallControlCommandSchema>;
 export interface CallControlReply {

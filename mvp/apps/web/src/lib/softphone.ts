@@ -33,6 +33,10 @@ export interface CallView {
   quality: QualitySample | null;
   /** Медиа прервалось (смена сети) — идёт восстановление (ICE restart). */
   reconnecting: boolean;
+  /** Консультация, которую ведёт этот оператор (клиент на удержании), — Ф12b. */
+  consult: { state: 'dialing' | 'talking'; label: string } | null;
+  /** Входящий — консультация коллеги: звонок станет своим, когда коллега соединит клиента. */
+  consultOf: boolean;
 }
 
 export interface SoftphoneState {
@@ -77,6 +81,7 @@ interface CallStateEvent {
   state: 'queued' | 'dialing' | 'talking' | 'external' | 'ended';
   onHold: boolean;
   agentUserId: string | null;
+  consult?: { state: 'dialing' | 'talking'; label: string; userId: string | null } | null;
 }
 
 /** Ограничения микрофона по умолчанию (демо-страница); софтфон берёт выбранное устройство и обработку. */
@@ -181,7 +186,17 @@ class Softphone {
       if (d.agentUserId !== this.userId && this.state.call?.callId !== d.callId) return;
       if (!this.state.call || this.state.call.state === 'ended') return;
       if (this.state.call.callId && this.state.call.callId !== d.callId) return;
-      this.setCall({ callId: d.callId, conversationId: d.conversationId, onHold: d.onHold });
+      // Адресат консультации: звонок станет своим, когда коллега соединит клиента (ведущий — этот оператор).
+      if (this.state.call.consultOf) {
+        if (d.agentUserId === this.userId) this.setCall({ consultOf: false, onHold: d.onHold });
+        return;
+      }
+      this.setCall({
+        callId: d.callId,
+        conversationId: d.conversationId,
+        onHold: d.onHold,
+        consult: d.consult ? { state: d.consult.state, label: d.consult.label } : null,
+      });
     });
   }
 
@@ -231,6 +246,8 @@ class Softphone {
         conversationId: header('X-CC-Conversation') ?? this.pendingConversation,
         callId: header('X-CC-Call'),
         listen: !!header('X-CC-Listen'),
+        consult: null,
+        consultOf: !!header('X-CC-Consult'),
         startedAt: null,
         muted: false,
         onHold: false,

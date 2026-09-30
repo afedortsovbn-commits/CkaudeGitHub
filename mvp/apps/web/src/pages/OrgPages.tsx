@@ -367,6 +367,7 @@ export function DictionariesPage() {
               { key: 'overflowAfterS', label: 'Перелив в резерв через, с', type: 'number' },
               { key: 'offerTimeoutS', label: 'Таймаут принятия оператором, с', type: 'number' },
               { key: 'wrapUpS', label: 'Постобработка, с', type: 'number' },
+              { key: 'requireTag', label: 'Обязательный тег при закрытии', type: 'switch' },
             ]}
           />
         </Tabs.Panel>

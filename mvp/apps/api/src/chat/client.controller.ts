@@ -108,7 +108,13 @@ export class ClientChatController {
     if (!channel?.is_active) throw new ApiError(404, 'channel_not_found', 'Чат недоступен');
     if (!originAllowed(channel, req.headers.origin))
       throw new ApiError(403, 'origin', 'Чат не разрешён на этом сайте');
-    return { contactId: claims.contactId, channel };
+    // Клиент мог быть присоединён к другому (слияние дублей, M-CARD-01) — сессия продолжается от основного.
+    const merged = await one<{ merged_into_id: string | null }>(
+      this.ctx.pool,
+      'SELECT merged_into_id FROM contact WHERE id = $1',
+      [claims.contactId],
+    );
+    return { contactId: merged?.merged_into_id ?? claims.contactId, channel };
   }
 
   /** Публичные настройки виджета: приветствие, текст и версия согласия, лимит файлов. */

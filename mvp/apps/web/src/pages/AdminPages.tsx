@@ -47,6 +47,15 @@ export function SettingsPage() {
         value={Number(v['routing.escalation_boost'] ?? 1000)}
         onChange={(x) => setV({ ...v, 'routing.escalation_boost': Number(x) })}
       />
+      <NumberInput
+        label="Чат во вкладке «Постобработка» после молчания клиента, с"
+        description="Последним написал оператор, клиент не отвечает — обращение ждёт классификации и закрытия"
+        min={10}
+        max={86400}
+        value={Number(v['operator.wrapup_chat_idle_s'] ?? 300)}
+        onChange={(x) => setV({ ...v, 'operator.wrapup_chat_idle_s': Number(x) })}
+        data-testid="setting-wrapup-idle"
+      />
       <Select
         label="Кто согласует закрытие тикета"
         data={[
