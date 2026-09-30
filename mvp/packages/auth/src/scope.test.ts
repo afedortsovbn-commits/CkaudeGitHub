@@ -63,3 +63,38 @@ describe('inScope (та же семантика в памяти)', () => {
     expect(inScope(subject, { enterpriseId: null, topicPath: [T1] })).toBe(false);
   });
 });
+
+describe('неклассифицированные обращения (В-52)', () => {
+  const limited = { all: false, rules: [{ enterpriseIds: [E1], departmentIds: null, topicIds: null }] };
+  it('по умолчанию ограниченная область их не видит', () => {
+    expect(scopeFilter(limited, cols).sql).toBe('((x.e = ANY($1::uuid[])))');
+    expect(inScope(limited, { enterpriseId: null, departmentId: null, topicPath: null })).toBe(false);
+    expect(inScope(limited, { enterpriseId: null, topicPath: [] })).toBe(false);
+  });
+  it('с правом — видит строки без предприятия и темы, но не чужие классифицированные', () => {
+    const s = { ...limited, unclassified: true };
+    expect(scopeFilter(s, cols).sql).toBe(
+      '((x.e = ANY($1::uuid[])) OR (x.e IS NULL AND COALESCE(cardinality(x.p), 0) = 0))',
+    );
+    expect(inScope(s, { enterpriseId: null, departmentId: null, topicPath: null })).toBe(true);
+    expect(inScope(s, { enterpriseId: null, topicPath: [] })).toBe(true);
+    expect(inScope(s, { enterpriseId: E2, topicPath: null })).toBe(false);
+    expect(inScope(s, { enterpriseId: null, topicPath: [T1] })).toBe(false);
+  });
+  it('с правом и без правил — только неклассифицированные', () => {
+    expect(scopeFilter({ all: false, rules: [], unclassified: true }, cols).sql).toBe(
+      '((x.e IS NULL AND COALESCE(cardinality(x.p), 0) = 0))',
+    );
+  });
+  it('для строк без обоих измерений (справочники, тикеты) условие не добавляется', () => {
+    expect(scopeFilter({ ...limited, unclassified: true }, { enterprise: 'e.id' }).sql).toBe(
+      '((e.id = ANY($1::uuid[])))',
+    );
+    expect(scopeFilter({ all: false, rules: [], unclassified: true }, { enterprise: 'e.id' }).sql).toBe(
+      'FALSE',
+    );
+  });
+  it('строка без измерений (undefined) правом не раскрывается', () => {
+    expect(inScope({ all: false, rules: [], unclassified: true }, {})).toBe(false);
+  });
+});

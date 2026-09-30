@@ -63,6 +63,25 @@ export function SettingsPage() {
         onChange={(e) => setV({ ...v, 'ticket.transfer_message': e.currentTarget.value })}
       />
       <Title order={5} mt="md">
+        Безопасность и персональные данные
+      </Title>
+      <Switch
+        label="Вход с кодом (2FA) обязателен для администраторов"
+        description="Сотрудники с административными правами настраивают приложение-аутентификатор при следующем входе"
+        checked={Boolean(v['security.admin_2fa_required'] ?? false)}
+        onChange={(e) => setV({ ...v, 'security.admin_2fa_required': e.currentTarget.checked })}
+        data-testid="setting-admin-2fa"
+      />
+      <NumberInput
+        label="Срок хранения записей разговоров, дней"
+        description="Записи старше срока удаляются из хранилища ежедневно; карточка обращения остаётся"
+        min={1}
+        max={3650}
+        value={Number(v['recording.retention_days'] ?? 180)}
+        onChange={(x) => setV({ ...v, 'recording.retention_days': Number(x) })}
+        data-testid="setting-recording-retention"
+      />
+      <Title order={5} mt="md">
         Панель супервизора и отчёты
       </Title>
       {(
@@ -100,11 +119,88 @@ export function SettingsPage() {
           onChange={(x) => setV({ ...v, [k]: Number(x) })}
         />
       ))}
+      <SlRules v={v} setV={setV} />
       <Button onClick={() => save.mutate(undefined)} loading={save.isPending}>
         {t.save}
       </Button>
       <ReleasePanel />
     </Stack>
+  );
+}
+
+type QueueSl = Record<string, { voiceS?: number | null; textS?: number | null }>;
+
+/**
+ * Правила расчёта SL (В-51): учёт коротких сбросов и возвратов в IVR/бот в знаменателе, перевод — новое
+ * поступление, порог ответа по очереди (пусто — общий). Действуют в отчёте SL и на панели супервизора.
+ */
+function SlRules({ v, setV }: { v: Record<string, unknown>; setV(x: Record<string, unknown>): void }) {
+  const queues = useList('/dict/queues');
+  const per = (v['report.sl_queue_thresholds'] ?? {}) as QueueSl;
+  const setQueue = (id: string, k: 'voiceS' | 'textS', x: number | string) => {
+    const cur = { ...(per[id] ?? {}), [k]: x === '' ? null : Number(x) };
+    const next: QueueSl = { ...per, [id]: cur };
+    if (cur.voiceS == null && cur.textS == null) delete next[id];
+    setV({ ...v, 'report.sl_queue_thresholds': next });
+  };
+  const flag = (k: string, label: string, description: string, def: boolean) => (
+    <Switch
+      label={label}
+      description={description}
+      checked={Boolean(v[k] ?? def)}
+      onChange={(e) => setV({ ...v, [k]: e.currentTarget.checked })}
+      data-testid={`setting-${k}`}
+    />
+  );
+  return (
+    <>
+      {flag(
+        'report.sl_count_short_abandons',
+        'SL: учитывать короткие сбросы как пропущенные',
+        'Выключено — сбросы быстрее порога короткого сброса не входят в знаменатель SL',
+        false,
+      )}
+      {flag(
+        'report.sl_count_ivr_returns',
+        'SL: учитывать возвраты из очереди в IVR/бот в знаменателе',
+        'Включено — такой эпизод считается не отвеченным в пределах SL',
+        false,
+      )}
+      {flag(
+        'report.sl_transfer_new_arrival',
+        'SL: постановка в очередь после перевода — новое поступление',
+        'Выключено — в расчёт входит только первое поступление обращения в очередь',
+        true,
+      )}
+      <Table data-testid="sl-queue-thresholds">
+        <Table.Thead>
+          <Table.Tr>
+            <Table.Th>Порог SL по очереди</Table.Th>
+            <Table.Th>Голос, с</Table.Th>
+            <Table.Th>Текст, с</Table.Th>
+          </Table.Tr>
+        </Table.Thead>
+        <Table.Tbody>
+          {(queues.data ?? []).map((q) => (
+            <Table.Tr key={q.id}>
+              <Table.Td>{String(q.name)}</Table.Td>
+              {(['voiceS', 'textS'] as const).map((k) => (
+                <Table.Td key={k}>
+                  <NumberInput
+                    size="xs"
+                    min={1}
+                    placeholder="общий"
+                    value={per[q.id]?.[k] ?? ''}
+                    onChange={(x) => setQueue(q.id, k, x)}
+                    aria-label={`${String(q.name)}: ${k === 'voiceS' ? 'голос' : 'текст'}`}
+                  />
+                </Table.Td>
+              ))}
+            </Table.Tr>
+          ))}
+        </Table.Tbody>
+      </Table>
+    </>
   );
 }
 

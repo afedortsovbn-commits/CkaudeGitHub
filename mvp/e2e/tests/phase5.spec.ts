@@ -77,7 +77,7 @@ async function demoCall(browser: Browser, phone: string, name = `Клиент ${
 test.describe.serial('Ф5: телефония', () => {
   test.setTimeout(150_000);
 
-  test('звонок → оператор отвечает → удержание → перевод второму оператору → завершение → запись в карточке', async ({
+  test('звонок → оператор отвечает → удержание → перевод второму оператору → завершение → запись в карточке (демо-сценарий 1)', async ({
     browser,
   }) => {
     const op1 = await operator(browser, 'operator1@demo.local');

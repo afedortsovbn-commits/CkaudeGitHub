@@ -590,6 +590,12 @@ function ContactCard({ conv, onOpen }: { conv: Row; onOpen(id: string): void }) 
       <Button size="xs" variant="light" onClick={() => save.mutate(undefined)}>
         Сохранить клиента
       </Button>
+      {((c.data?.consents as Row[] | undefined) ?? []).slice(0, 1).map((k) => (
+        <Text size="xs" c="dimmed" key="consent" data-testid="contact-consent">
+          Согласие на обработку ПДн: версия {String(k.textVersion)} от{' '}
+          {new Date(String(k.acceptedAt)).toLocaleDateString('ru-RU')} ({String(k.channelName)})
+        </Text>
+      ))}
       <ExternalDataPanel contactId={String(conv.contactId)} conversationId={String(conv.id)} />
       <Title order={6} mt="sm">
         История обращений ({history.data?.length ?? 0})
@@ -927,7 +933,13 @@ interface CallRow {
   waitS: number;
   talkS: number;
   endReason: string | null;
-  recordings: { id: string; kind?: string; status: string; durationS: number | null }[];
+  recordings: {
+    id: string;
+    kind?: string;
+    status: string;
+    durationS: number | null;
+    deletedAt?: string | null;
+  }[];
   events: { at: string; type: string; userName: string | null; data?: Record<string, unknown> }[];
 }
 
@@ -1014,7 +1026,11 @@ function CallsPanel({ conv }: { conv: Row }) {
             </Button>
           )}
           {c.recordings.map((r) =>
-            r.status === 'uploaded' ? (
+            r.deletedAt ? (
+              <Text key={r.id} size="xs" c="dimmed" data-testid="recording-deleted">
+                Запись удалена (срок хранения или обезличивание)
+              </Text>
+            ) : r.status === 'uploaded' ? (
               <Box key={r.id}>
                 {r.kind === 'voicemail' && (
                   <Text size="xs" fw={600}>

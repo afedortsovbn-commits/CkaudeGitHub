@@ -22,6 +22,8 @@ const UserCreate = z
     canLogin: z.boolean().default(true),
     primaryEnterpriseId: uuid.nullable().optional(),
     primaryDepartmentId: uuid.nullable().optional(),
+    /** Видит неклассифицированные обращения (В-52): null — как в ролях. */
+    seesUnclassified: z.boolean().nullable().optional(),
     roles: z.array(z.string()).default([]),
   })
   .strict();
@@ -37,7 +39,8 @@ const ScopeRules = z.array(
 );
 
 const USER_COLS = `u.id, u.full_name, u.email, u.phone, u.can_login, u.is_active, u.primary_enterprise_id,
-  u.primary_department_id, u.locked_until, u.created_at, u.updated_at,
+  u.primary_department_id, u.locked_until, u.created_at, u.updated_at, u.sees_unclassified,
+  u.totp_enabled_at IS NOT NULL AS totp_enabled, u.anonymized_at,
   COALESCE((SELECT array_agg(role_code ORDER BY role_code) FROM user_role WHERE user_id = u.id), '{}') AS roles`;
 
 @Controller('api/v1/users')
@@ -50,6 +53,29 @@ export class UsersController {
     return (await rows(this.ctx.pool, 'SELECT * FROM role ORDER BY is_system DESC, name')).map((r) =>
       toApi(r),
     );
+  }
+
+  /**
+   * Право роли «видит неклассифицированные обращения» (`scope.unclassified`, В-52). Остальные права системных
+   * ролей не меняются; у сотрудника отметка может переопределить роль.
+   */
+  @Patch('roles/:code')
+  async updateRole(@CurrentUser() p: Principal, @Param('code') code: string, @Body() body: unknown) {
+    const b = parse(z.object({ seesUnclassified: z.boolean() }).strict(), body);
+    await withTx(this.ctx.pool, async (tx) => {
+      const before = await one<{ permissions: string[] }>(
+        tx,
+        'SELECT permissions FROM role WHERE code = $1 FOR UPDATE',
+        [code],
+      );
+      if (!before) throw notFound('Роль');
+      const perms = before.permissions.filter((x) => x !== 'scope.unclassified');
+      if (b.seesUnclassified) perms.push('scope.unclassified');
+      await tx.query('UPDATE role SET permissions = $2 WHERE code = $1', [code, perms]);
+      await audit(tx, p, 'update', 'role', code, before.permissions, perms);
+    });
+    this.ctx.principals.invalidate();
+    return this.roles();
   }
 
   @Get()
@@ -103,8 +129,9 @@ export class UsersController {
     await withTx(this.ctx.pool, async (tx) => {
       const row = await one(
         tx,
-        `INSERT INTO app_user (id, full_name, email, phone, password_hash, can_login, primary_enterprise_id, primary_department_id)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id, full_name, email`,
+        `INSERT INTO app_user (id, full_name, email, phone, password_hash, can_login, primary_enterprise_id, primary_department_id,
+                               sees_unclassified)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id, full_name, email`,
         [
           id,
           b.fullName,
@@ -114,6 +141,7 @@ export class UsersController {
           b.canLogin,
           b.primaryEnterpriseId ?? null,
           b.primaryDepartmentId ?? null,
+          b.seesUnclassified ?? null,
         ],
       );
       await this.writeRoles(tx, id, b.roles);
@@ -258,6 +286,23 @@ export class UsersController {
       if (!r.rowCount) throw notFound('Сотрудник');
       await this.revokeSessions(tx, id);
       await audit(tx, p, 'password.reset', 'app_user', id, null, null, { configChanged: false });
+    });
+    this.ctx.principals.invalidate();
+  }
+
+  /** Сброс 2FA (сотрудник потерял телефон): при следующем входе администратор настроит её заново. */
+  @Post(':id/totp/reset')
+  @HttpCode(204)
+  async resetTotp(@CurrentUser() p: Principal, @Param('id') id: string) {
+    await withTx(this.ctx.pool, async (tx) => {
+      const r = await tx.query(
+        `UPDATE app_user SET totp_secret = NULL, totp_pending_secret = NULL, totp_enabled_at = NULL,
+                totp_last_step = NULL, updated_at = now() WHERE id = $1`,
+        [id],
+      );
+      if (!r.rowCount) throw notFound('Сотрудник');
+      await this.revokeSessions(tx, id);
+      await audit(tx, p, 'totp.reset', 'app_user', id, null, null, { configChanged: false });
     });
     this.ctx.principals.invalidate();
   }

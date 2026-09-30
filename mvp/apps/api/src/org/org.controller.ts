@@ -66,6 +66,23 @@ const SETTINGS: Record<string, z.ZodTypeAny> = {
   'report.sl_text_s': z.number().int().min(1).max(86400),
   'report.short_abandon_s': z.number().int().min(0).max(600),
   'report.first_response_s': z.number().int().min(1).max(86400),
+  // Ф12 (В-51): параметры расчёта SL — порог по очереди (id очереди → голос/текст, пусто — общий), учёт коротких
+  // сбросов и возвратов в IVR/бот в знаменателе, постановка после перевода — новое поступление.
+  'report.sl_queue_thresholds': z.record(
+    z.string().uuid(),
+    z
+      .object({
+        voiceS: z.number().int().min(1).max(3600).nullable().optional(),
+        textS: z.number().int().min(1).max(86400).nullable().optional(),
+      })
+      .strict(),
+  ),
+  'report.sl_count_short_abandons': z.boolean(),
+  // Ф12: безопасность и ПДн.
+  'security.admin_2fa_required': z.boolean(),
+  'recording.retention_days': z.number().int().min(1).max(3650),
+  'report.sl_count_ivr_returns': z.boolean(),
+  'report.sl_transfer_new_arrival': z.boolean(),
   // Ф11: экземпляры coturn, выведенные из выдачи ICE на время обновления (ops/update-media.sh coturn-N).
   [TURN_DISABLED_SETTING]: z.array(z.string().regex(/^[A-Za-z0-9_.-]{1,64}$/)).max(20),
 };

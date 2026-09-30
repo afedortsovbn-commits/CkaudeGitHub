@@ -161,7 +161,7 @@ test.describe.serial('Ф6: IVR', () => {
     await op.getByTestId('agent-status').getByText('Офлайн').click();
   });
 
-  test('публикация новой версии не влияет на идущий звонок; откат на прежнюю версию', async ({
+  test('публикация новой версии не влияет на идущий звонок; откат на прежнюю версию (демо-сценарий 5)', async ({
     browser,
     request,
   }) => {

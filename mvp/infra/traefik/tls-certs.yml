@@ -1,0 +1,12 @@
+# TLS со своим сертификатом домена: файлы infra/traefik/certs/cert.pem (сертификат с цепочкой) и key.pem.
+# Подключается переменной TRAEFIK_TLS=../traefik/tls-certs.yml в infra/compose/.env. Замена файлов сертификата
+# (продление) подхватывается Traefik без перезапуска.
+tls:
+  options:
+    default:
+      minVersion: VersionTLS12
+  stores:
+    default:
+      defaultCertificate:
+        certFile: /certs/cert.pem
+        keyFile: /certs/key.pem

@@ -8,6 +8,7 @@ import {
   MultiSelect,
   Paper,
   PasswordInput,
+  Select,
   Stack,
   Switch,
   Table,
@@ -33,6 +34,47 @@ interface UserDetail extends Row {
   roles: string[];
   scopes: Rule[];
   queueIds: string[];
+  seesUnclassified: boolean | null;
+  totpEnabled: boolean;
+  anonymizedAt: string | null;
+}
+
+const UNCLASSIFIED_OPTIONS = [
+  { value: 'role', label: 'как в ролях' },
+  { value: 'yes', label: 'видит' },
+  { value: 'no', label: 'не видит' },
+];
+
+/** Неклассифицированные обращения (без предприятия и темы, В-52): отметка сотрудника важнее роли. */
+function UnclassifiedSelect({ user }: { user: UserDetail }) {
+  const cur = user.seesUnclassified === null ? 'role' : user.seesUnclassified ? 'yes' : 'no';
+  const [v, setV] = useState(cur);
+  useEffect(() => setV(cur), [cur]);
+  const save = useAction((val: string) =>
+    patch(`/users/${user.id}`, { seesUnclassified: val === 'role' ? null : val === 'yes' }),
+  );
+  return (
+    <Group align="flex-end">
+      <Select
+        label="Неклассифицированные обращения (без предприятия и темы)"
+        description="При ограниченной области. Область «всё» видит их всегда."
+        data={UNCLASSIFIED_OPTIONS}
+        value={v}
+        onChange={(x) => x && setV(x)}
+        allowDeselect={false}
+        w={420}
+        data-testid="unclassified-select"
+      />
+      <Button
+        variant="light"
+        onClick={() => save.mutate(v)}
+        loading={save.isPending}
+        data-testid="unclassified-save"
+      >
+        {t.save}
+      </Button>
+    </Group>
+  );
 }
 
 /** Редактор областей видимости: пустое поле = «все». Правила объединяются по ИЛИ. */
@@ -64,6 +106,7 @@ function ScopeEditor({ user }: { user: UserDetail }) {
         — «все». Тема включает свои подтемы. Нет ни одного правила — сотрудник ничего не видит. Назначенный
         ответственный видит свои тикеты всегда.
       </Text>
+      <UnclassifiedSelect user={user} />
       {rules.map((r, i) => (
         <Paper key={i} withBorder p="sm">
           <Group grow align="flex-start">
@@ -164,6 +207,17 @@ function UserDrawer({ id, onClose }: { id: string; onClose(): void }) {
     }).then(load),
   );
   const saveRoles = useAction(() => put(`/users/${id}/roles`, { roles: form.roles }).then(load));
+  const resetTotp = useAction(
+    () => post(`/users/${id}/totp/reset`).then(load),
+    '2FA сброшена, сессии сотрудника завершены',
+  );
+  const anonymize = useAction(
+    (reason: string) => post(`/users/${id}/anonymize`, { confirm: true, reason }).then(load),
+    'Сотрудник обезличен',
+  );
+  const roleUnclassified = useAction((a: { code: string; on: boolean }) =>
+    patch(`/users/roles/${a.code}`, { seesUnclassified: a.on }),
+  );
   const saveQueues = useAction(() => put(`/users/${id}/queues`, { queueIds: form.queueIds }).then(load));
   const resetPwd = useAction(
     () => post(`/users/${id}/password`, { password: pwd }),
@@ -251,6 +305,21 @@ function UserDrawer({ id, onClose }: { id: string; onClose(): void }) {
             <Button onClick={() => saveRoles.mutate(undefined)} loading={saveRoles.isPending}>
               Сохранить роли
             </Button>
+            <Text size="sm" fw={500} mt="md">
+              Роли видят неклассифицированные обращения (для всех сотрудников с ролью)
+            </Text>
+            {(roles.data ?? [])
+              .filter((r) => !(r.permissions as string[]).includes('scope.all'))
+              .map((r) => (
+                <Switch
+                  key={`u-${String(r.code)}`}
+                  label={String(r.name)}
+                  checked={(r.permissions as string[]).includes('scope.unclassified')}
+                  onChange={(e) =>
+                    roleUnclassified.mutate({ code: String(r.code), on: e.currentTarget.checked })
+                  }
+                />
+              ))}
           </Stack>
         </Tabs.Panel>
         <Tabs.Panel value="scopes">
@@ -277,6 +346,17 @@ function UserDrawer({ id, onClose }: { id: string; onClose(): void }) {
             <Button onClick={() => resetPwd.mutate(undefined)} disabled={pwd.length < 8}>
               Задать пароль
             </Button>
+            <Group>
+              <Text size="sm">Вход с кодом (2FA):</Text>
+              <Badge color={user.totpEnabled ? 'green' : 'gray'} data-testid="user-totp">
+                {user.totpEnabled ? 'включён' : 'выключен'}
+              </Badge>
+              {user.totpEnabled ? (
+                <Button size="xs" variant="outline" onClick={() => resetTotp.mutate(undefined)}>
+                  Сбросить (потерян телефон)
+                </Button>
+              ) : null}
+            </Group>
             {user.lockedUntil ? (
               <Button variant="outline" onClick={() => void post(`/users/${id}/unlock`).then(load)}>
                 Снять блокировку входа
@@ -289,6 +369,18 @@ function UserDrawer({ id, onClose }: { id: string; onClose(): void }) {
             >
               {user.isActive ? 'Отключить (уволить)' : 'Включить'}
             </Button>
+            {!user.isActive && !user.anonymizedAt && (
+              <Button
+                color="red"
+                variant="subtle"
+                onClick={() => {
+                  const reason = window.prompt('Обезличить сотрудника (необратимо). Основание:');
+                  if (reason) anonymize.mutate(reason);
+                }}
+              >
+                Обезличить (ФИО, email, телефон)
+              </Button>
+            )}
           </Stack>
         </Tabs.Panel>
       </Tabs>

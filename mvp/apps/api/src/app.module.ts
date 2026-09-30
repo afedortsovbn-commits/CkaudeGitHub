@@ -17,6 +17,7 @@ import { MatrixController } from './org/matrix.controller';
 import { OrgController } from './org/org.controller';
 import { UsersController } from './org/users.controller';
 import { PingController } from './ping.controller';
+import { PrivacyController } from './privacy/privacy.controller';
 import { ReportsController } from './reports/reports.controller';
 import { ReleaseController } from './release/release.controller';
 import { NotificationsController } from './tickets/notifications.controller';
@@ -55,6 +56,7 @@ export class AppModule {
         DocsController,
         ReportsController,
         ReleaseController,
+        PrivacyController,
       ],
       providers: [
         { provide: APP_CONTEXT, useValue: ctx },

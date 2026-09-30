@@ -1,6 +1,12 @@
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { Body, Controller, Get, HttpCode, Inject, Param, Post, Query, Req, Res } from '@nestjs/common';
-import { CONVERSATION_EVENTS, inboundSubject, type InboundMessage, newId } from '@cc/contracts';
+import {
+  CONVERSATION_EVENTS,
+  inboundSubject,
+  type InboundMessage,
+  newId,
+  normalizePhone,
+} from '@cc/contracts';
 import { appendMessage, emitConversation, loadRef } from '@cc/domain';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { headers } from 'nats';
@@ -174,7 +180,13 @@ export class ClientChatController {
         if (b.phone) {
           await tx.query(
             `INSERT INTO contact_identity (id, contact_id, kind, value) VALUES ($1,$2,'phone',$3) ON CONFLICT DO NOTHING`,
-            [newId(), id, b.phone.replace(/[^\d+]/g, '')],
+            [newId(), id, normalizePhone(b.phone)],
+          );
+        }
+        if (b.email) {
+          await tx.query(
+            `INSERT INTO contact_identity (id, contact_id, kind, value) VALUES ($1,$2,'email',lower($3)) ON CONFLICT DO NOTHING`,
+            [newId(), id, b.email.trim()],
           );
         }
       }

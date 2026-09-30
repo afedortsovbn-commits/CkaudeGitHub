@@ -115,6 +115,9 @@ jobs:
         run: node ops/test/nats-failover.mjs 2000
       - name: Перезапуск Kamailio во время разговора — разговор продолжается и корректно завершается (BYE в обе стороны)
         run: API_TAG=v2 node ops/test/kamailio-restart.mjs
+      # Последней: полное восстановление возвращает данные стенда к моменту копии.
+      - name: Резервная копия на работающей системе, проверка копии и полное восстановление (Ф12)
+        run: API_TAG=v2 node ops/test/backup-restore.mjs
       - if: failure()
         uses: actions/upload-artifact@v4
         with:

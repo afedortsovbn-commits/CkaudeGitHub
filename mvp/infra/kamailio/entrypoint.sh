@@ -5,10 +5,12 @@ set -euo pipefail
 : "${SIP_SECRET:?укажите SIP_SECRET (общий с api секрет короткоживущих SIP-паролей)}"
 SIP_DOMAIN="${SIP_DOMAIN:-cc.local}"
 TRUNK_HOST="${TRUNK_HOST:-}"
+# Разрешённые адреса транка: «a.b.c.d, e.f.g.h/24» → подсети через запятую (одиночный адрес — /32).
+TRUNK_ALLOW="$(echo "${TRUNK_ALLOW:-}" | tr ', ' '\n\n' | sed '/^$/d; /\//!s/$/\/32/' | paste -sd, -)"
 MEDIA_NODES="${MEDIA_NODES:-asterisk-1:5060 asterisk-2:5060}"
 for f in kamailio.cfg tls.cfg; do
   sed -e "s|__SIP_SECRET__|${SIP_SECRET}|g" -e "s|__SIP_DOMAIN__|${SIP_DOMAIN}|g" \
-      -e "s|__TRUNK_HOST__|${TRUNK_HOST}|g" -e "s|__LISTEN_IF__|${LISTEN_IF:-eth0}|g" \
+      -e "s|__TRUNK_HOST__|${TRUNK_HOST}|g" -e "s|__TRUNK_ALLOW__|${TRUNK_ALLOW}|g" -e "s|__LISTEN_IF__|${LISTEN_IF:-eth0}|g" \
       -e "s|__SIP_ADVERTISE__|${SIP_ADVERTISE:-kamailio}|g" \
       "/opt/cc/kamailio/$f" > "/etc/kamailio/$f"
 done

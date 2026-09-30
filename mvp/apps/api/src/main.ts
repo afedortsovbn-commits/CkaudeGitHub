@@ -2,7 +2,9 @@ import 'reflect-metadata';
 import { createPool, migrate } from '@cc/db';
 import {
   connectNats,
+  createJobQueue,
   createLogger,
+  ensureJobQueue,
   createMetrics,
   ensureStream,
   EVENTS_STREAM,
@@ -20,6 +22,10 @@ import { ApiConfigSchema, type AppContext } from './context';
 import { originsCache } from './chat/origins';
 import { createS3Storage } from './lib/storage';
 import { serveIntegrations } from './ivr/responder';
+import { runRecordingRetention } from './privacy/privacy';
+
+/** Очистка записей разговоров по сроку хранения (M-NFR-07, В-11): раз в час, один экземпляр api (pg-boss). */
+const RETENTION_QUEUE = 'recording-retention';
 
 async function bootstrap(): Promise<void> {
   const config = loadConfig(ApiConfigSchema);
@@ -93,6 +99,14 @@ async function bootstrap(): Promise<void> {
       clearInterval(t);
     }
   });
+  const boss = await createJobQueue({ connectionString: config.DATABASE_URL, logger });
+  await ensureJobQueue(boss, RETENTION_QUEUE);
+  await boss.work(RETENTION_QUEUE, async () => {
+    const r = await runRecordingRetention(pool, storage);
+    if (r.deleted) logger.info(r, 'записи разговоров удалены по сроку хранения');
+  });
+  await boss.schedule(RETENTION_QUEUE, '17 * * * *');
+  lifecycle.onShutdown('pg-boss', 24, () => boss.stop({ graceful: true, timeout: 10_000 }));
   lifecycle.onShutdown('outbox-relay', 20, () => relay.stop());
   lifecycle.onShutdown('integrations', 25, () => integrations.stop());
   lifecycle.onShutdown('nats', 30, () => nc.drain());

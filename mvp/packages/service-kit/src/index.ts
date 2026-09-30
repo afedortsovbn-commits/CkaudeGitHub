@@ -8,3 +8,5 @@ export * from './http';
 export * from './jobs';
 export * from './lease';
 export * from './secrets';
+export * from './pii';
+export * from './trace';

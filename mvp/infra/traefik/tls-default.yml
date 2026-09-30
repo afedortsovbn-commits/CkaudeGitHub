@@ -1,0 +1,7 @@
+# TLS веб-интерфейса и API (Traefik). По умолчанию — самоподписанный сертификат Traefik (демо-стенд).
+# Свой сертификат домена: положить cert.pem (цепочка) и key.pem в infra/traefik/certs/ и задать в .env
+# TRAEFIK_TLS=../traefik/tls-certs.yml (см. docs/руководство-развёртывания.md, раздел 4).
+tls:
+  options:
+    default:
+      minVersion: VersionTLS12

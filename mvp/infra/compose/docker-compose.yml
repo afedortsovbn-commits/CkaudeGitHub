@@ -52,7 +52,8 @@ services:
       - --providers.docker.exposedbydefault=false
       - --providers.docker.network=cc
       - --providers.docker.defaultRule=Host(`unrouted.invalid`)
-      - --providers.file.filename=/etc/traefik/dynamic.yml
+      # Каталог динамической конфигурации: маршруты (dynamic.yml) и TLS (сертификат домена — TRAEFIK_TLS, Ф12).
+      - --providers.file.directory=/etc/traefik/dynamic
       - --entrypoints.web.address=:80
       - --entrypoints.web.http.redirections.entrypoint.to=websecure
       - --entrypoints.web.http.redirections.entrypoint.scheme=https
@@ -68,7 +69,9 @@ services:
       - '${HTTPS_PORT:-443}:443'
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
-      - ../traefik/dynamic.yml:/etc/traefik/dynamic.yml:ro
+      - ../traefik/dynamic.yml:/etc/traefik/dynamic/routes.yml:ro
+      - ${TRAEFIK_TLS:-../traefik/tls-default.yml}:/etc/traefik/dynamic/tls.yml:ro
+      - ${TRAEFIK_CERTS_DIR:-../traefik/certs}:/certs:ro
     networks: [cc]
     healthcheck:
       test: ['CMD', 'traefik', 'healthcheck', '--ping']
@@ -354,6 +357,8 @@ services:
       SIP_ADVERTISE: ${SIP_ADVERTISE:-kamailio}
       # Адрес SIP-транка оператора связи (МТС) для исходящих; пусто — исходящие наружу недоступны.
       TRUNK_HOST: ${TRUNK_HOST:-}
+      # Адреса/сети SIP-транка, с которых принимаются входящие (через запятую); пусто — любые (демо-стенд).
+      TRUNK_ALLOW: ${TRUNK_ALLOW:-}
     networks: [cc]
     # WSS для браузеров — отдельный порт в обход Traefik (02-архитектура 8.1); 5060/udp — приём транка.
     ports: ['${SIP_WSS_PORT:-8443}:8443', '${SIP_UDP_PORT:-5060}:5060/udp']

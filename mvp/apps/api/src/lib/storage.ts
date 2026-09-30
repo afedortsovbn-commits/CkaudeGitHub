@@ -1,5 +1,6 @@
 import {
   CreateBucketCommand,
+  DeleteObjectCommand,
   GetObjectCommand,
   HeadBucketCommand,
   PutObjectCommand,
@@ -11,6 +12,8 @@ import type { Readable } from 'node:stream';
 export interface Storage {
   put(key: string, body: Buffer, contentType: string): Promise<void>;
   get(key: string): Promise<{ body: Readable; contentType?: string; length?: number }>;
+  /** Удаление файла (сроки хранения, обезличивание); отсутствующий файл — не ошибка. */
+  remove(key: string): Promise<void>;
   ensureBucket(): Promise<void>;
 }
 
@@ -36,6 +39,9 @@ export function createS3Storage(o: {
       const r = await s3.send(new GetObjectCommand({ Bucket: o.bucket, Key: key }));
       return { body: r.Body as Readable, contentType: r.ContentType, length: r.ContentLength };
     },
+    async remove(key) {
+      await s3.send(new DeleteObjectCommand({ Bucket: o.bucket, Key: key }));
+    },
     async ensureBucket() {
       try {
         await s3.send(new HeadBucketCommand({ Bucket: o.bucket }));
@@ -60,6 +66,9 @@ export function createMemoryStorage(): Storage {
       if (!v) throw new Error('not found');
       const { Readable } = await import('node:stream');
       return { body: Readable.from(v.body), contentType: v.contentType, length: v.body.length };
+    },
+    async remove(key) {
+      m.delete(key);
     },
     async ensureBucket() {},
   };

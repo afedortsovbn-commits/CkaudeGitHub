@@ -255,11 +255,31 @@ async function conversationsReport(ctx: ReportCtx, period: Period, group: Report
 
 // ------------------------------------------------------------------ SL и пропущенные
 
-async function slParams(db: Db) {
+async function settingJson<T>(db: Db, key: string, def: T): Promise<T> {
+  const { rows } = await db.query<{ value: unknown }>(`SELECT value FROM system_setting WHERE key = $1`, [
+    key,
+  ]);
+  return rows[0] && rows[0].value !== null && rows[0].value !== undefined ? (rows[0].value as T) : def;
+}
+
+/**
+ * Параметры расчёта SL (В-51, «Настройки», без перезапуска): общие пороги ответа по голосу и тексту, порог по
+ * очереди (перекрывает общий), короткий сброс, учитывать ли короткие сбросы и возвраты в IVR/бот в знаменателе,
+ * считать ли постановку после перевода новым поступлением.
+ */
+export async function slParams(db: Db) {
   return {
     voice: await settingNum(db, 'report.sl_voice_s', 20),
     text: await settingNum(db, 'report.sl_text_s', 60),
     short: await settingNum(db, 'report.short_abandon_s', 5),
+    queues: await settingJson<Record<string, { voiceS?: number | null; textS?: number | null }>>(
+      db,
+      'report.sl_queue_thresholds',
+      {},
+    ),
+    countShort: await settingJson(db, 'report.sl_count_short_abandons', false),
+    countOther: await settingJson(db, 'report.sl_count_ivr_returns', false),
+    transferNew: await settingJson(db, 'report.sl_transfer_new_arrival', true),
   };
 }
 
@@ -278,32 +298,44 @@ async function slQuery(
   const slv = q.p(sl.voice);
   const slt = q.p(sl.text);
   const short = q.p(sl.short);
+  const perQueue = q.p(JSON.stringify(sl.queues));
+  const countShort = q.p(!!sl.countShort);
+  const countOther = q.p(!!sl.countOther);
+  const transferNew = q.p(sl.transferNew !== false);
   const where = dimWhere(
     q,
     { ...CONV_DIMS, queue: 'ep.queue_id', operator: 'ep.end_asg' },
     ctx.filter,
     ctx.principal,
   );
+  // Знаменатель SL и доли пропущенных: отвеченные + пропущенные (+ короткие сбросы, + возвраты в IVR/бот —
+  // если так настроено).
+  const denom = `answered + abandoned + CASE WHEN ${countOther}::boolean THEN other ELSE 0 END`;
   const sql = `WITH ${ctes}, ${TRANSITION_CTES},
     b AS (
       SELECT ${gexprOf(tz)[group]!()} AS gkey, ep.outcome, ep.wait_s,
-             CASE WHEN c.channel = 'voice' THEN ${slv}::float8 ELSE ${slt}::float8 END AS sl_s
+             CASE WHEN c.channel = 'voice'
+                  THEN COALESCE((${perQueue}::jsonb -> ep.queue_id::text ->> 'voiceS')::float8, ${slv}::float8)
+                  ELSE COALESCE((${perQueue}::jsonb -> ep.queue_id::text ->> 'textS')::float8, ${slt}::float8)
+             END AS sl_s
         FROM ep JOIN conv c ON c.cid = ep.cid
-       WHERE ep.start_at >= ${t0} AND ep.outcome <> 'open' AND ${where.join(' AND ')}),
+       WHERE ep.start_at >= ${t0} AND ep.outcome <> 'open'
+         AND (${transferNew}::boolean OR NOT ep.after_transfer) AND ${where.join(' AND ')}),
     a AS (
       SELECT GROUPING(gkey) = 1 AS is_total, gkey,
              count(*) AS entered,
              count(*) FILTER (WHERE outcome = 'answered') AS answered,
              count(*) FILTER (WHERE outcome = 'answered' AND wait_s <= sl_s) AS within_sl,
-             count(*) FILTER (WHERE outcome = 'abandoned' AND wait_s >= ${short}::float8) AS abandoned,
+             count(*) FILTER (WHERE outcome = 'abandoned'
+                                AND (wait_s >= ${short}::float8 OR ${countShort}::boolean)) AS abandoned,
              count(*) FILTER (WHERE outcome = 'abandoned' AND wait_s < ${short}::float8) AS short_abandoned,
              count(*) FILTER (WHERE outcome = 'other') AS other,
              avg(wait_s) FILTER (WHERE outcome = 'answered') AS asa,
              max(wait_s) FILTER (WHERE outcome IN ('answered', 'abandoned')) AS max_wait
         FROM b GROUP BY GROUPING SETS ((gkey), ()))
     SELECT a.*,
-           round(100.0 * within_sl / NULLIF(answered + abandoned, 0), 1) AS sl_pct,
-           round(100.0 * abandoned / NULLIF(answered + abandoned, 0), 1) AS missed_pct
+           round(100.0 * within_sl / NULLIF(${denom}, 0), 1) AS sl_pct,
+           round(100.0 * abandoned / NULLIF(${denom}, 0), 1) AS missed_pct
       FROM a`;
   return { raw: (await ctx.db.query(sql, q.list)).rows, sl };
 }
@@ -345,12 +377,24 @@ async function serviceLevelReport(ctx: ReportCtx, period: Period, group: ReportG
     ],
     rows,
     totals,
-    notes: [
-      `SL — доля отвеченных за ${sl.voice} с (голос) / ${sl.text} с (текстовые каналы) среди отвеченных и пропущенных.`,
-      `Пропущенное — клиент ушёл из очереди до ответа; сбросы быстрее ${sl.short} с не учитываются.`,
-      'Каждая постановка в очередь (в т.ч. после перевода) — отдельный эпизод. Длительности в CSV — в секундах.',
-    ],
+    notes: slNotes(sl),
   };
+}
+
+/** Пояснения к отчёту SL — по действующим настройкам (В-51). */
+export function slNotes(sl: Awaited<ReturnType<typeof slParams>>): string[] {
+  const overrides = Object.keys(sl.queues ?? {}).length;
+  const denom = ['отвеченных', 'пропущенных', ...(sl.countOther ? ['вернувшихся в IVR/бот'] : [])];
+  return [
+    `SL — доля отвеченных за ${sl.voice} с (голос) / ${sl.text} с (текстовые каналы) среди ${denom.join(', ')}` +
+      (overrides ? `; для части очередей (${overrides}) задан свой порог.` : '.'),
+    sl.countShort
+      ? `Пропущенное — клиент ушёл из очереди до ответа; сбросы быстрее ${sl.short} с учитываются как пропущенные.`
+      : `Пропущенное — клиент ушёл из очереди до ответа; сбросы быстрее ${sl.short} с не учитываются.`,
+    sl.transferNew !== false
+      ? 'Каждая постановка в очередь (в т.ч. после перевода) — отдельный эпизод. Длительности в CSV — в секундах.'
+      : 'Постановка в очередь после перевода не считается новым поступлением и в расчёт не входит. Длительности в CSV — в секундах.',
+  ];
 }
 
 /** Сводка SL за сегодня по очередям — для панели супервизора (M-REP-02). */

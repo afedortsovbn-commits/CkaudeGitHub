@@ -8,7 +8,9 @@
 import { newId } from '@cc/contracts';
 import { ingestInbound } from '@cc/domain';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import type { Principal } from '@cc/auth';
 import { withTx } from '../lib/db';
+import { todayServiceLevel } from '../reports/reports';
 import { ADMIN_URL, createTestApp } from './setup';
 
 type Row = Record<string, unknown>;
@@ -351,6 +353,107 @@ describe.skipIf(!ADMIN_URL)('Отчёты Ф10 (интеграция)', () => {
     expect(byLabel(r.rows, 'Telegram')).toMatchObject({ answered: 1, sl_pct: 100 });
     const days = await report('service-level', `${PERIOD}&groupBy=day`);
     expect(days.rows.map((x) => x.label)).toEqual(['2026-03-10']);
+  });
+
+  it('SL: параметры расчёта из «Настроек» (В-51) — эталон на каждый вариант, отчёт и панель супервизора', async () => {
+    // Отдельный день 20.03: V1 голос — ответ через 25 с; V2 голос — короткий сброс 3 с; V3 чат — из очереди
+    // вернулся к боту через 30 с; V4 голос — ответ через 10 с, перевод в очередь, ответ через 25 с; V5 чат — ответ
+    // через 50 с. Очередь у всех — «Общая».
+    const T2 = Date.parse('2026-03-20T07:00:00Z');
+    const at2 = (s: number) => new Date(T2 + s * 1000).toISOString();
+    const u = (c: Conv, s: number, status: string, asg: string | null, extra: Row = {}) =>
+      ev('conversation.updated', at2(s), refOf(c, status, asg, extra));
+    const v1 = conv('voice', id.e1, 'fuel');
+    await ev('conversation.created', at2(0), refOf(v1, 'queued'));
+    await u(v1, 25, 'active', id.op1!, { action: 'accepted' });
+    await u(v1, 90, 'closed', id.op1!, { action: 'closed', dispositionKind: 'resolved' });
+    const v2 = conv('voice', id.e1, 'fuel');
+    await ev('conversation.created', at2(100), refOf(v2, 'queued'));
+    await u(v2, 103, 'closed', null, { action: 'closed', dispositionKind: 'abandoned' });
+    const v3 = conv('webchat', id.e1, 'fuel');
+    await ev('conversation.created', at2(200), refOf(v3, 'queued'));
+    await u(v3, 230, 'bot', null, { action: 'bot' });
+    await u(v3, 300, 'closed', null, { action: 'closed', auto: true, dispositionKind: 'auto_closed' });
+    const v4 = conv('voice', id.e1, 'fuel');
+    await ev('conversation.created', at2(400), refOf(v4, 'queued'));
+    await u(v4, 410, 'active', id.op1!, { action: 'accepted' });
+    await u(v4, 500, 'queued', null, { action: 'transferred', transferKind: 'queue', byUserId: id.op1 });
+    await u(v4, 525, 'active', id.op2!, { action: 'accepted' });
+    await u(v4, 600, 'closed', id.op2!, { action: 'closed', dispositionKind: 'resolved' });
+    const v5 = conv('webchat', id.e1, 'fuel');
+    await ev('conversation.created', at2(700), refOf(v5, 'queued'));
+    await u(v5, 750, 'active', id.op1!, { action: 'accepted' });
+    await u(v5, 900, 'closed', id.op1!, { action: 'closed', dispositionKind: 'resolved' });
+
+    const DEF = {
+      'report.sl_count_short_abandons': false,
+      'report.sl_count_ivr_returns': false,
+      'report.sl_transfer_new_arrival': true,
+      'report.sl_queue_thresholds': {},
+    };
+    const admin = { id: 'x', scope: { all: true, rules: [] } } as unknown as Principal;
+    const variant = async (settings: Row) => {
+      const r = await t.call('PATCH', '/api/v1/settings', tok.admin, { ...DEF, ...settings });
+      expect(r.status, JSON.stringify(r.body)).toBe(200);
+      const rep = await report('service-level', 'from=2026-03-20&to=2026-03-20');
+      // Панель супервизора считает тем же расчётом («сегодня» = 20.03).
+      const panel = await todayServiceLevel(t.pool, admin, new Date('2026-03-20T15:00:00Z'));
+      expect(panel.find((x) => x.queueId === id.queue)!.slPct).toBe(rep.totals!.sl_pct);
+      return rep;
+    };
+
+    // По умолчанию: знаменатель — отвеченные + пропущенные (без коротких сбросов и возвратов в бот).
+    let r = await variant({});
+    expect(r.totals).toMatchObject({
+      entered: 6,
+      answered: 4,
+      within_sl: 2,
+      abandoned: 0,
+      short_abandoned: 1,
+      other: 1,
+      sl_pct: 50,
+      missed_pct: 0,
+    });
+    expect(r.notes.join(' ')).toContain('не учитываются');
+    // Короткие сбросы — пропущенные.
+    r = await variant({ 'report.sl_count_short_abandons': true });
+    expect(r.totals).toMatchObject({ abandoned: 1, short_abandoned: 1, sl_pct: 40, missed_pct: 20 });
+    expect(r.notes.join(' ')).toContain('учитываются как пропущенные');
+    // Возвраты в IVR/бот — в знаменателе.
+    r = await variant({ 'report.sl_count_ivr_returns': true });
+    expect(r.totals).toMatchObject({ abandoned: 0, other: 1, sl_pct: 40, missed_pct: 0 });
+    // Постановка после перевода — не новое поступление: эпизод V4 после перевода не считается.
+    r = await variant({ 'report.sl_transfer_new_arrival': false });
+    expect(r.totals).toMatchObject({ entered: 5, answered: 3, within_sl: 2, sl_pct: 66.7 });
+    expect(r.notes.join(' ')).toContain('после перевода не считается');
+    // Порог по очереди: голос 30 с вместо общего 20 с.
+    r = await variant({ 'report.sl_queue_thresholds': { [id.queue!]: { voiceS: 30 } } });
+    expect(r.totals).toMatchObject({ answered: 4, within_sl: 4, sl_pct: 100 });
+    // Порог по очереди для текста — 40 с: V5 (50 с) выходит за SL.
+    r = await variant({ 'report.sl_queue_thresholds': { [id.queue!]: { textS: 40 } } });
+    expect(r.totals).toMatchObject({ within_sl: 1, sl_pct: 25 });
+    // Все параметры вместе.
+    r = await variant({
+      'report.sl_count_short_abandons': true,
+      'report.sl_count_ivr_returns': true,
+      'report.sl_transfer_new_arrival': false,
+      'report.sl_queue_thresholds': { [id.queue!]: { voiceS: 30 } },
+    });
+    expect(r.totals).toMatchObject({
+      entered: 5,
+      answered: 3,
+      within_sl: 3,
+      abandoned: 1,
+      other: 1,
+      sl_pct: 60,
+      missed_pct: 20,
+    });
+    // Неверные значения отклоняются; возврат к умолчанию.
+    const bad = await t.call('PATCH', '/api/v1/settings', tok.admin, {
+      'report.sl_queue_thresholds': { 'не-uuid': { voiceS: 10 } },
+    });
+    expect(bad.status).toBe(400);
+    await variant({});
   });
 
   it('ASA/AHT по операторам', async () => {
