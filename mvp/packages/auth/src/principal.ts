@@ -3,6 +3,8 @@ import type { ScopeRule, ScopeSubject } from './scope';
 
 export const PERMISSIONS = [
   'scope.all',
+  /** Видит неклассифицированные обращения (без предприятия и темы) при ограниченной области (В-52). */
+  'scope.unclassified',
   'admin.users',
   'admin.directories',
   'admin.matrix',
@@ -65,8 +67,9 @@ export class PrincipalLoader {
       email: string;
       roles: string[] | null;
       permissions: string[] | null;
+      sees_unclassified: boolean | null;
     }>(
-      `SELECT u.id, u.full_name, u.email,
+      `SELECT u.id, u.full_name, u.email, u.sees_unclassified,
               array_remove(array_agg(DISTINCT ur.role_code), NULL) AS roles,
               (SELECT array_agg(DISTINCT p) FROM user_role ur2 JOIN role r ON r.code = ur2.role_code,
                       unnest(r.permissions) p WHERE ur2.user_id = u.id) AS permissions
@@ -97,7 +100,12 @@ export class PrincipalLoader {
       email: u.email,
       roles: u.roles ?? [],
       permissions,
-      scope: { all: permissions.has('scope.all'), rules },
+      scope: {
+        all: permissions.has('scope.all'),
+        rules,
+        // Отметка у сотрудника важнее роли: null — как в ролях (В-52).
+        unclassified: u.sees_unclassified ?? permissions.has('scope.unclassified'),
+      },
     };
   }
 }

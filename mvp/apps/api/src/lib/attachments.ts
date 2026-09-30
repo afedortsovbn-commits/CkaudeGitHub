@@ -51,8 +51,10 @@ export async function sendAttachment(
     content_type: string;
     conversation_id: string | null;
     contact_id: string | null;
+    deleted_at: Date | null;
   }>(ctx.pool, 'SELECT * FROM attachment WHERE id = $1', [id]);
   if (!a || !(await access(a))) throw new ApiError(404, 'not_found', 'Файл не найден');
+  if (a.deleted_at) throw new ApiError(410, 'deleted', 'Файл удалён (обезличивание клиента)');
   const obj = await ctx.storage.get(a.storage_key);
   const inline = /^(image\/|application\/pdf)/.test(a.content_type);
   reply

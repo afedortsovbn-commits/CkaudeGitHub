@@ -172,7 +172,7 @@ export class TelephonyController {
               CASE WHEN c.connected_at IS NULL THEN 0
                    ELSE EXTRACT(EPOCH FROM (COALESCE(c.ended_at, now()) - c.connected_at))::int END AS talk_s,
               COALESCE((SELECT json_agg(json_build_object('id', r.id, 'kind', r.kind, 'status', r.status, 'durationS', r.duration_s,
-                          'sizeBytes', r.size_bytes) ORDER BY r.created_at)
+                          'sizeBytes', r.size_bytes, 'deletedAt', r.deleted_at) ORDER BY r.created_at)
                           FROM call_recording r WHERE r.call_id = c.id), '[]') AS recordings,
               COALESCE((SELECT json_agg(json_build_object('at', e.at, 'type', e.type, 'userName', eu.full_name,
                           'data', e.data) ORDER BY e.at)
@@ -188,13 +188,19 @@ export class TelephonyController {
   @Get('recordings/:id')
   @RequirePerm('conversations.work', 'supervisor.monitor')
   async recording(@CurrentUser() p: Principal, @Param('id') id: string, @Res() reply: FastifyReply) {
-    const r = await one<{ conversation_id: string; storage_key: string | null; status: string }>(
+    const r = await one<{
+      conversation_id: string;
+      storage_key: string | null;
+      status: string;
+      deleted_at: Date | null;
+    }>(
       this.ctx.pool,
-      `SELECT conversation_id, storage_key, status FROM call_recording WHERE id = $1`,
+      `SELECT conversation_id, storage_key, status, deleted_at FROM call_recording WHERE id = $1`,
       [id],
     );
     if (!r) throw notFound('Запись');
     await this.visible(p, r.conversation_id);
+    if (r.deleted_at) throw new ApiError(410, 'deleted', 'Запись удалена: истёк срок хранения');
     if (r.status !== 'uploaded' || !r.storage_key)
       throw new ApiError(409, 'not_ready', 'Запись ещё обрабатывается');
     await withTx(this.ctx.pool, (tx) =>

@@ -171,6 +171,9 @@ export const TRANSITION_CTES = `
     SELECT s.cid, s.at AS start_at, e.at AS end_at, e.st AS end_st, (e.asg)::uuid AS end_asg,
            COALESCE(e.qid, s.qid) AS queue_id,
            EXTRACT(EPOCH FROM e.at - s.at)::float8 AS wait_s,
+           -- Постановка после перевода: обращение попало в очередь от оператора (В-51 — настраивается, считать ли
+           -- её новым поступлением).
+           COALESCE(s.pst, '') IN ('active', 'hold', 'wrap_up') AS after_transfer,
            CASE WHEN e.st IS NULL THEN 'open'
                 WHEN e.st IN ('active', 'hold', 'wrap_up') THEN 'answered'
                 WHEN e.st = 'closed' THEN 'abandoned'

@@ -14,6 +14,11 @@ export interface ScopeSubject {
   /** Право scope.all — видит всё. */
   all: boolean;
   rules: ScopeRule[];
+  /**
+   * Видит неклассифицированные обращения — без предприятия и без темы (В-52): право `scope.unclassified` у роли
+   * или отметка у сотрудника. По умолчанию нет: ограниченная область их не покрывает (кроме области «всё»).
+   */
+  unclassified?: boolean;
 }
 
 /** SQL-выражения столбцов проверяемой строки; отсутствующее измерение не ограничивает. */
@@ -22,6 +27,15 @@ export interface ScopeColumns {
   department?: string;
   /** Массив uuid[] — путь темы строки (корень…тема). */
   topicPath?: string;
+}
+
+/**
+ * Условие «строка не классифицирована» (нет предприятия и темы). Имеет смысл только для обращений — у строки
+ * должны быть оба измерения; для справочников и тикетов (предприятие всегда задано) не добавляется.
+ */
+function unclassifiedSql(cols: ScopeColumns): string | null {
+  if (!cols.enterprise || !cols.topicPath) return null;
+  return `(${cols.enterprise} IS NULL AND COALESCE(cardinality(${cols.topicPath}), 0) = 0)`;
 }
 
 export interface SqlFragment {
@@ -34,7 +48,8 @@ export interface SqlFragment {
  */
 export function scopeFilter(subject: ScopeSubject, cols: ScopeColumns, startIndex = 1): SqlFragment {
   if (subject.all) return { sql: 'TRUE', params: [] };
-  if (subject.rules.length === 0) return { sql: 'FALSE', params: [] };
+  const uncl = subject.unclassified ? unclassifiedSql(cols) : null;
+  if (subject.rules.length === 0) return { sql: uncl ? `(${uncl})` : 'FALSE', params: [] };
   const params: unknown[] = [];
   const p = (v: unknown) => {
     params.push(v);
@@ -49,6 +64,7 @@ export function scopeFilter(subject: ScopeSubject, cols: ScopeColumns, startInde
     if (r.topicIds && cols.topicPath) ands.push(`${cols.topicPath} && ${p(r.topicIds)}::uuid[]`);
     return ands.length ? `(${ands.join(' AND ')})` : 'TRUE';
   });
+  if (uncl && !ors.includes('TRUE')) ors.push(uncl);
   return { sql: `(${ors.join(' OR ')})`, params };
 }
 
@@ -58,6 +74,13 @@ export function inScope(
   row: { enterpriseId?: string | null; departmentId?: string | null; topicPath?: string[] | null },
 ): boolean {
   if (subject.all) return true;
+  if (
+    subject.unclassified &&
+    (row.enterpriseId !== undefined || row.topicPath !== undefined) &&
+    !row.enterpriseId &&
+    !row.topicPath?.length
+  )
+    return true;
   return subject.rules.some(
     (r) =>
       (!r.enterpriseIds ||

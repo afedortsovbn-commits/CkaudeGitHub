@@ -1,6 +1,7 @@
 import { AppShell, Badge, Button, Group, NavLink, ScrollArea, Text } from '@mantine/core';
 import { useEffect } from 'react';
 import { NavLink as RouterLink, Outlet, useLocation } from 'react-router';
+import { BrowserWarning } from '../components/BrowserWarning';
 import { NotificationBell } from '../components/NotificationBell';
 import { UpdateBanner } from '../components/UpdateBanner';
 import { SoftphoneCall, SoftphoneStatus } from '../components/Softphone';
@@ -44,6 +45,7 @@ const MENU: { to: string; label: string; perms?: string[] }[] = [
   { to: '/dictionaries', label: t.nav.dictionaries, perms: ['admin.directories'] },
   { to: '/settings', label: t.nav.settings, perms: ['admin.settings'] },
   { to: '/audit', label: t.nav.audit, perms: ['admin.audit'] },
+  { to: '/privacy', label: 'Персональные данные', perms: ['admin.audit', 'admin.settings', 'admin.users'] },
 ];
 
 export function Layout() {
@@ -67,7 +69,13 @@ export function Layout() {
           <Group>
             {phone && <SoftphoneStatus />}
             <NotificationBell />
-            <Text size="sm" data-testid="current-user">
+            <Text
+              size="sm"
+              data-testid="current-user"
+              component={RouterLink}
+              to="/profile"
+              title={t.nav.profile}
+            >
               {me?.fullName}
             </Text>
             {me?.roles.map((r) => (
@@ -95,6 +103,7 @@ export function Layout() {
         </ScrollArea>
       </AppShell.Navbar>
       <AppShell.Main>
+        <BrowserWarning />
         <UpdateBanner />
         <Outlet />
         {phone && <SoftphoneCall />}

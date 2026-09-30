@@ -8,6 +8,8 @@ import { createRoot } from 'react-dom/client';
 import { BrowserRouter, Route, Routes, useLocation } from 'react-router';
 import { AuthProvider, useAuth } from './lib/auth';
 import { AuditPage, SettingsPage } from './pages/AdminPages';
+import { ProfilePage } from './pages/ProfilePage';
+import { PrivacyPage } from './pages/PrivacyPage';
 import { HomePage, Layout } from './pages/Layout';
 import { LoginPage } from './pages/LoginPage';
 import { MatrixPage } from './pages/MatrixPage';
@@ -83,6 +85,8 @@ function App() {
         <Route path="dictionaries" element={<DictionariesPage />} />
         <Route path="settings" element={<SettingsPage />} />
         <Route path="audit" element={<AuditPage />} />
+        <Route path="profile" element={<ProfilePage />} />
+        <Route path="privacy" element={<PrivacyPage />} />
         <Route path="*" element={<HomePage />} />
       </Route>
     </Routes>

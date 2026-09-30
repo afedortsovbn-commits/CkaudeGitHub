@@ -12,9 +12,26 @@ export interface Me {
 interface AuthState {
   me: Me | null;
   loading: boolean;
-  login(email: string, password: string): Promise<void>;
+  /** Вход по паролю; если нужна вторая ступень — возвращает, что показать (код или настройку 2FA). */
+  login(email: string, password: string): Promise<MfaStep | null>;
+  loginTotp(mfaToken: string, code: string): Promise<void>;
   logout(): Promise<void>;
   can(...perms: string[]): boolean;
+}
+
+export interface MfaStep {
+  mfaToken: string;
+  /** Настройка 2FA при входе (администратору она обязательна): секрет и ссылка для QR. */
+  setup?: { secret: string; otpauthUrl: string };
+}
+
+interface LoginResponse {
+  accessToken?: string;
+  mfaRequired?: boolean;
+  mfaSetupRequired?: boolean;
+  mfaToken?: string;
+  secret?: string;
+  otpauthUrl?: string;
 }
 
 const Ctx = createContext<AuthState | null>(null);
@@ -32,8 +49,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return onSessionLost(() => setMe(null));
   }, []);
 
-  const login = useCallback(async (email: string, password: string) => {
-    const r = await api<{ accessToken: string }>('POST', '/auth/login', { email, password });
+  const login = useCallback(async (email: string, password: string): Promise<MfaStep | null> => {
+    const r = await api<LoginResponse>('POST', '/auth/login', { email, password });
+    if (r.mfaToken && (r.mfaRequired || r.mfaSetupRequired)) {
+      return {
+        mfaToken: r.mfaToken,
+        setup: r.mfaSetupRequired ? { secret: r.secret!, otpauthUrl: r.otpauthUrl! } : undefined,
+      };
+    }
+    setAccessToken(r.accessToken!);
+    setMe(await get<Me>('/auth/me'));
+    return null;
+  }, []);
+
+  const loginTotp = useCallback(async (mfaToken: string, code: string) => {
+    const r = await api<{ accessToken: string }>('POST', '/auth/login/totp', { mfaToken, code });
     setAccessToken(r.accessToken);
     setMe(await get<Me>('/auth/me'));
   }, []);
@@ -49,7 +79,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [me],
   );
 
-  return <Ctx.Provider value={{ me, loading, login, logout, can }}>{children}</Ctx.Provider>;
+  return <Ctx.Provider value={{ me, loading, login, loginTotp, logout, can }}>{children}</Ctx.Provider>;
 }
 
 export function useAuth(): AuthState {

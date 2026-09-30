@@ -576,9 +576,19 @@ export class ConversationsController {
       'SELECT kind, value FROM contact_identity WHERE contact_id = $1 ORDER BY created_at',
       [id],
     );
+    // Согласия на обработку ПДн (M-NFR-07): канал, версия текста и дата — видны в карточке клиента.
+    const consents = await rows(
+      this.ctx.pool,
+      `SELECT ch.name AS channel_name, k.text_version, k.accepted_at FROM consent k JOIN channel ch ON ch.id = k.channel_id
+        WHERE k.contact_id = $1 ORDER BY k.accepted_at DESC LIMIT 20`,
+      [id],
+    );
     return {
       ...toApi(c),
-      identities: ids.filter((i) => !['webchat', 'app'].includes(String(i.kind))).map((r) => toApi(r)),
+      identities: ids
+        .filter((i) => !['webchat', 'app'].includes(String(i.kind)) && !String(i.value).startsWith('anon:'))
+        .map((r) => toApi(r)),
+      consents: consents.map((r) => toApi(r)),
     };
   }
 

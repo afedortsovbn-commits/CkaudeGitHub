@@ -38,6 +38,16 @@ describe('deliver', () => {
       deliver({ kind: 'operator', principal: p }, ev('conversation.updated', { assigneeId: 'u1' })),
     ).not.toBeNull();
   });
+  it('неклассифицированное обращение — только с правом «видит неклассифицированные» (В-52)', () => {
+    const rules = [{ enterpriseIds: ['e2'], departmentIds: null, topicIds: null }];
+    const uncl = ev('conversation.created', { enterpriseId: null, topicPath: [] });
+    expect(deliver({ kind: 'operator', principal: op(rules) }, uncl)).toBeNull();
+    const p = op(rules);
+    p.scope.unclassified = true;
+    expect(deliver({ kind: 'operator', principal: p }, uncl)).not.toBeNull();
+    // Классифицированное чужое по-прежнему не видно.
+    expect(deliver({ kind: 'operator', principal: p }, ev('conversation.created'))).toBeNull();
+  });
   it('сотрудник без права работы с обращениями ничего не получает', () => {
     expect(
       deliver({ kind: 'operator', principal: op([], true, ['tickets.work']) }, ev('conversation.created')),
