@@ -99,6 +99,23 @@ drain() {
   done
 }
 
+# Состояние узла в dispatcher Kamailio. Сразу после set_state флаг уже «AP»; неудачные пробы OPTIONS
+# (ds_probing_threshold 2 × ds_ping_interval 5 с) переводят узел в «IP» примерно за 10 с — поэтому активным
+# считаем после трёх подтверждений подряд с интервалом 6 с (≥ 18 с наблюдения).
+dispatcher_flags() {
+  kam dispatcher.list | awk -v u="$1" '$0 ~ "URI: "u {f=1; next} f && /FLAGS:/ {print $2; exit}'
+}
+wait_dispatcher_active() {
+  local uri="$1" ok=0 deadline=$((SECONDS + HEALTH_TIMEOUT)) fl
+  while [ "$SECONDS" -lt "$deadline" ]; do
+    sleep 6
+    fl="$(dispatcher_flags "$uri")"
+    if [[ "$fl" == A* ]]; then ok=$((ok + 1)); else ok=0; fi
+    [ "$ok" -ge 3 ] && return 0
+  done
+  return 1
+}
+
 wait_ready() {
   local node="$1" kind="$2" cid deadline
   deadline=$((SECONDS + HEALTH_TIMEOUT))
@@ -192,6 +209,13 @@ for node in "${NODES[@]}"; do
     # Новый контейнер может получить другой IP: dispatcher перечитывает список (адреса разрешаются заново).
     kam dispatcher.reload >/dev/null
     kam dispatcher.set_state ap 1 "$uri" >/dev/null
+    # Узел принимает вызовы, только когда Kamailio подтвердил его пробами OPTIONS. Пока нет — к следующему узлу
+    # не переходим: осушение второго узла при неготовом первом дало бы отказ новым вызовам.
+    if ! wait_dispatcher_active "$uri"; then
+      log "$node: Kamailio не подтвердил узел активным за ${HEALTH_TIMEOUT} с — остановка (другие узлы в работе)"
+      report "{\"node\":\"$node\",\"kind\":\"$kind\",\"result\":\"not_active\",\"atStart\":\"$start_load\",\"drainS\":$drain_s}"
+      exit 1
+    fi
   else
     ops_cli turn enable "$node" >/dev/null
   fi

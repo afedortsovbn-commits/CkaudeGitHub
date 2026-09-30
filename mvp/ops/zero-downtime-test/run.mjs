@@ -362,6 +362,22 @@ sampling = false;
 await sampler;
 await nc?.close();
 
+/** Ошибки SIPp по видам с первым и последним временем (что именно не так с неудачными вызовами). */
+function sippErrorSummary(text) {
+  const kinds = new Map();
+  for (const m of text.matchAll(/(\d{2}:\d{2}:\d{2})\.\d+\t[\d.]+: ([^\n]*)/g)) {
+    const kind = m[2]
+      .replace(/Call-Id '[^']*'/, "Call-Id '…'")
+      .replace(/received '([A-Z]+|SIP\/2\.0 \d+)[\s\S]*/, "received '$1…'")
+      .slice(0, 160);
+    const k = kinds.get(kind) ?? { count: 0, first: m[1], last: m[1] };
+    k.count++;
+    k.last = m[1];
+    kinds.set(kind, k);
+  }
+  return Object.fromEntries(kinds);
+}
+
 // ---------------------------------------------------------------- проверки
 // Сообщения: всё отправленное сохранено ровно один раз (источник истины — БД).
 const stored = new Map();
@@ -434,7 +450,7 @@ const summary = {
   release: { exitCode: release.code, seconds: Math.round(release.ms / 1000), skipped: !DO_RELEASE },
   load: { operators: pages.length, concurrentCalls: N_CALLS, chats: widgetClients.length + N_TG },
   calls: {
-    sipp: { successful: calls.successful, failed: calls.failed },
+    sipp: { successful: calls.successful, failed: calls.failed, errors: sippErrorSummary(calls.errors) },
     cdr: Object.fromEntries(cdr.map(([r, n]) => [r, Number(n)])),
     droppedBySystem: cdrBad,
   },

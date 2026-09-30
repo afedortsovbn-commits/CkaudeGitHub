@@ -14,9 +14,9 @@
    `planning/sources/модули-и-указания-заказчика.md`, разделы 3 и 4. Исходные документы заказчика в `Контакт-центр/`
    не удалять и без нужды не читать — всё сведено в 01/02.
 
-## Текущее состояние (29.09.2026)
+## Текущее состояние (30.09.2026)
 
-- **Выполнены Ф0–Ф10** (PR #1–#3, #5–#12 и PR Ф10, см. `mvp/docs/PROGRESS.md`). Код — в `mvp/`, как запустить —
+- **Выполнены Ф0–Ф11** (PR #1–#3, #5–#13, #15, см. `mvp/docs/PROGRESS.md`). Код — в `mvp/`, как запустить —
   `mvp/README.md`.
 - **Ф5a** добавила телефонию: `infra/asterisk` (2 узла, образ на `andrius/asterisk:22`), `infra/kamailio` (Kamailio 6
   из RPM на AlmaLinux 9, WSS 8443, auth_ephemeral, dispatcher), coturn ×2, сервис `call-control` (ARI, активный/
@@ -57,8 +57,15 @@
   событиях тикетов, прямые переводы (`transferKind: direct`); миграция `0011` (индексы журнала, `cc_uuid_array`,
   право `reports.view`, пороги `supervisor.thresholds`, `report.*`); панель супервизора со сводкой, SL за сегодня и
   подсветкой по порогам; страницу «Отчёты». Реестр просроченных — по таблице `ticket`.
-- **Следующая — Ф11** (обновления без простоя: релизный конвейер, проверка совместимости контрактов, автотест под
-  нагрузкой), затем Ф12–Ф13 по плану.
+- **Ф11** добавила выпуск без простоя: `ops/release.sh <тег>` (предпроверки, expand-миграции с `lock_timeout`,
+  поэтапная замена в порядке 02 6.6, `app.version`, `FEATURE_FLAGS`, `MEDIA_TAG`, журнал `release_log`, `--rollback`),
+  `ops/update-media.sh` (Asterisk, coturn, NATS, Kamailio; отчёт; решение администратора при `MAX_DRAIN`), проверку
+  совместимости контрактов `pnpm compat:check --base <ref>` (`ops/compat`: типы `@cc/contracts` и OpenAPI из любой
+  git-ревизии), линтер миграций с `--base` и пометкой `-- contract-of: NNNN`, фиче-флаги (`/api/v1/features`,
+  «Настройки»), баннер новой версии и автообновление вне звонка (`apps/web/src/lib/app-version.ts`), автотест
+  `ops/zero-downtime-test/run.mjs` (10 операторов, 30 вызовов, 100 чатов во время выпуска; в CI — задача
+  `zero-downtime`, N = базовая ветка), `ops/test/kamailio-restart.mjs`. Регламент — `mvp/docs/регламент-обновления.md`.
+- **Следующая — Ф12** (доводка и приёмка, в т.ч. В-51, В-52), затем Ф13 по плану.
 - **Ответы заказчика от 30.09** (после Ф10, `sources/…`, раздел 5; 04 — В-51, В-52): решения по умолчанию подтверждены, но
   нужны **право «видит неклассифицированные обращения»** и **настраиваемые параметры SL** — включены в состав Ф12 (03).
 - Ждём от заказчика: параметры SIP-транка МТС (подключается переменной `TRUNK_HOST`), описание API Rocket Data и
@@ -69,7 +76,8 @@
 - Одна фаза = ветка `phase-NN-<кратко>` от `main` → черновой PR в `main` → CI зелёный → слияние (merge-коммит).
 - В конце фазы: раздел в `mvp/docs/PROGRESS.md`, статус в таблице раздела 2 плана, правки 02 при изменении решений,
   обновление таблицы «Состав» в `mvp/README.md`.
-- Перед пушем: `pnpm format:check lint typecheck test`, `pnpm licenses:check`, `pnpm migrations:lint`;
+- Перед пушем: `pnpm format:check lint typecheck test`, `pnpm licenses:check`, `pnpm migrations:lint --base origin/main`,
+  `pnpm test:ops`, `pnpm compat:check --base origin/main`;
   интеграционные тесты api — с `TEST_DATABASE_URL`; e2e (Playwright, `mvp/e2e`) против поднятого стека.
 - Каждый новый сервис: ≥2 экземпляра в compose, добавить в `ops/build-images.sh` (APPS) и в CI, проверить
   `ops/rollout.sh <сервис>` под нагрузкой (скрипты в `ops/test/`).
@@ -132,6 +140,16 @@
   добавлять через `Params.lazy`; параметры в `AT TIME ZONE`/сравнениях — с явным приведением типа. Тест-эталон
   (`it/reports.int.test.ts`) пишет события прямо в `event` за прошлые даты. «Настройки» отправляют только изменённые
   ключи (в `system_setting` есть служебные). Супервизор с областью не видит неклассифицированные обращения (В-52).
+- Ф11: **обновлять стек только командами компонентов** (`release.sh`, `rollout.sh`, `update-media.sh`), не общим
+  `docker compose up` — он пересоздаст разом все изменившиеся контейнеры (все узлы NATS, оба Asterisk). Запросы внутри
+  диалога к софтфону адресованы GRUU (`sip:op-…@cc.local;gr=…`) — Kamailio разрешает их `lookup("location")`
+  (`route[DLG_TO_BROWSER]`); без этого ACK не доходил и звонок рвался через 32 с. Kamailio без DNS-кэша
+  (`use_dns_cache=off`), Record-Route — по имени `SIP_ADVERTISE`. Asterisk при соединении с оператором шлёт клиенту
+  re-INVITE — сценарии SIPp с разговором брать из `talkScenario()` (`ops/test/lib/stack.mjs`). Проверки здоровья
+  образов: `--start-interval=1s`, затем раз в 10 с, `--retries=3` (частые проверки грузят CPU и «флапают»). worker
+  обрабатывает входящие параллельно по ключу «канал + отправитель» (`INBOUND_CONCURRENCY`). Новые тесты с
+  Playwright/SIPp/БД — через `ops/test/lib/stack.mjs`. Docker Hub в облаке упирается в лимит — базовые образы при
+  сборке через `mirror.gcr.io` (`--build-arg NGINX_IMAGE=…`, `KAMAILIO_RPMS_IMAGE`, `BASE_IMAGE`).
 - JetStream при старте кластера отвечает не сразу: сервисы подключаются через `connectNats` (ждёт готовности), новые
   потоки/потребители/KV создавать через `ensureStream` или обёртку `retryJs` из `service-kit`.
 - Стек для e2e Ф4/Ф5 и проверок: `COMPOSE_PROFILES=test MOCK_TELEGRAM_TAG=<тег> PUBLIC_BASE_URL=https://traefik TRUNK_HOST=trunk-sim:5060`,
