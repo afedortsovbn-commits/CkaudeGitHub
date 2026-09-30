@@ -173,8 +173,10 @@ jobs:
           echo "KAMAILIO_TAG=${KAMAILIO_TAG:-n}, WORKER_TAG=${WORKER_TAG:-n}"
           API_TAG=n MEDIA_TAG=n MOCK_TELEGRAM_TAG=n docker compose -f infra/compose/docker-compose.yml up -d --wait
       - run: cd e2e && pnpm exec playwright install --with-deps chromium
+      # Линтер миграций и совместимость контрактов уже проверены задачей checks — предпроверка выпуска их не повторяет
+      # (компилятор TypeScript на раннере отнимал CPU у стека под нагрузкой).
       - name: Обновление N → N+1 под нагрузкой — 0 обрывов, 0 потерь и дублей, 0 разлогиненных, p99 < 5 с
-        run: MEDIA_TAG=n1 MOCK_TELEGRAM_TAG=n node ops/zero-downtime-test/run.mjs n1
+        run: SKIP_COMPAT=1 MEDIA_TAG=n1 MOCK_TELEGRAM_TAG=n node ops/zero-downtime-test/run.mjs n1
       - if: always()
         uses: actions/upload-artifact@v4
         with:

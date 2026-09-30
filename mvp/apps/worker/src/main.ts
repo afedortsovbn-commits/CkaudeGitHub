@@ -28,7 +28,7 @@ const ConfigSchema = BaseConfigSchema.extend({
   /** Период обхода дедлайнов автоматизации (автозакрытие, зависшие шаги бота). */
   AUTOMATION_SWEEP_MS: z.coerce.number().int().min(200).default(2000),
   // Ф11: одновременно обрабатываемых входящих сообщений разных клиентов (порядок одного клиента сохраняется).
-  INBOUND_CONCURRENCY: z.coerce.number().int().min(1).max(32).default(4),
+  INBOUND_CONCURRENCY: z.coerce.number().int().min(1).max(32).default(8),
   // ---- Письма по тикетам 2-й линии (Ф8): SMTP заказчика. Без SMTP_HOST письма копятся в очереди. ----
   SMTP_HOST: z.preprocess((v) => (v === '' ? undefined : v), z.string().optional()),
   SMTP_PORT: z.coerce.number().int().default(25),
@@ -70,7 +70,8 @@ async function main(): Promise<void> {
   const metrics = createMetrics(config.SERVICE_NAME);
   const server = startHealthServer({ port: config.PORT, lifecycle, metrics });
 
-  const pool = createPool(config.DATABASE_URL);
+  // Соединений хватает на все одновременно обрабатываемые входящие и на фоновые задачи (outbox, автоматизация).
+  const pool = createPool(config.DATABASE_URL, { max: Math.max(10, config.INBOUND_CONCURRENCY + 4) });
   pool.on('error', (err) => logger.error({ err: String(err) }, 'ошибка соединения с PostgreSQL'));
   const nc = await connectNats({ servers: natsServers(config), name: config.SERVICE_NAME, logger });
   const jsm = await nc.jetstreamManager();

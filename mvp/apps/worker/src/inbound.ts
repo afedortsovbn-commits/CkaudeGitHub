@@ -69,7 +69,7 @@ export class InboundProcessor {
       registry: import('prom-client').Registry;
       /** Запрос бота во внешнюю систему — выполняется после фиксации транзакции (Ф7). */
       onBotHttp?: (h: BotHttp) => void;
-      /** Одновременно обрабатываемых сообщений (разных клиентов) в экземпляре; по умолчанию 4. */
+      /** Одновременно обрабатываемых сообщений (разных клиентов) в экземпляре; по умолчанию 8. */
       concurrency?: number;
     },
   ) {
@@ -105,7 +105,7 @@ export class InboundProcessor {
   }
 
   private async run(): Promise<void> {
-    const runner = new KeyedRunner(Math.max(1, this.o.concurrency ?? 4));
+    const runner = new KeyedRunner(Math.max(1, this.o.concurrency ?? 8));
     while (this.running) {
       try {
         const batch = await this.consumer!.fetch({ max_messages: 50, expires: 1000 });
@@ -119,13 +119,15 @@ export class InboundProcessor {
           await runner.push(key, () => this.handle(m));
           if (!this.running) break;
         }
-        // Остановка и следующая пачка — после завершения начатых: подтверждение только после фиксации.
-        await runner.drain();
+        // Следующая пачка запрашивается, не дожидаясь завершения начатых: медленное сообщение одного клиента
+        // не задерживает остальных (порядок внутри ключа держит runner, объём в работе — его предел).
       } catch (err) {
         this.o.logger.warn({ err: String(err) }, 'ошибка чтения потока CC_INBOUND, повтор');
         await new Promise((r) => setTimeout(r, 500));
       }
     }
+    // Остановка — после завершения начатых: подтверждение только после фиксации.
+    await runner.drain();
   }
 
   private async handle(m: JsMsg): Promise<void> {

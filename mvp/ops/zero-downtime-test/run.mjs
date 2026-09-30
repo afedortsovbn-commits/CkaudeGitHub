@@ -347,7 +347,7 @@ const release = DO_RELEASE
   : (await sleep(Number(process.env.BASELINE_S ?? 120) * 1000), { code: 0, ms: 0, skipped: true });
 const releaseEnd = Date.now();
 log(
-  `выпуск завершён: код ${release.code} за ${Math.round(release.ms / 1000)} с; идёт вызовов: ${liveCalls()}`,
+  `выпуск завершён: код ${release.code} за ${Math.round(release.ms / 1000)} с; идёт вызовов: ${await liveCalls()}`,
 );
 
 // Нагрузка ещё немного после обновления, затем остановка: новые вызовы не начинаются, идущие доживают.
