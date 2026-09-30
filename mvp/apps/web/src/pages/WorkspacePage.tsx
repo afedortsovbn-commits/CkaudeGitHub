@@ -41,7 +41,63 @@ const CHANNEL: Record<string, string> = {
   email: 'Email',
   voice: 'Звонок',
   api: 'Внешняя система',
+  review: 'Отзыв',
 };
+/** Площадки отзывов с карт (Ф13). */
+const PLATFORM: Record<string, string> = { google: 'Google Карты', yandex: 'Яндекс Карты', '2gis': '2ГИС' };
+const stars = (n: number) => `${'★'.repeat(n)}${'☆'.repeat(Math.max(0, 5 - n))}`;
+
+interface ReviewInfo {
+  id: string;
+  platform: string;
+  rating: number | null;
+  author: string | null;
+  url: string | null;
+  publishedAt: string | null;
+  locationId: string | null;
+  locationCode: string | null;
+}
+
+/** Отзыв с карт (Ф13, M-CH-10): площадка, оценка, объект, автор, ссылка на отзыв; ответ публикуется на площадке. */
+function ReviewPanel({ conv }: { conv: Row }) {
+  const r = conv.review as ReviewInfo | null;
+  if (!r) return null;
+  const low = r.rating !== null && r.rating <= 2;
+  return (
+    <Paper withBorder p="xs" data-testid="review-panel">
+      <Group justify="space-between" wrap="nowrap">
+        <Group gap="xs">
+          <Badge variant="light">{PLATFORM[r.platform] ?? r.platform}</Badge>
+          <Text
+            c={low ? 'red' : 'yellow.7'}
+            fw={700}
+            data-testid="review-rating"
+            title={`Оценка ${r.rating ?? '—'} из 5`}
+          >
+            {r.rating ? stars(r.rating) : 'без оценки'}
+          </Text>
+        </Group>
+        {r.url ? (
+          <a href={r.url} target="_blank" rel="noreferrer" data-testid="review-link">
+            Открыть на площадке ↗
+          </a>
+        ) : null}
+      </Group>
+      <Text size="xs" c="dimmed" mt={4}>
+        {r.author ?? 'Автор не указан'}
+        {r.publishedAt
+          ? ` · ${new Date(r.publishedAt).toLocaleString('ru-RU', { timeZone: 'Europe/Minsk' })}`
+          : ''}
+        {' · объект: '}
+        <span data-testid="review-object">
+          {conv.objectName
+            ? String(conv.objectName)
+            : `не сопоставлен (точка ${r.locationCode ?? r.locationId ?? '—'})`}
+        </span>
+      </Text>
+    </Paper>
+  );
+}
 const STATUS: Record<string, string> = {
   bot: 'У бота / в IVR',
   offered: 'Предложено',
@@ -193,6 +249,11 @@ function List({
             <Badge size="xs" variant="light">
               {CHANNEL[String(c.channelKind)] ?? String(c.channelKind)}
             </Badge>
+            {c.reviewRating ? (
+              <Badge size="xs" variant="outline" color={Number(c.reviewRating) <= 2 ? 'red' : 'yellow'}>
+                {stars(Number(c.reviewRating))}
+              </Badge>
+            ) : null}
             {c.isImportant ? (
               <Badge size="xs" color="red">
                 особо важное
@@ -276,6 +337,13 @@ function autoLabel(m: Row): string {
   if (!meta?.auto) return '';
   if (meta.auto === 'bot') return meta.external ? `Внешний бот · ${meta.external}` : 'Бот';
   return 'Автоответ';
+}
+
+/** Отзыв (Ф13): оценка этой редакции и отметка «изменён автором». */
+function reviewNote(m: Row): string {
+  const r = (m.meta as { review?: { rating: number | null; edited?: boolean } } | undefined)?.review;
+  if (!r) return '';
+  return `${r.rating ? ` · ${stars(r.rating)}` : ''}${r.edited ? ' · отзыв изменён автором' : ''}`;
 }
 
 /** Автор заметки: сотрудник, внешняя система (ключ API, Ф9) или система. */
@@ -377,7 +445,7 @@ function Messages({ conv, typing, onTyping }: { conv: Row; typing: boolean; onTy
                 {dir !== 'system' && (
                   <Text size="xs" c="dimmed">
                     {dir === 'in'
-                      ? String(conv.contactName)
+                      ? `${String(conv.contactName)}${reviewNote(m)}`
                       : dir === 'note'
                         ? `Заметка · ${noteAuthor(m)}`
                         : autoLabel(m) || String(m.authorName ?? '')}{' '}
@@ -475,7 +543,9 @@ function Messages({ conv, typing, onTyping }: { conv: Row; typing: boolean; onTy
           placeholder={
             note
               ? 'Внутренняя заметка (клиент её не увидит)'
-              : 'Ответ клиенту… («/» — шаблоны, Enter — отправить, Shift+Enter — новая строка)'
+              : conv.channelKind === 'review'
+                ? 'Публичный ответ на отзыв — будет опубликован на площадке (только текст)…'
+                : 'Ответ клиенту… («/» — шаблоны, Enter — отправить, Shift+Enter — новая строка)'
           }
           value={text}
           data-testid="reply"
@@ -507,7 +577,13 @@ function Messages({ conv, typing, onTyping }: { conv: Row; typing: boolean; onTy
             }}
           >
             {(props) => (
-              <Button {...props} variant="default" size="xs" data-testid="attach">
+              <Button
+                {...props}
+                variant="default"
+                size="xs"
+                data-testid="attach"
+                disabled={!note && conv.channelKind === 'review'}
+              >
                 📎 Файл
               </Button>
             )}
@@ -1225,6 +1301,7 @@ export function WorkspacePage() {
                 </Group>
               )}
             </Group>
+            {conv.data.channelKind === 'review' && <ReviewPanel conv={conv.data} />}
             <Messages
               conv={conv.data}
               typing={typingContact === conv.data.contactId}

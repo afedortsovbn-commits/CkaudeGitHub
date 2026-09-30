@@ -50,8 +50,11 @@ export interface EmailMeta {
   references: string[];
 }
 
-/** Каналы, доставку в которые выполняют коннекторы (веб-чат и приложение доставляет realtime). */
-export const CONNECTOR_CHANNELS = ['telegram', 'email'] as const;
+/**
+ * Каналы, доставку в которые выполняют коннекторы (веб-чат и приложение доставляет realtime).
+ * Ф13: review — ответ на отзыв уходит в Rocket Data (connector-rocketdata).
+ */
+export const CONNECTOR_CHANNELS = ['telegram', 'email', 'review'] as const;
 export type ConnectorChannel = (typeof CONNECTOR_CHANNELS)[number];
 
 /**
@@ -64,7 +67,7 @@ export const OutboundMessageSchema = z.object({
   conversationId: z.string().uuid(),
   channelId: z.string().uuid(),
   channelKind: z.enum(CONNECTOR_CHANNELS),
-  /** Адрес клиента в канале: chat id Telegram или email. */
+  /** Адрес клиента в канале: chat id Telegram, email или id отзыва в Rocket Data (review). */
   to: z.string().min(1),
   body: z.string().default(''),
   attachments: z
@@ -156,6 +159,8 @@ export interface MessageMeta {
   csat?: boolean;
   /** Сообщение или заметка от внешней системы по ключу API (Ф9): название ключа. */
   external?: string;
+  /** Текст отзыва с карт (Ф13): оценка этой редакции отзыва; edited — автор изменил отзыв. */
+  review?: { rating: number | null; edited?: boolean };
 }
 
 /** Типы событий обращений (payload — ConversationRef [+ message]). */
@@ -170,7 +175,14 @@ export const CONVERSATION_EVENTS = {
 } as const;
 
 /** Ключи config канала, которые хранятся зашифрованными и никогда не отдаются в интерфейс. */
-export const CHANNEL_SECRET_KEYS = ['bot_token', 'webhook_secret', 'imap_password', 'smtp_password'] as const;
+export const CHANNEL_SECRET_KEYS = [
+  'bot_token',
+  'webhook_secret',
+  'imap_password',
+  'smtp_password',
+  // Ф13: токен API Rocket Data.
+  'api_token',
+] as const;
 /** Маска секрета в ответах api; пришедшая обратно маска означает «не менять». */
 export const SECRET_MASK = '********';
 

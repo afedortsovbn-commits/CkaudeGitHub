@@ -164,7 +164,7 @@ export class InboundProcessor {
       await client.query('COMMIT');
       m.ack();
       if (http) this.o.onBotHttp?.(http);
-      this.processed.inc({ result: r.duplicate ? 'duplicate' : 'ok' });
+      this.processed.inc({ result: r.skipped ? 'skipped' : r.duplicate ? 'duplicate' : 'ok' });
     } catch (err) {
       await client.query('ROLLBACK').catch(() => undefined);
       const attempt = m.info.redeliveryCount;

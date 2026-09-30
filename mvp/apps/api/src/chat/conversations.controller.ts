@@ -71,7 +71,7 @@ interface Conv {
 const LIST_SQL = `SELECT c.id, c.status, c.channel_kind, c.queue_id, c.assignee_id, c.topic_id, c.enterprise_id,
     c.is_important, c.is_urgent, c.callback_requested, c.last_message_at, c.created_at, c.assigned_at, c.closed_at, c.seq, c.contact_id,
     COALESCE(ct.display_name, ct.phone, ct.email, 'Клиент') AS contact_name, q.name AS queue_name, u.full_name AS assignee_name,
-    t.name AS topic_name,
+    t.name AS topic_name, (c.channel_meta #>> '{review,rating}')::int AS review_rating,
     (SELECT left(m.body, 140) FROM message m WHERE m.conversation_id = c.id AND m.direction IN ('in','out')
       ORDER BY m.sent_at DESC, m.seq DESC LIMIT 1) AS last_message,
     (SELECT m.direction FROM message m WHERE m.conversation_id = c.id AND m.direction IN ('in','out')
@@ -196,7 +196,10 @@ export class ConversationsController {
       this.ctx.pool,
       `SELECT fields, topic_path, department_id, object_id, disposition_id, important_manual, version, channel_id,
               (SELECT r.score FROM csat_rating r WHERE r.conversation_id = conversation.id AND r.call_id IS NULL
-                ORDER BY r.created_at DESC LIMIT 1) AS chat_csat
+                ORDER BY r.created_at DESC LIMIT 1) AS chat_csat,
+              -- Ф13: отзыв с карт (площадка, оценка, автор, ссылка) и объект — для карточки отзыва у оператора.
+              channel_meta -> 'review' AS review,
+              (SELECT o.name FROM service_object o WHERE o.id = conversation.object_id) AS object_name
          FROM conversation WHERE id = $1`,
       [id],
     );

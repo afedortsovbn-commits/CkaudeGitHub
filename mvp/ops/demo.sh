@@ -24,13 +24,13 @@ dc() { docker compose -f "$COMPOSE_FILE" "$@"; }
 
 build_if_missing() {
   local missing=0 s
-  for s in api worker router realtime call-control connector-telegram connector-email web mock-telegram mock-selfservice; do
+  for s in api worker router realtime call-control connector-telegram connector-email connector-rocketdata web mock-telegram mock-selfservice; do
     docker image inspect "cc/$s:$TAG" >/dev/null 2>&1 || missing=1
   done
   for s in asterisk kamailio; do docker image inspect "cc/$s:$MEDIA_TAG" >/dev/null 2>&1 || missing=1; done
   if [ "$missing" = 1 ]; then
     echo "сборка образов cc/*:$TAG …"
-    APPS="api worker router realtime call-control connector-telegram connector-email web mock-telegram mock-selfservice" \
+    APPS="api worker router realtime call-control connector-telegram connector-email connector-rocketdata web mock-telegram mock-selfservice" \
       ops/build-images.sh "$TAG"
   fi
 }

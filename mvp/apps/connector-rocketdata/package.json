@@ -1,27 +1,27 @@
 {
-  "name": "@cc/domain",
+  "name": "@cc/connector-rocketdata",
   "version": "0.1.0",
   "private": true,
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "main": "dist/main.js",
   "files": [
     "dist"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run --passWithNoTests"
+    "test": "vitest run",
+    "start": "node dist/main.js"
   },
   "dependencies": {
-    "@cc/auth": "workspace:*",
+    "@cc/connector-kit": "workspace:*",
     "@cc/contracts": "workspace:*",
-    "@cc/flow-engine": "workspace:*",
+    "@cc/db": "workspace:*",
     "@cc/service-kit": "workspace:*",
-    "papaparse": "5.5.5",
-    "pg": "8.23.0"
+    "nats": "2.29.3",
+    "pg": "8.23.0",
+    "zod": "3.25.76"
   },
   "devDependencies": {
-    "@types/papaparse": "5.5.2",
     "@types/pg": "8.23.1"
   }
 }

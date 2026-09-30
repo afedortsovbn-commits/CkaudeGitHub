@@ -186,6 +186,12 @@ export function DepartmentsPage() {
   );
 }
 
+const SOURCE: Record<string, string> = {
+  manual: 'вручную',
+  import: 'импорт CSV',
+  sync: 'синхронизация',
+};
+
 export function ObjectsPage() {
   const enterprises = useList('/dict/enterprises?active=all');
   const [importOpen, setImportOpen] = useState(false);
@@ -211,7 +217,16 @@ export function ObjectsPage() {
             label: 'Предприятие',
             render: (r) => entName.get(String(r.enterpriseId)) ?? '',
           },
-          { key: 'source', label: 'Источник' },
+          {
+            key: 'source',
+            label: 'Источник',
+            render: (r) => SOURCE[String(r.source)] ?? String(r.source ?? ''),
+          },
+          {
+            key: 'rocketdata',
+            label: 'Точка Rocket Data',
+            render: (r) => String((r.externalIds as Record<string, string> | undefined)?.rocketdata ?? ''),
+          },
         ]}
         fields={[
           {
@@ -224,7 +239,23 @@ export function ObjectsPage() {
           { key: 'code', label: 'Код', required: true },
           { key: 'name', label: 'Название', required: true },
           { key: 'address', label: 'Адрес' },
+          {
+            key: 'rocketdata',
+            label: 'Идентификатор точки в Rocket Data',
+            description: 'По нему отзыв с карт сопоставляется объекту (иначе — по коду объекта)',
+          },
         ]}
+        toForm={(r) => ({
+          ...r,
+          rocketdata: (r.externalIds as Record<string, string> | undefined)?.rocketdata ?? '',
+        })}
+        fromForm={(v, editing) => {
+          const { rocketdata, ...rest } = v;
+          const ext = { ...((editing?.externalIds ?? {}) as Record<string, string>) };
+          if (rocketdata) ext.rocketdata = String(rocketdata);
+          else delete ext.rocketdata;
+          return { ...rest, externalIds: ext };
+        }}
         toolbar={
           <Button variant="outline" onClick={() => setImportOpen(true)}>
             Импорт CSV

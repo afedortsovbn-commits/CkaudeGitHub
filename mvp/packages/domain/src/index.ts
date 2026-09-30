@@ -8,3 +8,5 @@ export * from './ticket-time';
 export * from './ticket-notify';
 export * from './tickets';
 export * from './webhooks';
+export * from './reviews';
+export * from './objects-sync';

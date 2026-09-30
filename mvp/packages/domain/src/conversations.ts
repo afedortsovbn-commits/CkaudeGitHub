@@ -15,6 +15,7 @@ import {
 } from '@cc/contracts';
 import { enqueueCommand, enqueueEvent } from '@cc/service-kit';
 import type { PoolClient } from 'pg';
+import { attachReview, refreshReview, reviewKnown, reviewOf } from './reviews';
 import { notifyClientMessage } from './tickets';
 
 interface ConvRow {
@@ -232,13 +233,23 @@ export async function resolveRouting(
 export async function ingestInbound(
   tx: PoolClient,
   m: InboundMessage,
-): Promise<{ conversationId: string; created: boolean; duplicate: boolean; messageId?: string | null }> {
+): Promise<{
+  conversationId: string;
+  created: boolean;
+  duplicate: boolean;
+  messageId?: string | null;
+  /** Ф13: отзыв, уже отвеченный на площадке вне системы, обращения не создаёт. */
+  skipped?: boolean;
+}> {
   await tx.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`${m.identity.kind}:${m.identity.value}`]);
   const dup = await tx.query<{ conversation_id: string }>(
     'SELECT conversation_id FROM message WHERE channel_kind = $1 AND external_id = $2',
     [m.channelKind, m.externalId],
   );
   if (dup.rows[0]) return { conversationId: dup.rows[0].conversation_id, created: false, duplicate: true };
+  const review = reviewOf(m);
+  if (review?.answered && review.skipAnswered && !(await reviewKnown(tx, m.channelId, review.id)))
+    return { conversationId: '', created: false, duplicate: true, skipped: true };
 
   let contactId = m.contactId;
   if (!contactId) {
@@ -323,8 +334,20 @@ export async function ingestInbound(
         ext ? JSON.stringify({ external: ext }) : null,
       ],
     );
+    // Отзыв (Ф13): объект и предприятие по точке Rocket Data — до события «создано» (измерения отчётов и прав).
+    if (review) {
+      const warn = await attachReview(tx, conversationId, review);
+      if (warn)
+        await appendMessage(tx, {
+          conversationId,
+          direction: 'system',
+          body: warn,
+          channelKind: m.channelKind,
+        });
+    }
     await emitConversation(tx, CONVERSATION_EVENTS.created, await loadRef(tx, conversationId));
   } else {
+    if (review) await refreshReview(tx, conversationId, review);
     // Клиент ответил — предупреждение о молчании (автозакрытие, M-AUTO-02) больше не действует.
     await tx.query(
       `UPDATE conversation SET auto_state = auto_state - 'inactivityWarnedAt' WHERE id = $1 AND auto_state ? 'inactivityWarnedAt'`,
@@ -348,6 +371,7 @@ export async function ingestInbound(
     externalId: m.externalId,
     sentAt: new Date(m.receivedAt),
     id: m.id,
+    ...(review ? { meta: { review: { rating: review.rating, edited: !created } } } : {}),
   });
   if (msg && !created) {
     // Обращение ждёт 2-ю линию: сообщение остаётся в обращении, видно в тикете, назначенным — уведомление;
@@ -390,19 +414,35 @@ async function queueOutbound(
   const { rows } = await tx.query<{
     channel_id: string;
     contact_id: string;
-    channel_meta: { subject?: string; lastMessageId?: string | null; references?: string[] };
+    channel_meta: {
+      subject?: string;
+      lastMessageId?: string | null;
+      references?: string[];
+      review?: { id?: string };
+    };
   }>('SELECT channel_id, contact_id, channel_meta FROM conversation WHERE id = $1', [msg.conversationId]);
   const c = rows[0]!;
-  const ident = await tx.query<{ value: string }>(
-    `SELECT value FROM contact_identity WHERE contact_id = $1 AND kind = $2 ORDER BY created_at DESC LIMIT 1`,
-    [c.contact_id, kind],
-  );
-  if (!ident.rows[0]) {
-    await tx.query(
-      `UPDATE message SET delivery_status = 'failed', delivery_error = 'У клиента нет адреса в этом канале' WHERE id = $1`,
-      [msg.id],
+  const fail = async (error: string) => {
+    await tx.query(`UPDATE message SET delivery_status = 'failed', delivery_error = $2 WHERE id = $1`, [
+      msg.id,
+      error,
+    ]);
+    return 'failed' as const;
+  };
+  // Ответ на отзыв (Ф13) адресуется самому отзыву в Rocket Data; площадки принимают только текст.
+  let to: string | undefined;
+  if (kind === 'review') {
+    to = c.channel_meta?.review?.id;
+    if (!to) return fail('Нет идентификатора отзыва в Rocket Data');
+    if (msg.attachments.length) return fail('Площадка отзывов не принимает файлы — ответьте текстом');
+    if (!msg.body.trim()) return fail('Пустой ответ на отзыв');
+  } else {
+    const ident = await tx.query<{ value: string }>(
+      `SELECT value FROM contact_identity WHERE contact_id = $1 AND kind = $2 ORDER BY created_at DESC LIMIT 1`,
+      [c.contact_id, kind],
     );
-    return 'failed';
+    to = ident.rows[0]?.value;
+    if (!to) return fail('У клиента нет адреса в этом канале');
   }
   const meta = c.channel_meta ?? {};
   const subject = meta.subject
@@ -415,7 +455,7 @@ async function queueOutbound(
     conversationId: msg.conversationId,
     channelId: c.channel_id,
     channelKind: kind,
-    to: ident.rows[0].value,
+    to,
     body: msg.body,
     attachments: msg.attachments,
     ...(msg.meta?.buttons?.length ? { buttons: msg.meta.buttons.map((b) => b.label) } : {}),

@@ -19,6 +19,7 @@ import { z } from 'zod';
 import { Automation } from './automation';
 import { DeliveryProcessor } from './delivery';
 import { InboundProcessor } from './inbound';
+import { ObjectSyncJob } from './objects-sync';
 import { TicketMailer } from './tickets';
 import { WebhookProcessor } from './webhooks';
 
@@ -53,7 +54,10 @@ const ConfigSchema = BaseConfigSchema.extend({
   WEBHOOK_MAX_AGE_H: z.coerce.number().min(0.01).default(72),
 });
 
-/** worker: фоновая обработка — входящие сообщения каналов, автоответы и боты (Ф7), статусы доставки, письма 2-й линии (Ф8), webhooks и внешние боты (Ф9), outbox-relay. */
+/**
+ * worker: фоновая обработка — входящие сообщения каналов, автоответы и боты (Ф7), статусы доставки, письма 2-й линии
+ * (Ф8), webhooks и внешние боты (Ф9), синхронизация справочника объектов (Ф13), outbox-relay.
+ */
 async function main(): Promise<void> {
   const config = loadConfig(ConfigSchema);
   const logger = createLogger({
@@ -126,6 +130,9 @@ async function main(): Promise<void> {
     },
   });
   await webhooks.start();
+  // Ф13: ежедневная синхронизация справочника объектов из внешней системы (M-ORG-06).
+  const objectSync = new ObjectSyncJob({ pool, boss, logger, secretsKey: config.SECRETS_KEY });
+  await objectSync.start();
 
   lifecycle.onShutdown('inbound', 20, () => inbound.stop());
   lifecycle.onShutdown('delivery', 20, () => delivery.stop());

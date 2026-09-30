@@ -29,7 +29,7 @@ ENV_FILE="$(dirname "$COMPOSE_FILE")/.env"
 MODE=release
 if [ "${1:-}" = --rollback ]; then MODE=rollback; shift; fi
 TAG="${1:?укажите тег образов: ops/release.sh <тег>}"
-SERVICES="${SERVICES:-connector-telegram connector-email worker router realtime api call-control web}"
+SERVICES="${SERVICES:-connector-telegram connector-email connector-rocketdata worker router realtime api call-control web}"
 REPORT_DIR="${REPORT_DIR:-out/releases}"
 export MIGRATION_LOCK_TIMEOUT_MS="${MIGRATION_LOCK_TIMEOUT_MS:-5000}"
 dc() { docker compose -f "$COMPOSE_FILE" "$@"; }
@@ -170,7 +170,7 @@ fi
 if [ "${PERSIST_TAGS:-1}" = 1 ]; then
   touch "$ENV_FILE"
   # Теги отдельных сервисов перекрыли бы общий — удаляем их, общий тег — новый.
-  sed -i -E '/^(API|WORKER|ROUTER|REALTIME|WEB|CONNECTOR_TELEGRAM|CONNECTOR_EMAIL|CALL_CONTROL)_TAG=/d' "$ENV_FILE"
+  sed -i -E '/^(API|WORKER|ROUTER|REALTIME|WEB|CONNECTOR_TELEGRAM|CONNECTOR_EMAIL|CONNECTOR_ROCKETDATA|CALL_CONTROL)_TAG=/d' "$ENV_FILE"
   echo "API_TAG=$TAG" >>"$ENV_FILE"
   if [ -n "${MEDIA_TAG:-}" ] && [ "$MODE" = release ]; then
     sed -i -E '/^MEDIA_TAG=/d' "$ENV_FILE"

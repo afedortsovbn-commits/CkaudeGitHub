@@ -49,7 +49,8 @@ export const SECTIONS: Section[] = [
     table: 'system_setting',
     order: 'key',
     pk: 'key',
-    where: `t.key NOT IN ('ticket.digest_last_date')`,
+    // Источник синхронизации объектов (адрес и токен, Ф13) — свой у каждого стенда.
+    where: `t.key NOT IN ('ticket.digest_last_date', 'objects.sync')`,
     exclude: ['updated_at'],
   },
   { key: 'schedules', title: 'Расписания', table: 'schedule', order: 'name', natural: ['name'] },

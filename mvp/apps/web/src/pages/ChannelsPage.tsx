@@ -17,6 +17,7 @@ const KINDS = [
   { value: 'email', label: 'Электронная почта' },
   { value: 'voice', label: 'Телефон' },
   { value: 'api', label: 'Внешняя система (API)' },
+  { value: 'review', label: 'Отзывы с карт (Rocket Data)' },
 ];
 const kindLabel = (k: unknown) => KINDS.find((x) => x.value === k)?.label ?? String(k ?? '');
 
@@ -24,6 +25,9 @@ const isChat = (v: Record<string, unknown>) => v.kind === 'webchat' || v.kind ==
 const isTg = (v: Record<string, unknown>) => v.kind === 'telegram';
 const isMail = (v: Record<string, unknown>) => v.kind === 'email';
 const isVoice = (v: Record<string, unknown>) => v.kind === 'voice';
+const isReview = (v: Record<string, unknown>) => v.kind === 'review';
+/** Каналы, которые обслуживает коннектор: у них есть состояние подключения и журнал обмена. */
+const hasConnector = (k: unknown) => k === 'telegram' || k === 'email' || k === 'review';
 
 const STATUS: Record<string, { color: string; label: string }> = {
   connected: { color: 'green', label: 'Подключён' },
@@ -38,7 +42,7 @@ const secret = (v: unknown, isCreate: boolean) => (v ? String(v) : isCreate ? un
 const secretHint = 'При изменении оставьте пустым, чтобы не менять';
 
 function ChannelStatus({ row }: { row: Row }) {
-  if (row.kind !== 'telegram' && row.kind !== 'email') return null;
+  if (!hasConnector(row.kind)) return null;
   const s = STATUS[str(row.status)] ?? { color: 'gray', label: 'Нет данных' };
   return (
     <Tooltip label={str(row.statusDetail) || s.label} multiline maw={400} disabled={!row.statusDetail}>
@@ -156,6 +160,48 @@ const FIELDS: FormField[] = [
     show: isVoice,
   },
   { key: 'record', label: 'Записывать разговоры', type: 'switch', show: isVoice },
+  // Отзывы с карт через Rocket Data (Ф13)
+  {
+    key: 'rdApiUrl',
+    label: 'Адрес API Rocket Data',
+    required: true,
+    placeholder: 'https://api.rocketdata.io',
+    description: 'Выход в интернет — только к этому адресу (прокси — переменная ROCKETDATA_PROXY коннектора)',
+    show: isReview,
+  },
+  {
+    key: 'rdApiToken',
+    label: 'Токен API Rocket Data',
+    type: 'password',
+    description: `Хранится в зашифрованном виде. ${secretHint}`,
+    show: isReview,
+  },
+  {
+    key: 'rdPollS',
+    label: 'Проверять новые отзывы раз в, с',
+    type: 'number',
+    required: true,
+    show: isReview,
+  },
+  {
+    key: 'rdInitialDays',
+    label: 'При подключении загрузить отзывы за последние, дней',
+    type: 'number',
+    show: isReview,
+  },
+  {
+    key: 'rdLowRating',
+    label: 'Срочные — отзывы с оценкой не выше',
+    type: 'number',
+    description: 'Срочные обращения идут первыми в очереди; 0 — не выделять',
+    show: isReview,
+  },
+  {
+    key: 'rdSkipAnswered',
+    label: 'Не создавать обращения по отзывам, на которые уже ответили на площадке',
+    type: 'switch',
+    show: isReview,
+  },
   // Email
   { key: 'address', label: 'Адрес ящика', required: true, show: isMail },
   { key: 'displayName', label: 'Имя отправителя в ответах', show: isMail },
@@ -210,6 +256,11 @@ const toForm = (r: Row) => {
     tlsInsecure: c.tls_insecure,
     dids: ((c.dids as string[]) ?? []).join(', '),
     record: c.record ?? true,
+    rdApiUrl: c.api_url,
+    rdPollS: c.poll_interval_s ?? 300,
+    rdInitialDays: c.initial_days ?? 7,
+    rdLowRating: c.low_rating_max ?? 2,
+    rdSkipAnswered: c.skip_answered ?? true,
     // секреты не показываются: пустое поле — «не менять»
   };
 };
@@ -235,6 +286,18 @@ const fromForm = (v: Record<string, unknown>, editing: Row | null) => {
         bot_token: secret(v.botToken, isCreate),
         mode: v.tgMode ?? 'polling',
         ...(v.apiRoot ? { api_root: v.apiRoot } : {}),
+      },
+    };
+  if (k === 'review')
+    return {
+      ...base,
+      config: {
+        api_url: v.rdApiUrl,
+        api_token: secret(v.rdApiToken, isCreate),
+        poll_interval_s: Number(v.rdPollS ?? 300),
+        initial_days: Number(v.rdInitialDays ?? 7),
+        low_rating_max: Number(v.rdLowRating ?? 2),
+        skip_answered: !!v.rdSkipAnswered,
       },
     };
   if (k === 'voice')
@@ -295,6 +358,10 @@ const CREATE_DEFAULTS = {
   smtpPort: 465,
   smtpSecure: true,
   record: true,
+  rdPollS: 300,
+  rdInitialDays: 7,
+  rdLowRating: 2,
+  rdSkipAnswered: true,
 };
 
 /** Экземпляры каналов: веб-чат, чат в приложении, Telegram-боты, почтовые ящики (M-CH-07). */
@@ -323,6 +390,7 @@ export function ChannelsPage() {
               if (r.kind === 'voice') return ((c.dids as string[]) ?? []).join(', ');
               if (r.kind === 'telegram') return c.mode === 'webhook' ? 'webhook' : 'опрос';
               if (r.kind === 'api') return 'по ключу API';
+              if (r.kind === 'review') return str(c.api_url);
               return <Code>{str(c.public_key)}</Code>;
             },
           },
@@ -339,7 +407,7 @@ export function ChannelsPage() {
           { key: 'conn', label: 'Подключение', render: (r) => <ChannelStatus row={r} /> },
         ]}
         rowActions={(r) =>
-          r.kind === 'telegram' || r.kind === 'email' ? (
+          hasConnector(r.kind) ? (
             <Button size="xs" variant="subtle" onClick={() => setLogOf(r)}>
               Журнал
             </Button>
@@ -357,7 +425,7 @@ export function ChannelsPage() {
             type: 'select',
             options: options(bots.data),
             description: 'Новые обращения сначала ведёт бот (опубликованная версия), затем — оператор',
-            show: (v) => v.kind !== 'voice',
+            show: (v) => v.kind !== 'voice' && v.kind !== 'review',
           },
           {
             key: 'botWebhookId',
@@ -365,7 +433,7 @@ export function ChannelsPage() {
             type: 'select',
             options: options(extBots.data),
             description: 'Бот внешней системы (Bot Gateway); действует, если сценарный бот не выбран',
-            show: (v) => v.kind !== 'voice' && !v.botFlowId,
+            show: (v) => v.kind !== 'voice' && v.kind !== 'review' && !v.botFlowId,
           },
           ...FIELDS.slice(2),
         ]}
@@ -380,7 +448,9 @@ export function ChannelsPage() {
         </a>
         , для WebView приложения — <Code>/widget/mobile.html?key=&lt;ключ&gt;</Code>. Telegram-бот и почтовый
         ящик начинают работать без перезапуска через несколько секунд после сохранения; состояние подключения
-        и журнал — в колонке «Подключение» и по кнопке «Журнал».
+        и журнал — в колонке «Подключение» и по кнопке «Журнал». Отзывы с карт (Rocket Data) становятся
+        обращениями предприятия объекта: точка Rocket Data сопоставляется объекту по идентификатору
+        «rocketdata» или коду объекта; ответ оператора публикуется на площадке.
       </Text>
     </>
   );

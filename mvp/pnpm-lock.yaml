@@ -197,6 +197,34 @@ importers:
         specifier: 8.23.1
         version: 8.23.1
 
+  apps/connector-rocketdata:
+    dependencies:
+      '@cc/connector-kit':
+        specifier: workspace:*
+        version: link:../../packages/connector-kit
+      '@cc/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@cc/db':
+        specifier: workspace:*
+        version: link:../../packages/db
+      '@cc/service-kit':
+        specifier: workspace:*
+        version: link:../../packages/service-kit
+      nats:
+        specifier: 2.29.3
+        version: 2.29.3
+      pg:
+        specifier: 8.23.0
+        version: 8.23.0
+      zod:
+        specifier: 3.25.76
+        version: 3.25.76
+    devDependencies:
+      '@types/pg':
+        specifier: 8.23.1
+        version: 8.23.1
+
   apps/connector-telegram:
     dependencies:
       '@cc/connector-kit':
@@ -479,10 +507,16 @@ importers:
       '@cc/service-kit':
         specifier: workspace:*
         version: link:../service-kit
+      papaparse:
+        specifier: 5.5.5
+        version: 5.5.5
       pg:
         specifier: 8.23.0
         version: 8.23.0
     devDependencies:
+      '@types/papaparse':
+        specifier: 5.5.2
+        version: 5.5.2
       '@types/pg':
         specifier: 8.23.1
         version: 8.23.1
