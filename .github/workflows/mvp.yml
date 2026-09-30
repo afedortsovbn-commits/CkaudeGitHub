@@ -162,9 +162,16 @@ jobs:
           pnpm install --frozen-lockfile
           APPS="api worker router realtime call-control connector-telegram connector-email web" MEDIA_TAG=n1 \
             EXTRA_MIGRATIONS_DIR=ops/zero-downtime-test/probe PREV_WEB_IMAGE=cc/web:n ops/build-images.sh n1
-      # Kamailio (класс C) обновляется отдельно в окно (регламент, разд. 4) — здесь сразу версии N+1: осушение
-      # Asterisk под нагрузкой опирается на исправленный dispatcher (без DNS-кэша).
-      - run: API_TAG=n MEDIA_TAG=n KAMAILIO_TAG=n1 MOCK_TELEGRAM_TAG=n docker compose -f infra/compose/docker-compose.yml up -d --wait
+      # Компоненты, чьи известные дефекты версии N исправлены в Ф11, стартуют сразу версией N+1 — только пока базовая
+      # ветка их не содержит (условие само перестаёт срабатывать после слияния):
+      #  - Kamailio (класс C, обновляется отдельно в окно): dispatcher без DNS-кэша — иначе осушение Asterisk даёт 503;
+      #  - worker: последовательная обработка входящих не держит 17 сообщ./с — хвост копится ещё до замены.
+      - name: Стек версии N
+        run: |
+          grep -q use_dns_cache /tmp/base/mvp/infra/kamailio/kamailio.cfg || export KAMAILIO_TAG=n1
+          grep -q INBOUND_CONCURRENCY /tmp/base/mvp/apps/worker/src/main.ts || export WORKER_TAG=n1
+          echo "KAMAILIO_TAG=${KAMAILIO_TAG:-n}, WORKER_TAG=${WORKER_TAG:-n}"
+          API_TAG=n MEDIA_TAG=n MOCK_TELEGRAM_TAG=n docker compose -f infra/compose/docker-compose.yml up -d --wait
       - run: cd e2e && pnpm exec playwright install --with-deps chromium
       - name: Обновление N → N+1 под нагрузкой — 0 обрывов, 0 потерь и дублей, 0 разлогиненных, p99 < 5 с
         run: MEDIA_TAG=n1 MOCK_TELEGRAM_TAG=n node ops/zero-downtime-test/run.mjs n1
@@ -180,5 +187,5 @@ jobs:
         if: failure()
         run: |
           cat out/zero-downtime-report.json 2>/dev/null | head -c 20000 || true
-          S=$(docker compose -f infra/compose/docker-compose.yml config --services | grep -v '^traefik$')
+          S=$(docker compose -f infra/compose/docker-compose.yml config --services | grep -vE '^(traefik|trunk-sim)$')
           docker compose -f infra/compose/docker-compose.yml logs --no-color $S | grep -v '"level":"debug"' | tail -300
