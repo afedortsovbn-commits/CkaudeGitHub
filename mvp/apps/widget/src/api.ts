@@ -1,3 +1,4 @@
+import { t } from './lib/i18n';
 export interface WidgetConfig {
   name: string;
   greeting: string;
@@ -54,7 +55,7 @@ export class ChatApi {
     });
     const text = await r.text();
     const data = text ? JSON.parse(text) : {};
-    if (!r.ok) throw Object.assign(new Error(data.message || 'Ошибка'), { status: r.status });
+    if (!r.ok) throw Object.assign(new Error(data.message || t.api.oshibka), { status: r.status });
     return data as T;
   }
 

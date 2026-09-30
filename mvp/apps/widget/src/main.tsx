@@ -2,6 +2,7 @@ import { Fragment, render } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { ChatApi, type Msg, store, uuid, type WidgetConfig } from './api';
 import { css } from './styles';
+import { t } from './lib/i18n';
 
 const script = document.currentScript as HTMLScriptElement | null;
 const base = script ? new URL(script.src).href.replace(/\/widget\/widget\.js.*$/, '') : location.origin;
@@ -164,7 +165,7 @@ function Chat() {
     const f = (e.target as HTMLInputElement).files?.[0];
     if (!f) return;
     if (cfg && f.size > cfg.maxFileMb * 1024 * 1024) {
-      setError(`Файл больше ${cfg.maxFileMb} МБ`);
+      setError(t.widget.faylBolsheMb(cfg.maxFileMb));
       return;
     }
     try {
@@ -188,19 +189,19 @@ function Chat() {
   const panel = (
     <div class={`panel${inline ? ' inline' : ''}`} data-testid="cc-panel">
       <div class="head">
-        <span>{cfg?.name ?? 'Чат'}</span>
+        <span>{cfg?.name ?? t.widget.chat}</span>
         {!inline && <button onClick={() => setOpen(false)}>×</button>}
       </div>
       {!token ? (
         <div class="form">
           <div>{cfg?.greeting}</div>
           <input
-            placeholder="Ваше имя (необязательно)"
+            placeholder={t.widget.vasheImyaNeobyazatelno}
             value={form.name}
             onInput={(e) => setForm({ ...form, name: (e.target as HTMLInputElement).value })}
           />
           <input
-            placeholder="Телефон (необязательно)"
+            placeholder={t.widget.telefonNeobyazatelno}
             value={form.phone}
             onInput={(e) => setForm({ ...form, phone: (e.target as HTMLInputElement).value })}
           />
@@ -214,7 +215,7 @@ function Chat() {
           </label>
           {error && <div class="err">{error}</div>}
           <button class="primary" disabled={!form.consent || !cfg} onClick={() => void start()}>
-            Начать чат
+            {t.widget.nachatChat}
           </button>
         </div>
       ) : (
@@ -229,7 +230,11 @@ function Chat() {
                 >
                   {m.direction === 'out' && (m.meta?.auto || m.authorName) && (
                     <div class="who">
-                      {m.meta?.auto === 'bot' ? 'Бот' : m.meta?.auto ? 'Автоответ' : m.authorName}
+                      {m.meta?.auto === 'bot'
+                        ? t.widget.bot
+                        : m.meta?.auto
+                          ? t.widget.avtootvet
+                          : m.authorName}
                     </div>
                   )}
                   {m.body}
@@ -245,7 +250,7 @@ function Chat() {
                       )}
                     </div>
                   ))}
-                  {m.failed && <div class="err">не отправлено, повторяем…</div>}
+                  {m.failed && <div class="err">{t.widget.neOtpravlenoPovtoryaem}</div>}
                 </div>
                 {/* Кнопки бота — только у последнего сообщения: нажатие отправляет текст кнопки. */}
                 {i === msgs.length - 1 && m.meta?.buttons?.length ? (
@@ -260,10 +265,10 @@ function Chat() {
                 {m.meta?.csat && m.conversationId && (
                   <div class="csat" data-testid="cc-csat">
                     {m.rated ? (
-                      'Спасибо за оценку!'
+                      t.widget.spasiboZaOtsenku
                     ) : (
                       <>
-                        <div>Оцените, пожалуйста, обслуживание:</div>
+                        <div>{t.widget.otsenitePozhaluystaObsluzhivanie}</div>
                         {[1, 2, 3, 4, 5].map((n) => (
                           <button key={n} onClick={() => void rate(m, n)} data-testid={`cc-csat-${n}`}>
                             {n}
@@ -276,10 +281,10 @@ function Chat() {
               </Fragment>
             ))}
           </div>
-          {typing && <div class="typing">Оператор печатает…</div>}
+          {typing && <div class="typing">{t.widget.operatorPechataet}</div>}
           {pendingFiles.map((f) => (
             <div class="chip" key={f.id}>
-              📎 {f.filename} {f.id === 'uploading' ? '(загрузка…)' : ''}
+              📎 {f.filename} {f.id === 'uploading' ? t.widget.zagruzka : ''}
             </div>
           ))}
           {error && (
@@ -290,7 +295,7 @@ function Chat() {
           <div class="foot">
             <label
               class="icon"
-              title="Прикрепить файл"
+              title={t.widget.prikrepitFayl}
               style="display:flex;align-items:center;justify-content:center"
             >
               📎
@@ -298,7 +303,7 @@ function Chat() {
             </label>
             <textarea
               rows={1}
-              placeholder="Сообщение…"
+              placeholder={t.widget.soobshchenie}
               value={text}
               data-testid="cc-input"
               onInput={(e) => onType((e.target as HTMLTextAreaElement).value)}
@@ -309,7 +314,7 @@ function Chat() {
                 }
               }}
             />
-            <button class="icon send" title="Отправить" data-testid="cc-send" onClick={() => send()}>
+            <button class="icon send" title={t.widget.otpravit} data-testid="cc-send" onClick={() => send()}>
               ➤
             </button>
           </div>
@@ -323,7 +328,12 @@ function Chat() {
       <style>{css}</style>
       {open ? panel : null}
       {!inline && (
-        <button class="btn" title="Чат с поддержкой" data-testid="cc-open" onClick={() => setOpen(!open)}>
+        <button
+          class="btn"
+          title={t.widget.chatSPodderzhkoy}
+          data-testid="cc-open"
+          onClick={() => setOpen(!open)}
+        >
           💬
         </button>
       )}

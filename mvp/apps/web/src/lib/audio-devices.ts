@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from 'react';
+import { t } from './i18n';
 
 /**
  * Аудиоустройства оператора (M-OP-06, 02-архитектура 8.2): раздельный выбор микрофона, динамика разговора и
@@ -167,7 +168,9 @@ class AudioDevices {
         .filter((d) => d.kind === kind && d.deviceId)
         .map((d) => ({
           id: d.deviceId,
-          label: d.label || (d.deviceId === 'default' ? 'По умолчанию' : 'Устройство'),
+          label:
+            d.label ||
+            (d.deviceId === 'default' ? t.audioDevicesLib.poUmolchaniyu : t.audioDevicesLib.ustroystvo),
         }));
     const inputs = map('audioinput');
     const outputs = map('audiooutput');

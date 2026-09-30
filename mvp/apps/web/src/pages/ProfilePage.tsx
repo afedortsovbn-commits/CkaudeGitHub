@@ -22,7 +22,7 @@ export function ProfilePage() {
   const [pwd, setPwd] = useState({ currentPassword: '', newPassword: '' });
   const begin = useAction(
     () => post<{ secret: string; otpauthUrl: string }>('/auth/totp/setup').then(setSetup),
-    'Отсканируйте QR-код и введите код',
+    t.profilePage.otskaniruyteQrKodI,
   );
   const enable = useAction(
     () => post('/auth/totp/enable', { code }).then(() => (setSetup(null), setCode(''))),
@@ -46,7 +46,7 @@ export function ProfilePage() {
       <Paper withBorder p="md">
         <Stack>
           <Group>
-            <Title order={5}>Вход с кодом (двухфакторная аутентификация)</Title>
+            <Title order={5}>{t.profilePage.vkhodSKodomDvukhfaktornaya}</Title>
             {s && (
               <Badge color={s.enabled ? 'green' : 'gray'} data-testid="totp-status">
                 {s.enabled ? t.mfa.enabled : t.mfa.disabled}
@@ -72,7 +72,7 @@ export function ProfilePage() {
               </Button>
             ) : (
               <Button variant="light" onClick={() => begin.mutate(undefined)} data-testid="totp-begin">
-                {s?.enabled ? 'Перенастроить (новый телефон)' : t.mfa.enable}
+                {s?.enabled ? t.profilePage.perenastroitNovyyTelefon : t.mfa.enable}
               </Button>
             )}
             {s?.enabled && !s.required && !setup && (

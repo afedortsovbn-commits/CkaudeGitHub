@@ -16,7 +16,7 @@
     "migrations:lint": "node ops/test/migrations-lint.mjs",
     "i18n:check": "node ops/test/i18n-lint.mjs",
     "compat:check": "node ops/compat/check.mjs",
-    "test:ops": "node --test ops/compat/*.test.mjs"
+    "test:ops": "node --test ops/compat/*.test.mjs ops/test/*.test.mjs"
   },
   "devDependencies": {
     "@eslint/js": "9.39.5",

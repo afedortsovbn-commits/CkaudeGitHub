@@ -2,6 +2,7 @@ import { Badge, Button, Card, Group, SimpleGrid, Table, Text, Title } from '@man
 import { useQuery } from '@tanstack/react-query';
 import { get, post } from '../lib/api';
 import { useAction } from '../lib/data';
+import { t } from '../lib/i18n';
 
 interface QueueRow {
   id: string;
@@ -43,10 +44,10 @@ interface Overview {
 }
 
 const STATUS_LABEL: Record<string, string> = {
-  ready: 'Готов',
-  break: 'Перерыв',
-  wrap_up: 'Постобработка',
-  offline: 'Офлайн',
+  ready: t.supervisor.gotov,
+  break: t.supervisor.pereryv,
+  wrap_up: t.supervisor.postobrabotka,
+  offline: t.supervisor.oflayn,
 };
 const STATUS_COLOR: Record<string, string> = {
   ready: 'green',
@@ -55,16 +56,16 @@ const STATUS_COLOR: Record<string, string> = {
   offline: 'gray',
 };
 const CONV_STATUS: Record<string, string> = {
-  bot: 'У бота / в IVR',
-  queued: 'В очереди',
-  offered: 'Предложено',
-  active: 'В работе',
-  waiting_2nd_line: 'На 2-й линии',
-  waiting_customer: 'Ждут клиента',
-  new: 'Новые',
+  bot: t.supervisor.uBotaVIvr,
+  queued: t.supervisor.vOcheredi,
+  offered: t.supervisor.predlozheno,
+  active: t.supervisor.vRabote,
+  waiting_2nd_line: t.supervisor.na2YLinii,
+  waiting_customer: t.supervisor.zhdutKlienta,
+  new: t.supervisor.novye,
 };
 
-const mins = (s: number) => `${Math.floor(s / 60)} мин ${s % 60} с`;
+const mins = (s: number) => t.supervisor.minS(Math.floor(s / 60), s % 60);
 /** Уровень подсветки по порогам: 0 — норма, 1 — внимание, 2 — критично. */
 const level = (v: number, warn: number, crit: number) => (v >= crit ? 2 : v >= warn ? 1 : 0);
 const COLOR = ['gray', 'orange', 'red'] as const;
@@ -99,7 +100,10 @@ function Tile({
  */
 export function SupervisorPage() {
   // Прослушивание (M-TEL-10): звонок приходит в софтфон супервизора и отвечается автоматически.
-  const listen = useAction((id: string) => post(`/calls/${id}/listen`), 'Подключаем прослушивание…');
+  const listen = useAction(
+    (id: string) => post(`/calls/${id}/listen`),
+    t.supervisor.podklyuchaemProslushivanie,
+  );
   const overview = useQuery({
     queryKey: ['/supervisor/overview'],
     queryFn: () => get<Overview>('/supervisor/overview'),
@@ -126,25 +130,31 @@ export function SupervisorPage() {
   return (
     <>
       <Title order={3} mb="md">
-        Супервизор: очереди и операторы
+        {t.supervisor.supervizorOcherediIOperatory}
       </Title>
       <SimpleGrid cols={{ base: 2, sm: 3, md: 6 }} mb="lg" data-testid="supervisor-summary">
         <Tile
-          label="Ожидают в очередях"
+          label={t.supervisor.ozhidayutVOcheredyakh}
           value={String(waiting)}
           lvl={th ? level(waiting, th.queueWarn, th.queueCrit) : 0}
           testId="supervisor-waiting"
         />
         <Tile
-          label="Дольше всех ждёт"
+          label={t.supervisor.dolsheVsekhZhdet}
           value={waiting ? mins(oldest) : '—'}
           lvl={th && waiting ? level(oldest, th.waitWarnS, th.waitCritS) : 0}
         />
-        <Tile label="Операторы: готовы / перерыв" value={`${byStatus('ready')} / ${byStatus('break')}`} />
-        <Tile label="Постобработка / офлайн" value={`${byStatus('wrap_up')} / ${byStatus('offline')}`} />
-        <Tile label="Отвечено / пропущено сегодня" value={`${answered} / ${abandoned}`} />
         <Tile
-          label="Активные обращения"
+          label={t.supervisor.operatoryGotovyPereryv}
+          value={`${byStatus('ready')} / ${byStatus('break')}`}
+        />
+        <Tile
+          label={t.supervisor.postobrabotkaOflayn}
+          value={`${byStatus('wrap_up')} / ${byStatus('offline')}`}
+        />
+        <Tile label={t.supervisor.otvechenoPropushchenoSegodnya} value={`${answered} / ${abandoned}`} />
+        <Tile
+          label={t.supervisor.aktivnyeObrashcheniya}
           value={String([...activeTotals.values()].reduce((a, b) => a + b, 0))}
           testId="supervisor-active"
         />
@@ -157,18 +167,18 @@ export function SupervisorPage() {
         ))}
       </Group>
       <Title order={5} mb="xs">
-        Очереди
+        {t.supervisor.ocheredi}
       </Title>
       <Table striped mb="xl" data-testid="supervisor-queues">
         <Table.Thead>
           <Table.Tr>
-            <Table.Th>Очередь</Table.Th>
-            <Table.Th>Ожидают</Table.Th>
-            <Table.Th>Дольше всех ждёт</Table.Th>
-            <Table.Th>Предложено / в работе</Table.Th>
-            <Table.Th>SL сегодня</Table.Th>
-            <Table.Th>Отвечено / пропущено</Table.Th>
-            <Table.Th>Порог эскалации</Table.Th>
+            <Table.Th>{t.supervisor.ochered}</Table.Th>
+            <Table.Th>{t.supervisor.ozhidayut}</Table.Th>
+            <Table.Th>{t.supervisor.dolsheVsekhZhdet}</Table.Th>
+            <Table.Th>{t.supervisor.predlozhenoVRabote}</Table.Th>
+            <Table.Th>{t.supervisor.slSegodnya}</Table.Th>
+            <Table.Th>{t.supervisor.otvechenoPropushcheno}</Table.Th>
+            <Table.Th>{t.supervisor.porogEskalatsii}</Table.Th>
           </Table.Tr>
         </Table.Thead>
         <Table.Tbody>
@@ -184,7 +194,7 @@ export function SupervisorPage() {
                       {q.waiting}
                     </Badge>
                     {q.importantWaiting > 0 && (
-                      <Badge color="red" variant="outline" title="Особо важные в очереди">
+                      <Badge color="red" variant="outline" title={t.supervisor.osoboVazhnyeVOcheredi}>
                         !{q.importantWaiting}
                       </Badge>
                     )}
@@ -217,23 +227,23 @@ export function SupervisorPage() {
                 <Table.Td>
                   {q.todayAnswered} / {q.todayAbandoned}
                 </Table.Td>
-                <Table.Td>{q.maxWaitS ? `${q.maxWaitS} с` : '—'}</Table.Td>
+                <Table.Td>{q.maxWaitS ? t.supervisor.s(q.maxWaitS) : '—'}</Table.Td>
               </Table.Tr>
             );
           })}
         </Table.Tbody>
       </Table>
       <Title order={5} mb="xs">
-        Операторы
+        {t.supervisor.operatory}
       </Title>
       <Table striped data-testid="supervisor-operators">
         <Table.Thead>
           <Table.Tr>
-            <Table.Th>Оператор</Table.Th>
-            <Table.Th>Статус</Table.Th>
-            <Table.Th>В статусе</Table.Th>
-            <Table.Th>Активных чатов</Table.Th>
-            <Table.Th>Звонок</Table.Th>
+            <Table.Th>{t.supervisor.operator}</Table.Th>
+            <Table.Th>{t.supervisor.status}</Table.Th>
+            <Table.Th>{t.supervisor.vStatuse}</Table.Th>
+            <Table.Th>{t.supervisor.aktivnykhChatov}</Table.Th>
+            <Table.Th>{t.supervisor.zvonok}</Table.Th>
           </Table.Tr>
         </Table.Thead>
         <Table.Tbody>
@@ -266,7 +276,7 @@ export function SupervisorPage() {
                         onClick={() => listen.mutate(String(o.callId))}
                         data-testid="supervisor-listen"
                       >
-                        Прослушать
+                        {t.supervisor.proslushat}
                       </Button>
                     </Group>
                   )}
@@ -278,9 +288,17 @@ export function SupervisorPage() {
       </Table>
       {th && (
         <Text size="xs" c="dimmed" mt="md">
-          Подсветка: ожидание от {th.waitWarnS} с / {th.waitCritS} с, в очереди от {th.queueWarn} /{' '}
-          {th.queueCrit}, перерыв дольше {Math.round(th.breakWarnS / 60)} мин, SL ниже {th.slTargetPct} %.
-          Пороги — в «Настройках».
+          {t.supervisor.podsvetkaOzhidanieOt}
+          {th.waitWarnS}
+          {t.supervisor.s2}
+          {th.waitCritS}
+          {t.supervisor.sVOcherediOt}
+          {th.queueWarn} / {th.queueCrit}
+          {t.supervisor.pereryvDolshe}
+          {Math.round(th.breakWarnS / 60)}
+          {t.supervisor.minSlNizhe}
+          {th.slTargetPct}
+          {t.supervisor.porogiVNastroykakh}
         </Text>
       )}
     </>

@@ -20,40 +20,49 @@ import { AudioSettings } from './AudioSettings';
 import { errorText, post } from '../lib/api';
 import { options, type Row, useList } from '../lib/data';
 import { softphone, useSoftphone } from '../lib/softphone';
+import { t } from '../lib/i18n';
 
 const REG = {
-  off: { color: 'gray', label: 'Телефон выключен' },
-  connecting: { color: 'yellow', label: 'Телефон: подключение…' },
-  registered: { color: 'green', label: 'Телефон готов' },
-  error: { color: 'red', label: 'Телефон: ошибка' },
+  off: { color: 'gray', label: t.softphoneUi.telefonVyklyuchen },
+  connecting: { color: 'yellow', label: t.softphoneUi.telefonPodklyuchenie },
+  registered: { color: 'green', label: t.softphoneUi.telefonGotov },
+  error: { color: 'red', label: t.softphoneUi.telefonOshibka },
 } as const;
 
 const QUALITY = {
-  good: { color: 'green', label: 'хорошая' },
-  fair: { color: 'yellow', label: 'удовлетворительная' },
-  poor: { color: 'red', label: 'плохая' },
+  good: { color: 'green', label: t.softphoneUi.khoroshaya },
+  fair: { color: 'yellow', label: t.softphoneUi.udovletvoritelnaya },
+  poor: { color: 'red', label: t.softphoneUi.plokhaya },
 } as const;
 
 const fmt = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 
 async function command(callId: string | null, op: string, body?: unknown) {
   if (!callId) {
-    notifications.show({ color: 'red', message: 'Звонок ещё не соединён с КЦ — повторите через секунду' });
+    notifications.show({ color: 'red', message: t.softphoneUi.zvonokEshcheNeSoedinen });
     return;
   }
   try {
     await post(`/calls/${callId}/${op}`, body);
   } catch (e) {
-    notifications.show({ color: 'red', title: 'Ошибка', message: errorText(e) });
+    notifications.show({ color: 'red', title: t.error, message: errorText(e) });
   }
 }
 
 /** Индикатор регистрации и набор номера — в шапке. */
-const KIND_LABEL = { mic: 'Микрофон', speaker: 'Динамик', ringer: 'Устройство звонка' } as const;
+const KIND_LABEL = {
+  mic: t.softphoneUi.mikrofon,
+  speaker: t.softphoneUi.dinamik,
+  ringer: t.softphoneUi.ustroystvoZvonka,
+} as const;
 
 function noticeText(n: DeviceNotice): string {
-  if (n.type === 'returned') return `${KIND_LABEL[n.kind]}: снова используется «${n.device.label}»`;
-  return `${KIND_LABEL[n.kind]} «${n.lost.label}» отключён — переключено на «${n.now?.label ?? 'нет устройства'}»`;
+  if (n.type === 'returned') return t.softphoneUi.snovaIspolzuetsya(KIND_LABEL[n.kind], n.device.label);
+  return t.softphoneUi.otklyuchenPereklyuchenoNa(
+    KIND_LABEL[n.kind],
+    n.lost.label,
+    n.now?.label ?? t.softphoneUi.netUstroystva,
+  );
 }
 
 /** Горячие клавиши (M-OP-07 — если у гарнитуры нет кнопок): Ctrl+Alt+A / H / M. */
@@ -97,7 +106,8 @@ export function SoftphoneStatus() {
   return (
     <Group gap="xs">
       <Button size="xs" variant="subtle" onClick={() => setSettings(true)} data-testid="audio-settings">
-        Звук{s.headset ? ' · гарнитура' : ''}
+        {t.softphoneUi.zvuk}
+        {s.headset ? t.softphoneUi.garnitura : ''}
       </Button>
       {settings && <AudioSettings onClose={() => setSettings(false)} />}
       <Tooltip label={s.error ?? r.label} disabled={!s.error}>
@@ -113,7 +123,7 @@ export function SoftphoneStatus() {
             disabled={s.reg !== 'registered' || !!s.call}
             data-testid="dial-open"
           >
-            Набрать
+            {t.softphoneUi.nabrat}
           </Button>
         </Popover.Target>
         <Popover.Dropdown>
@@ -126,7 +136,7 @@ export function SoftphoneStatus() {
               data-testid="dial-number"
             />
             <Button size="xs" onClick={() => void softphone.call(number)} data-testid="dial-call">
-              Позвонить
+              {t.softphoneUi.pozvonit}
             </Button>
           </Group>
         </Popover.Dropdown>
@@ -164,14 +174,18 @@ function Transfer({
     onClose();
   };
   return (
-    <Modal opened onClose={onClose} title={consult ? 'Консультация перед переводом' : 'Перевести звонок'}>
+    <Modal
+      opened
+      onClose={onClose}
+      title={consult ? t.softphoneUi.konsultatsiyaPeredPerevodom : t.softphoneUi.perevestiZvonok}
+    >
       <Stack>
         <Select
-          label="Куда"
+          label={t.softphoneUi.kuda}
           data={[
-            { value: 'user', label: 'Оператору' },
-            { value: 'queue', label: 'В очередь' },
-            { value: 'department', label: 'В подразделение предприятия' },
+            { value: 'user', label: t.softphoneUi.operatoru },
+            { value: 'queue', label: t.softphoneUi.vOchered },
+            { value: 'department', label: t.softphoneUi.vPodrazdeleniePredpriyatiya },
           ]}
           value={kind}
           onChange={(v) => (setKind(v), setTarget(null))}
@@ -179,13 +193,12 @@ function Transfer({
         />
         {consult && (
           <Text size="xs" c="dimmed">
-            Клиент будет на удержании, пока вы говорите с адресатом. Затем соедините клиента с ним или
-            вернитесь к клиенту. Очередь и подразделение с очередью — звонок свободному оператору.
+            {t.softphoneUi.klientBudetNaUderzhanii}
           </Text>
         )}
         {kind === 'department' && (
           <Select
-            label="Предприятие"
+            label={t.softphoneUi.predpriyatie}
             data={options(enterprises.data)}
             value={ent}
             onChange={setEnt}
@@ -193,7 +206,13 @@ function Transfer({
           />
         )}
         <Select
-          label={kind === 'user' ? 'Оператор' : kind === 'queue' ? 'Очередь' : 'Подразделение'}
+          label={
+            kind === 'user'
+              ? t.softphoneUi.operator
+              : kind === 'queue'
+                ? t.softphoneUi.ochered
+                : t.softphoneUi.podrazdelenie
+          }
           data={
             kind === 'user'
               ? options(operators.data, 'fullName')
@@ -211,10 +230,10 @@ function Transfer({
         />
         <Group justify="flex-end">
           <Button variant="default" onClick={onClose}>
-            Отмена
+            {t.cancel}
           </Button>
           <Button onClick={() => void submit()} disabled={!target} data-testid="transfer-submit">
-            {consult ? 'Позвонить адресату' : 'Перевести'}
+            {consult ? t.softphoneUi.pozvonitAdresatu : t.softphoneUi.perevesti}
           </Button>
         </Group>
       </Stack>
@@ -234,12 +253,12 @@ export function SoftphoneCall() {
   if (!call) return null;
   const talking = call.state === 'active';
   const title = call.listen
-    ? 'Прослушивание разговора'
+    ? t.softphoneUi.proslushivanieRazgovora
     : call.consultOf
-      ? 'Консультация коллеги'
+      ? t.softphoneUi.konsultatsiyaKollegi
       : call.direction === 'incoming'
-        ? 'Входящий звонок'
-        : 'Исходящий звонок';
+        ? t.softphoneUi.vkhodyashchiyZvonok
+        : t.softphoneUi.iskhodyashchiyZvonok;
   const consult = call.consult;
   return (
     <Paper
@@ -258,14 +277,16 @@ export function SoftphoneCall() {
             color={talking ? (call.onHold ? 'yellow' : 'green') : call.state === 'ended' ? 'gray' : 'blue'}
           >
             {call.state === 'ringing'
-              ? 'звонит'
+              ? t.softphoneUi.zvonit
               : call.state === 'connecting'
-                ? 'соединение'
+                ? t.softphoneUi.soedinenie
                 : call.state === 'ended'
-                  ? 'завершён'
+                  ? t.softphoneUi.zavershen
                   : call.onHold
-                    ? 'на удержании'
-                    : `разговор ${call.startedAt ? fmt(Math.floor((now - call.startedAt) / 1000)) : ''}`}
+                    ? t.softphoneUi.naUderzhanii
+                    : t.softphoneUi.razgovor(
+                        call.startedAt ? fmt(Math.floor((now - call.startedAt) / 1000)) : '',
+                      )}
           </Badge>
         </Group>
         {talking && (call.reconnecting || call.quality) && (
@@ -275,13 +296,17 @@ export function SoftphoneCall() {
             data-testid="call-quality"
             title={
               call.quality
-                ? `Задержка ${Math.round(call.quality.rttMs ?? 0)} мс, джиттер ${Math.round(call.quality.jitterMs ?? 0)} мс, потери ${(call.quality.lossPct ?? 0).toFixed(1)} %`
+                ? t.softphoneUi.zaderzhkaMsDzhitterMs(
+                    Math.round(call.quality.rttMs ?? 0),
+                    Math.round(call.quality.jitterMs ?? 0),
+                    (call.quality.lossPct ?? 0).toFixed(1),
+                  )
                 : ''
             }
           >
             {call.reconnecting
-              ? 'Связь прервалась — восстанавливаем…'
-              : `Связь: ${QUALITY[call.quality!.level].label}`}
+              ? t.softphoneUi.svyazPrervalasVosstanavlivaem
+              : t.softphoneUi.svyaz(QUALITY[call.quality!.level].label)}
           </Badge>
         )}
         <Text size="sm" data-testid="softphone-remote">
@@ -291,7 +316,7 @@ export function SoftphoneCall() {
         {call.state === 'ringing' && call.direction === 'incoming' && (
           <Group grow>
             <Button color="green" onClick={() => void softphone.answer()} data-testid="call-answer">
-              Ответить
+              {t.softphoneUi.otvetit}
             </Button>
             <Button
               color="red"
@@ -299,19 +324,20 @@ export function SoftphoneCall() {
               onClick={() => softphone.decline()}
               data-testid="call-decline"
             >
-              Отклонить
+              {t.softphoneUi.otklonit}
             </Button>
           </Group>
         )}
         {talking && consult && (
           <Paper withBorder p={6} data-testid="consult-panel" data-state={consult.state}>
             <Text size="sm" fw={600}>
-              Консультация: {consult.label}
+              {t.softphoneUi.konsultatsiya}
+              {consult.label}
             </Text>
             <Text size="xs" c="dimmed" mb={4}>
               {consult.state === 'dialing'
-                ? 'Звоним адресату… Клиент на удержании'
-                : 'Разговор с адресатом. Клиент на удержании'}
+                ? t.softphoneUi.zvonimAdresatuKlientNa
+                : t.softphoneUi.razgovorSAdresatomKlient}
             </Text>
             <Group grow gap={6}>
               <Button
@@ -321,7 +347,7 @@ export function SoftphoneCall() {
                 onClick={() => void command(call.callId, 'consult_complete')}
                 data-testid="consult-complete"
               >
-                Соединить
+                {t.softphoneUi.soedinit}
               </Button>
               <Button
                 size="xs"
@@ -329,7 +355,7 @@ export function SoftphoneCall() {
                 onClick={() => void command(call.callId, 'consult_cancel')}
                 data-testid="consult-cancel"
               >
-                Вернуться к клиенту
+                {t.softphoneUi.vernutsyaKKlientu}
               </Button>
             </Group>
           </Paper>
@@ -344,7 +370,7 @@ export function SoftphoneCall() {
                 onClick={() => void command(call.callId, call.onHold ? 'unhold' : 'hold')}
                 data-testid="call-hold"
               >
-                {call.onHold ? 'Снять с удержания' : 'Удержание'}
+                {call.onHold ? t.softphoneUi.snyatSUderzhaniya : t.softphoneUi.uderzhanie}
               </Button>
             )}
             <Button
@@ -353,12 +379,12 @@ export function SoftphoneCall() {
               onClick={() => softphone.toggleMute()}
               data-testid="call-mute"
             >
-              {call.muted ? 'Микрофон выкл.' : 'Микрофон'}
+              {call.muted ? t.softphoneUi.mikrofonVykl : t.softphoneUi.mikrofon}
             </Button>
             <Popover withArrow>
               <Popover.Target>
                 <Button size="xs" variant="light">
-                  Клавиатура
+                  {t.softphoneUi.klaviatura}
                 </Button>
               </Popover.Target>
               <Popover.Dropdown>
@@ -379,7 +405,7 @@ export function SoftphoneCall() {
                   onClick={() => setTransfer('transfer')}
                   data-testid="call-transfer"
                 >
-                  Перевести
+                  {t.softphoneUi.perevesti}
                 </Button>
                 <Button
                   size="xs"
@@ -387,7 +413,7 @@ export function SoftphoneCall() {
                   onClick={() => setTransfer('consult')}
                   data-testid="call-consult"
                 >
-                  Консультация
+                  {t.softphoneUi.konsultatsiya2}
                 </Button>
               </>
             )}
@@ -395,7 +421,7 @@ export function SoftphoneCall() {
         )}
         {call.state !== 'ended' && !(call.state === 'ringing' && call.direction === 'incoming') && (
           <Button color="red" onClick={() => softphone.hangup()} data-testid="call-hangup">
-            Завершить
+            {t.softphoneUi.zavershit}
           </Button>
         )}
       </Stack>

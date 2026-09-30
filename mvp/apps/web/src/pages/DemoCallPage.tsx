@@ -5,6 +5,7 @@ import type { UA } from 'jssip/lib/UA';
 import { useEffect, useRef, useState } from 'react';
 import { errorText, post } from '../lib/api';
 import { AUDIO_CONSTRAINTS } from '../lib/softphone';
+import { t } from '../lib/i18n';
 
 interface DemoCreds {
   wsUri: string;
@@ -72,7 +73,7 @@ export function DemoCallPage() {
       s.on('confirmed', () => setState('talking'));
       const done = (e: { cause?: string }) => {
         setState('ended');
-        setInfo(e?.cause ? `Звонок завершён (${e.cause})` : 'Звонок завершён');
+        setInfo(e?.cause ? t.demoCall.zvonokZavershen(e.cause) : t.demoCall.zvonokZavershen2);
         u.stop();
       };
       s.on('ended', done);
@@ -85,21 +86,25 @@ export function DemoCallPage() {
     <Center h="100vh">
       <Paper withBorder shadow="sm" p="lg" w={380}>
         <Stack>
-          <Title order={3}>Позвонить в контакт-центр</Title>
+          <Title order={3}>{t.demoCall.pozvonitVKontaktTsentr}</Title>
           <Text size="sm" c="dimmed">
-            Демо-звонок из браузера (WebRTC) — как если бы клиент позвонил по телефону.
+            {t.demoCall.demoZvonokIzBrauzera}
           </Text>
-          <TextInput label="Ваше имя" value={name} onChange={(e) => setName(e.currentTarget.value)} />
           <TextInput
-            label="Ваш номер (для узнавания клиента)"
+            label={t.demoCall.vasheImya}
+            value={name}
+            onChange={(e) => setName(e.currentTarget.value)}
+          />
+          <TextInput
+            label={t.demoCall.vashNomerDlyaUznavaniya}
             placeholder="+375 29 123-45-67"
             value={phone}
             onChange={(e) => setPhone(e.currentTarget.value)}
             data-testid="demo-phone"
           />
           <TextInput
-            label="Номер контакт-центра"
-            description="2000 — через IVR (демо-сценарий), 1000 — сразу в очередь; пусто — номер по умолчанию"
+            label={t.demoCall.nomerKontaktTsentra}
+            description={t.demoCall.n2000CherezIvrDemo}
             placeholder="2000"
             value={did}
             onChange={(e) => setDid(e.currentTarget.value)}
@@ -107,11 +112,13 @@ export function DemoCallPage() {
           />
           {state === 'idle' || state === 'ended' ? (
             <Button color="green" onClick={() => void call()} data-testid="demo-call">
-              Позвонить
+              {t.demoCall.pozvonit}
             </Button>
           ) : (
             <>
-              <Text data-testid="demo-state">{state === 'talking' ? 'Идёт разговор' : 'Соединение…'}</Text>
+              <Text data-testid="demo-state">
+                {state === 'talking' ? t.demoCall.idetRazgovor : t.demoCall.soedinenie}
+              </Text>
               <SimpleGrid cols={3} spacing={4}>
                 {'123456789*0#'.split('').map((d) => (
                   <Button
@@ -129,7 +136,7 @@ export function DemoCallPage() {
               </SimpleGrid>
               <Group grow>
                 <Button color="red" onClick={() => session.current?.terminate()} data-testid="demo-hangup">
-                  Положить трубку
+                  {t.demoCall.polozhitTrubku}
                 </Button>
               </Group>
             </>

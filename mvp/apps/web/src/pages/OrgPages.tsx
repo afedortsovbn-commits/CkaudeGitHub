@@ -25,16 +25,16 @@ export function EnterprisesPage() {
       kind="enterprises"
       title={t.nav.enterprises}
       columns={[
-        { key: 'code', label: 'Код' },
-        { key: 'name', label: 'Название' },
+        { key: 'code', label: t.org.kod },
+        { key: 'name', label: t.org.nazvanie },
         { key: 'email', label: 'Email' },
-        { key: 'phone', label: 'Телефон' },
+        { key: 'phone', label: t.org.telefon },
       ]}
       fields={[
-        { key: 'code', label: 'Код', required: true },
-        { key: 'name', label: 'Название', required: true },
+        { key: 'code', label: t.org.kod, required: true },
+        { key: 'name', label: t.org.nazvanie, required: true },
         { key: 'email', label: 'Email' },
-        { key: 'phone', label: 'Телефон' },
+        { key: 'phone', label: t.org.telefon },
       ]}
     />
   );
@@ -66,12 +66,12 @@ function DepartmentEnterprises({ dep, onClose }: { dep: Row; onClose(): void }) 
     }),
   );
   return (
-    <Modal opened onClose={onClose} title={`«${String(dep.name)}» — предприятия`} size="xl">
+    <Modal opened onClose={onClose} title={t.org.predpriyatiya(String(dep.name))} size="xl">
       <Stack>
         <Group align="end">
           <MultiSelect
             style={{ flex: 1 }}
-            label="Предприятия, в которых есть подразделение"
+            label={t.org.predpriyatiyaVKotorykhEst}
             data={options(enterprises.data)}
             value={selected}
             onChange={setSelected}
@@ -83,8 +83,7 @@ function DepartmentEnterprises({ dep, onClose }: { dep: Row; onClose(): void }) 
           </Button>
         </Group>
         <Text size="sm" c="dimmed">
-          Номер или очередь для прямого перевода звонка и email задаются для каждой пары «подразделение на
-          предприятии».
+          {t.org.nomerIliOcheredDlya}
         </Text>
         <Table>
           <Table.Tbody>
@@ -113,7 +112,7 @@ function LinkRow({
       <Table.Td>
         <TextInput
           size="xs"
-          placeholder="Номер для перевода"
+          placeholder={t.org.nomerDlyaPerevoda}
           value={num}
           onChange={(e) => setNum(e.currentTarget.value)}
         />
@@ -121,7 +120,7 @@ function LinkRow({
       <Table.Td>
         <TextInput
           size="xs"
-          placeholder="Email подразделения"
+          placeholder={t.org.emailPodrazdeleniya}
           value={email}
           onChange={(e) => setEmail(e.currentTarget.value)}
         />
@@ -150,11 +149,11 @@ export function DepartmentsPage() {
         kind="departments"
         title={t.nav.departments}
         columns={[
-          { key: 'code', label: 'Код' },
-          { key: 'name', label: 'Название' },
+          { key: 'code', label: t.org.kod },
+          { key: 'name', label: t.org.nazvanie },
           {
             key: 'enterprises',
-            label: 'Предприятия',
+            label: t.nav.enterprises,
             render: (r) => (
               <Group gap={4}>
                 {(byDep.get(r.id) ?? []).map((n) => (
@@ -167,8 +166,8 @@ export function DepartmentsPage() {
           },
         ]}
         fields={[
-          { key: 'code', label: 'Код', required: true },
-          { key: 'name', label: 'Название', required: true },
+          { key: 'code', label: t.org.kod, required: true },
+          { key: 'name', label: t.org.nazvanie, required: true },
         ]}
         rowActions={(r) => (
           <Button
@@ -177,7 +176,7 @@ export function DepartmentsPage() {
             onClick={() => setDep(r)}
             data-testid={`dep-links-${String(r.code)}`}
           >
-            Предприятия
+            {t.nav.enterprises}
           </Button>
         )}
       />
@@ -195,7 +194,7 @@ export function ObjectsPage() {
     updated: number;
     errors: { line: number; message: string }[];
   } | null>(null);
-  const imp = useAction(async () => setResult(await post('/objects/import', { csv })), 'Импорт выполнен');
+  const imp = useAction(async () => setResult(await post('/objects/import', { csv })), t.org.importVypolnen);
   const entName = new Map((enterprises.data ?? []).map((e) => [e.id, String(e.name)]));
   return (
     <>
@@ -203,55 +202,56 @@ export function ObjectsPage() {
         kind="objects"
         title={t.nav.objects}
         columns={[
-          { key: 'code', label: 'Код' },
-          { key: 'name', label: 'Название' },
-          { key: 'address', label: 'Адрес' },
+          { key: 'code', label: t.org.kod },
+          { key: 'name', label: t.org.nazvanie },
+          { key: 'address', label: t.org.adres },
           {
             key: 'enterpriseId',
-            label: 'Предприятие',
+            label: t.org.predpriyatie,
             render: (r) => entName.get(String(r.enterpriseId)) ?? '',
           },
-          { key: 'source', label: 'Источник' },
+          { key: 'source', label: t.org.istochnik },
         ]}
         fields={[
           {
             key: 'enterpriseId',
-            label: 'Предприятие',
+            label: t.org.predpriyatie,
             type: 'select',
             required: true,
             options: options(enterprises.data),
           },
-          { key: 'code', label: 'Код', required: true },
-          { key: 'name', label: 'Название', required: true },
-          { key: 'address', label: 'Адрес' },
+          { key: 'code', label: t.org.kod, required: true },
+          { key: 'name', label: t.org.nazvanie, required: true },
+          { key: 'address', label: t.org.adres },
         ]}
         toolbar={
           <Button variant="outline" onClick={() => setImportOpen(true)}>
-            Импорт CSV
+            {t.org.importCsv}
           </Button>
         }
       />
       <Modal
         opened={importOpen}
         onClose={() => setImportOpen(false)}
-        title="Импорт объектов из CSV"
+        title={t.org.importObektovIzCsv}
         size="xl"
       >
         <Stack>
-          <Text size="sm">
-            Столбцы: code; name; address; enterprise_code. Существующие объекты обновляются по коду.
-            Автоматическая ежедневная синхронизация — отдельным этапом (Ф13).
-          </Text>
+          <Text size="sm">{t.org.stolbtsyCodeNameAddress}</Text>
           <Textarea autosize minRows={8} value={csv} onChange={(e) => setCsv(e.currentTarget.value)} />
           <Button onClick={() => imp.mutate(undefined)} loading={imp.isPending}>
-            Импортировать
+            {t.org.importirovat}
           </Button>
           {result && (
             <Alert color={result.errors.length ? 'yellow' : 'green'}>
-              Создано: {result.created}, обновлено: {result.updated}
+              {t.org.sozdano}
+              {result.created}
+              {t.org.obnovleno}
+              {result.updated}
               {result.errors.map((e) => (
                 <div key={e.line}>
-                  Строка {e.line}: {e.message}
+                  {t.org.stroka}
+                  {e.line}: {e.message}
                 </div>
               ))}
             </Alert>
@@ -263,11 +263,11 @@ export function ObjectsPage() {
 }
 
 const BEHAVIORS = [
-  { value: 'resolved', label: 'Решено (закрыть)' },
-  { value: 'escalate', label: 'Передать на 2-ю линию' },
-  { value: 'no_reply_needed', label: 'Не требует ответа' },
-  { value: 'postponed', label: 'Отложено / перезвонить' },
-  { value: 'duplicate', label: 'Дубликат' },
+  { value: 'resolved', label: t.org.reshenoZakryt },
+  { value: 'escalate', label: t.org.peredatNa2Yu },
+  { value: 'no_reply_needed', label: t.org.neTrebuetOtveta },
+  { value: 'postponed', label: t.org.otlozhenoPerezvonit },
+  { value: 'duplicate', label: t.org.dublikat },
 ];
 const CHANNELS = ['voice', 'webchat', 'app', 'telegram', 'email', 'review', 'api'].map((c) => ({
   value: c,
@@ -275,8 +275,8 @@ const CHANNELS = ['voice', 'webchat', 'app', 'telegram', 'email', 'review', 'api
 }));
 
 const STRATEGIES = [
-  { value: 'least_recent', label: 'Дольше всех свободен' },
-  { value: 'least_load', label: 'Наименьшая загрузка' },
+  { value: 'least_recent', label: t.org.dolsheVsekhSvoboden },
+  { value: 'least_load', label: t.org.naimenshayaZagruzka },
 ];
 
 export function DictionariesPage() {
@@ -289,35 +289,35 @@ export function DictionariesPage() {
       </Title>
       <Tabs defaultValue="dispositions" keepMounted={false}>
         <Tabs.List mb="md">
-          <Tabs.Tab value="dispositions">Результаты обработки</Tabs.Tab>
-          <Tabs.Tab value="answer-methods">Способы ответа</Tabs.Tab>
-          <Tabs.Tab value="queues">Очереди</Tabs.Tab>
-          <Tabs.Tab value="routing-rules">Правила маршрутизации</Tabs.Tab>
-          <Tabs.Tab value="segment-priority">Приоритет сегментов</Tabs.Tab>
-          <Tabs.Tab value="skills">Навыки</Tabs.Tab>
-          <Tabs.Tab value="tags">Теги</Tabs.Tab>
-          <Tabs.Tab value="break-reasons">Причины перерывов</Tabs.Tab>
-          <Tabs.Tab value="scope-templates">Шаблоны областей</Tabs.Tab>
+          <Tabs.Tab value="dispositions">{t.org.rezultatyObrabotki}</Tabs.Tab>
+          <Tabs.Tab value="answer-methods">{t.org.sposobyOtveta}</Tabs.Tab>
+          <Tabs.Tab value="queues">{t.org.ocheredi}</Tabs.Tab>
+          <Tabs.Tab value="routing-rules">{t.org.pravilaMarshrutizatsii}</Tabs.Tab>
+          <Tabs.Tab value="segment-priority">{t.org.prioritetSegmentov}</Tabs.Tab>
+          <Tabs.Tab value="skills">{t.org.navyki}</Tabs.Tab>
+          <Tabs.Tab value="tags">{t.org.tegi}</Tabs.Tab>
+          <Tabs.Tab value="break-reasons">{t.org.prichinyPereryvov}</Tabs.Tab>
+          <Tabs.Tab value="scope-templates">{t.org.shablonyOblastey}</Tabs.Tab>
         </Tabs.List>
         <Tabs.Panel value="dispositions">
           <DictPage
             hideTitle
             kind="dispositions"
-            title="Результат обработки"
+            title={t.org.rezultatObrabotki}
             columns={[
-              { key: 'code', label: 'Код' },
-              { key: 'name', label: 'Название' },
+              { key: 'code', label: t.org.kod },
+              { key: 'name', label: t.org.nazvanie },
               {
                 key: 'behavior',
-                label: 'Поведение',
+                label: t.org.povedenie,
                 render: (r) => BEHAVIORS.find((b) => b.value === r.behavior)?.label ?? '',
               },
             ]}
             fields={[
-              { key: 'code', label: 'Код', required: true },
-              { key: 'name', label: 'Название', required: true },
-              { key: 'behavior', label: 'Поведение', type: 'select', required: true, options: BEHAVIORS },
-              { key: 'sortOrder', label: 'Порядок', type: 'number' },
+              { key: 'code', label: t.org.kod, required: true },
+              { key: 'name', label: t.org.nazvanie, required: true },
+              { key: 'behavior', label: t.org.povedenie, type: 'select', required: true, options: BEHAVIORS },
+              { key: 'sortOrder', label: t.org.poryadok, type: 'number' },
             ]}
           />
         </Tabs.Panel>
@@ -325,15 +325,15 @@ export function DictionariesPage() {
           <DictPage
             hideTitle
             kind="answer-methods"
-            title="Способ ответа"
+            title={t.org.sposobOtveta}
             columns={[
-              { key: 'code', label: 'Код' },
-              { key: 'name', label: 'Название' },
+              { key: 'code', label: t.org.kod },
+              { key: 'name', label: t.org.nazvanie },
             ]}
             fields={[
-              { key: 'code', label: 'Код', required: true },
-              { key: 'name', label: 'Название', required: true },
-              { key: 'sortOrder', label: 'Порядок', type: 'number' },
+              { key: 'code', label: t.org.kod, required: true },
+              { key: 'name', label: t.org.nazvanie, required: true },
+              { key: 'sortOrder', label: t.org.poryadok, type: 'number' },
             ]}
           />
         </Tabs.Panel>
@@ -341,33 +341,33 @@ export function DictionariesPage() {
           <DictPage
             hideTitle
             kind="queues"
-            title="Очередь"
+            title={t.org.ochered}
             columns={[
-              { key: 'name', label: 'Название' },
-              { key: 'channels', label: 'Каналы', render: (r) => (r.channels as string[]).join(', ') },
-              { key: 'priority', label: 'Приоритет' },
+              { key: 'name', label: t.org.nazvanie },
+              { key: 'channels', label: t.org.kanaly, render: (r) => (r.channels as string[]).join(', ') },
+              { key: 'priority', label: t.org.prioritet },
               {
                 key: 'strategy',
-                label: 'Стратегия',
+                label: t.org.strategiya,
                 render: (r) => STRATEGIES.find((s) => s.value === r.strategy)?.label ?? String(r.strategy),
               },
             ]}
             fields={[
-              { key: 'name', label: 'Название', required: true },
-              { key: 'channels', label: 'Каналы', type: 'multiselect', options: CHANNELS },
-              { key: 'priority', label: 'Приоритет (0–100)', type: 'number' },
-              { key: 'maxWaitS', label: 'Макс. ожидание до эскалации, с', type: 'number' },
-              { key: 'strategy', label: 'Стратегия распределения', type: 'select', options: STRATEGIES },
+              { key: 'name', label: t.org.nazvanie, required: true },
+              { key: 'channels', label: t.org.kanaly, type: 'multiselect', options: CHANNELS },
+              { key: 'priority', label: t.org.prioritet0100, type: 'number' },
+              { key: 'maxWaitS', label: t.org.maksOzhidanieDoEskalatsii, type: 'number' },
+              { key: 'strategy', label: t.org.strategiyaRaspredeleniya, type: 'select', options: STRATEGIES },
               {
                 key: 'overflowQueueId',
-                label: 'Резервная группа (перелив)',
+                label: t.org.rezervnayaGruppaPereliv,
                 type: 'select',
                 options: options((queues.data ?? []).filter((q) => q.id !== undefined)),
               },
-              { key: 'overflowAfterS', label: 'Перелив в резерв через, с', type: 'number' },
-              { key: 'offerTimeoutS', label: 'Таймаут принятия оператором, с', type: 'number' },
-              { key: 'wrapUpS', label: 'Постобработка, с', type: 'number' },
-              { key: 'requireTag', label: 'Обязательный тег при закрытии', type: 'switch' },
+              { key: 'overflowAfterS', label: t.org.perelivVRezervCherez, type: 'number' },
+              { key: 'offerTimeoutS', label: t.org.taymautPrinyatiyaOperatoromS, type: 'number' },
+              { key: 'wrapUpS', label: t.org.postobrabotkaS, type: 'number' },
+              { key: 'requireTag', label: t.org.obyazatelnyyTegPriZakrytii, type: 'switch' },
             ]}
           />
         </Tabs.Panel>
@@ -375,47 +375,51 @@ export function DictionariesPage() {
           <DictPage
             hideTitle
             kind="routing-rules"
-            title="Правило маршрутизации"
+            title={t.org.praviloMarshrutizatsii}
             columns={[
-              { key: 'name', label: 'Название' },
-              { key: 'channelKind', label: 'Канал', render: (r) => String(r.channelKind ?? 'любой') },
-              { key: 'matchType', label: 'Тип' },
-              { key: 'pattern', label: 'Условие' },
+              { key: 'name', label: t.org.nazvanie },
+              {
+                key: 'channelKind',
+                label: t.org.kanal,
+                render: (r) => String(r.channelKind ?? t.org.lyuboy),
+              },
+              { key: 'matchType', label: t.org.tip },
+              { key: 'pattern', label: t.org.uslovie },
               {
                 key: 'queueId',
-                label: 'Очередь',
+                label: t.org.ochered,
                 render: (r) => String((queues.data ?? []).find((q) => q.id === r.queueId)?.name ?? ''),
               },
             ]}
             fields={[
-              { key: 'name', label: 'Название', required: true },
+              { key: 'name', label: t.org.nazvanie, required: true },
               {
                 key: 'channelKind',
-                label: 'Канал (пусто — любой)',
+                label: t.org.kanalPustoLyuboy,
                 type: 'select',
                 options: CHANNELS.filter((c) => c.value !== 'voice'),
               },
               {
                 key: 'matchType',
-                label: 'Тип условия',
+                label: t.org.tipUsloviya,
                 type: 'select',
                 required: true,
                 options: [
-                  { value: 'keyword', label: 'Ключевое слово (подстрока)' },
-                  { value: 'regex', label: 'Регулярное выражение' },
+                  { value: 'keyword', label: t.org.klyuchevoeSlovoPodstroka },
+                  { value: 'regex', label: t.org.regulyarnoeVyrazhenie },
                 ],
               },
-              { key: 'pattern', label: 'Слово или regex', required: true },
+              { key: 'pattern', label: t.org.slovoIliRegex, required: true },
               {
                 key: 'queueId',
-                label: 'Очередь',
+                label: t.org.ochered,
                 type: 'select',
                 required: true,
                 options: options(queues.data),
               },
-              { key: 'priorityBoost', label: 'Надбавка приоритета', type: 'number' },
-              { key: 'isUrgent', label: 'Помечать «срочное»', type: 'switch' },
-              { key: 'sortOrder', label: 'Порядок проверки', type: 'number' },
+              { key: 'priorityBoost', label: t.org.nadbavkaPrioriteta, type: 'number' },
+              { key: 'isUrgent', label: t.org.pomechatSrochnoe, type: 'switch' },
+              { key: 'sortOrder', label: t.org.poryadokProverki, type: 'number' },
             ]}
           />
         </Tabs.Panel>
@@ -423,14 +427,14 @@ export function DictionariesPage() {
           <DictPage
             hideTitle
             kind="segment-priority"
-            title="Приоритет сегмента"
+            title={t.org.prioritetSegmenta}
             columns={[
-              { key: 'segment', label: 'Сегмент клиента' },
-              { key: 'boost', label: 'Надбавка приоритета' },
+              { key: 'segment', label: t.org.segmentKlienta },
+              { key: 'boost', label: t.org.nadbavkaPrioriteta },
             ]}
             fields={[
-              { key: 'segment', label: 'Сегмент (как в карточке клиента)', required: true },
-              { key: 'boost', label: 'Надбавка приоритета', type: 'number' },
+              { key: 'segment', label: t.org.segmentKakVKartochke, required: true },
+              { key: 'boost', label: t.org.nadbavkaPrioriteta, type: 'number' },
             ]}
           />
         </Tabs.Panel>
@@ -438,11 +442,11 @@ export function DictionariesPage() {
           <DictPage
             hideTitle
             kind="skills"
-            title="Навык"
-            columns={[{ key: 'name', label: 'Название' }]}
+            title={t.org.navyk}
+            columns={[{ key: 'name', label: t.org.nazvanie }]}
             fields={[
-              { key: 'name', label: 'Название', required: true },
-              { key: 'topicId', label: 'Тема', type: 'select', options: options(topics.data) },
+              { key: 'name', label: t.org.nazvanie, required: true },
+              { key: 'topicId', label: t.org.tema, type: 'select', options: options(topics.data) },
             ]}
           />
         </Tabs.Panel>
@@ -450,18 +454,18 @@ export function DictionariesPage() {
           <DictPage
             hideTitle
             kind="tags"
-            title="Тег"
-            columns={[{ key: 'name', label: 'Название' }]}
-            fields={[{ key: 'name', label: 'Название', required: true }]}
+            title={t.org.teg}
+            columns={[{ key: 'name', label: t.org.nazvanie }]}
+            fields={[{ key: 'name', label: t.org.nazvanie, required: true }]}
           />
         </Tabs.Panel>
         <Tabs.Panel value="break-reasons">
           <DictPage
             hideTitle
             kind="break-reasons"
-            title="Причина перерыва"
-            columns={[{ key: 'name', label: 'Название' }]}
-            fields={[{ key: 'name', label: 'Название', required: true }]}
+            title={t.org.prichinaPereryva}
+            columns={[{ key: 'name', label: t.org.nazvanie }]}
+            fields={[{ key: 'name', label: t.org.nazvanie, required: true }]}
           />
         </Tabs.Panel>
         <Tabs.Panel value="scope-templates">
@@ -469,12 +473,12 @@ export function DictionariesPage() {
             hideTitle
             kind="scope-templates"
             writePerm="admin.users"
-            title="Шаблон области"
+            title={t.org.shablonOblasti}
             columns={[
-              { key: 'name', label: 'Название' },
-              { key: 'rules', label: 'Правил', render: (r) => String((r.rules as unknown[]).length) },
+              { key: 'name', label: t.org.nazvanie },
+              { key: 'rules', label: t.org.pravil, render: (r) => String((r.rules as unknown[]).length) },
             ]}
-            fields={[{ key: 'name', label: 'Название', required: true }]}
+            fields={[{ key: 'name', label: t.org.nazvanie, required: true }]}
           />
         </Tabs.Panel>
       </Tabs>

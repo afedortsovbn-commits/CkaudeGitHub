@@ -2,6 +2,7 @@ import { Button, Card, Group, Modal, Radio, Stack, Text, TextInput } from '@mant
 import { useEffect, useState } from 'react';
 import { post } from '../lib/api';
 import { type Row, useAction, useList } from '../lib/data';
+import { t } from '../lib/i18n';
 
 /**
  * Ручное слияние дублей клиентов (M-CARD-01): поиск второго клиента, выбор основного, подтверждение.
@@ -35,28 +36,29 @@ export function MergeContactModal({
     `/contacts?q=${encodeURIComponent(term)}&exclude=${String(contact.id)}`,
     opened && term.length >= 2,
   );
-  const name = (c: Row) => String(c.displayName ?? c.phone ?? c.email ?? 'Клиент');
+  const name = (c: Row) => String(c.displayName ?? c.phone ?? c.email ?? t.mergeContactModalUi.klient);
   const merge = useAction(() => {
     const main = keep === 'this' ? contact : other!;
     const dup = keep === 'this' ? other! : contact;
     return post(`/contacts/${main.id}/merge`, { duplicateId: dup.id });
-  }, 'Клиенты объединены');
+  }, t.mergeContactModalUi.klientyObedineny);
   return (
-    <Modal opened={opened} onClose={onClose} title="Объединить клиентов" size="lg">
+    <Modal opened={opened} onClose={onClose} title={t.mergeContactModalUi.obedinitKlientov} size="lg">
       <Stack gap="xs">
         <Text size="sm">
-          Клиент: <b>{name(contact)}</b>
+          {t.mergeContactModalUi.klient2}
+          <b>{name(contact)}</b>
         </Text>
         <TextInput
-          label="Найти дубль"
-          placeholder="Имя, телефон, email или Telegram ID"
+          label={t.mergeContactModalUi.naytiDubl}
+          placeholder={t.mergeContactModalUi.imyaTelefonEmailIli}
           value={q}
           onChange={(e) => setQ(e.currentTarget.value)}
           data-testid="merge-search"
         />
         {term.length >= 2 && (found.data ?? []).length === 0 && (
           <Text size="sm" c="dimmed">
-            Никого не найдено
+            {t.mergeContactModalUi.nikogoNeNaydeno}
           </Text>
         )}
         {(found.data ?? []).map((c) => (
@@ -75,13 +77,15 @@ export function MergeContactModal({
               {name(c)}
             </Text>
             <Text size="xs" c="dimmed">
-              {[c.phone, c.email].filter(Boolean).join(' · ')} · обращений: {String(c.conversations ?? 0)}
+              {[c.phone, c.email].filter(Boolean).join(' · ')}
+              {t.mergeContactModalUi.obrashcheniy}
+              {String(c.conversations ?? 0)}
             </Text>
           </Card>
         ))}
         {other && (
           <Radio.Group
-            label="Основной клиент (останется в поиске)"
+            label={t.mergeContactModalUi.osnovnoyKlientOstanetsyaV}
             value={keep}
             onChange={(v) => setKeep(v as 'this' | 'other')}
           >
@@ -92,12 +96,11 @@ export function MergeContactModal({
           </Radio.Group>
         )}
         <Text size="xs" c="dimmed">
-          Идентификаторы в каналах, обращения, согласия и вложения второго клиента перейдут к основному; пустые
-          поля основного дополнятся. Отменить слияние нельзя.
+          {t.mergeContactModalUi.identifikatoryVKanalakhObrashcheniya}
         </Text>
         <Group justify="flex-end">
           <Button variant="default" onClick={onClose}>
-            Отмена
+            {t.cancel}
           </Button>
           <Button
             color="orange"
@@ -106,7 +109,7 @@ export function MergeContactModal({
             onClick={() => merge.mutate(undefined, { onSuccess: onClose })}
             data-testid="merge-confirm"
           >
-            Объединить
+            {t.mergeContactModalUi.obedinit}
           </Button>
         </Group>
       </Stack>

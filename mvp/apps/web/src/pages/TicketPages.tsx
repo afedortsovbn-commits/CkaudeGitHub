@@ -31,23 +31,24 @@ import { useNavigate, useParams } from 'react-router';
 import { api, authBlobUrl, errorText, get, post, upload } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { type Row, options, useAction, useList } from '../lib/data';
+import { t } from '../lib/i18n';
 
 // ---------------------------------------------------------------- общее
 
 export const TICKET_STATUS: Record<string, { label: string; color: string }> = {
-  new: { label: 'Новый', color: 'blue' },
-  in_work: { label: 'В работе', color: 'cyan' },
-  approval: { label: 'На согласовании', color: 'violet' },
-  rework: { label: 'На доработке', color: 'orange' },
-  closed: { label: 'Закрыт', color: 'gray' },
+  new: { label: t.tickets.novyy, color: 'blue' },
+  in_work: { label: t.tickets.vRabote, color: 'cyan' },
+  approval: { label: t.tickets.naSoglasovanii, color: 'violet' },
+  rework: { label: t.tickets.naDorabotke, color: 'orange' },
+  closed: { label: t.tickets.zakryt, color: 'gray' },
 };
 
 const dayWord = (n: number) => {
   const a = Math.abs(n) % 100;
   const b = a % 10;
-  if (a > 10 && a < 20) return 'дней';
-  if (b > 1 && b < 5) return 'дня';
-  return b === 1 ? 'день' : 'дней';
+  if (a > 10 && a < 20) return t.tickets.dney;
+  if (b > 1 && b < 5) return t.tickets.dnya;
+  return b === 1 ? t.tickets.den : t.tickets.dney;
 };
 
 const fmtDate = (d: unknown) => (d ? String(d).split('-').reverse().join('.') : '');
@@ -61,21 +62,23 @@ const fmtTime = (s: unknown) =>
     : '';
 
 /** Срок: «осталось N дн.» / «просрочено на N дн.» цветом; на согласовании — сколько ждёт согласования. */
-export function Deadline({ t }: { t: Row }) {
-  const status = String(t.status);
+export function Deadline({ t: tk }: { t: Row }) {
+  const status = String(tk.status);
   if (status === 'closed')
     return (
       <Text size="xs" c="dimmed">
-        закрыт{t.closedInTime === false ? ' с нарушением срока' : t.closedInTime ? ' в срок' : ''}
+        {t.tickets.zakryt2}
+        {tk.closedInTime === false ? t.tickets.sNarusheniemSroka : tk.closedInTime ? t.tickets.vSrok : ''}
       </Text>
     );
   if (status === 'approval')
     return (
       <Text size="xs" c="violet" data-testid="deadline">
-        ожидает согласования {Number(t.approvalWaitDays ?? 0)} {dayWord(Number(t.approvalWaitDays ?? 0))}
+        {t.tickets.ozhidaetSoglasovaniya}
+        {Number(tk.approvalWaitDays ?? 0)} {dayWord(Number(tk.approvalWaitDays ?? 0))}
       </Text>
     );
-  const left = Number(t.daysLeft);
+  const left = Number(tk.daysLeft);
   const overdue = left < 0;
   return (
     <Text
@@ -85,11 +88,12 @@ export function Deadline({ t }: { t: Row }) {
       data-testid="deadline"
     >
       {overdue
-        ? `просрочено на ${-left} ${dayWord(-left)}`
+        ? t.tickets.prosrochenoNa(-left, dayWord(-left))
         : left === 0
-          ? 'срок истекает сегодня'
-          : `осталось ${left} ${dayWord(left)}`}{' '}
-      · до {fmtDate(t.dueDate)}
+          ? t.tickets.srokIstekaetSegodnya
+          : t.tickets.ostalos(left, dayWord(left))}{' '}
+      {t.tickets.do}
+      {fmtDate(tk.dueDate)}
     </Text>
   );
 }
@@ -121,7 +125,7 @@ function useTicketAction<A>(fn: (a: A) => Promise<unknown>, okText: string, onDo
     },
     onError: (e) => {
       void qc.invalidateQueries();
-      notifications.show({ color: 'red', title: 'Ошибка', message: errorText(e), autoClose: 8000 });
+      notifications.show({ color: 'red', title: t.error, message: errorText(e), autoClose: 8000 });
     },
   });
 }
@@ -152,7 +156,7 @@ function Files({ value, onChange }: { value: Uploaded[]; onChange(v: Uploaded[])
       >
         {(p) => (
           <Button {...p} size="xs" variant="light" loading={busy} data-testid="ticket-attach">
-            Приложить документ
+            {t.tickets.prilozhitDokument}
           </Button>
         )}
       </FileButton>
@@ -225,20 +229,20 @@ export function EscalateModal({ conv, opened, onClose }: { conv: Row; opened: bo
         curatorIds: curators.filter((c) => !responsible.includes(c)),
         ...(due ? { dueDate: due } : {}),
       }),
-    'Обращение передано на 2-ю линию',
+    t.tickets.obrashcheniePeredanoNa2,
     onClose,
   );
-  const topicOptions = (topics.data ?? []).map((t) => ({
-    value: t.id,
-    label: `${'— '.repeat(Number(t.level) - 1)}${String(t.name)}`,
+  const topicOptions = (topics.data ?? []).map((topic) => ({
+    value: topic.id,
+    label: `${'— '.repeat(Number(topic.level) - 1)}${String(topic.name)}`,
   }));
   const peopleOptions = (people.data ?? []).map((p) => ({ value: p.id, label: String(p.fullName) }));
   return (
-    <Modal opened={opened} onClose={onClose} title="Передать на 2-ю линию" size="lg">
+    <Modal opened={opened} onClose={onClose} title={t.tickets.peredatNa2Yu} size="lg">
       <Stack gap="xs" data-testid="escalate-form">
         <Group grow>
           <Select
-            label="Предприятие"
+            label={t.tickets.predpriyatie}
             data={options(enterprises.data)}
             value={enterpriseId}
             onChange={(v) => {
@@ -248,7 +252,7 @@ export function EscalateModal({ conv, opened, onClose }: { conv: Row; opened: bo
             data-testid="esc-enterprise"
           />
           <Select
-            label="Подразделение"
+            label={t.tickets.podrazdelenie}
             data={(eds.data ?? []).map((e) => ({
               value: String(e.departmentId),
               label: String(e.departmentName),
@@ -260,7 +264,7 @@ export function EscalateModal({ conv, opened, onClose }: { conv: Row; opened: bo
           />
         </Group>
         <Select
-          label="Тема"
+          label={t.tickets.tema}
           data={topicOptions}
           value={topicId}
           onChange={setTopicId}
@@ -268,8 +272,8 @@ export function EscalateModal({ conv, opened, onClose }: { conv: Row; opened: bo
           data-testid="esc-topic"
         />
         <Textarea
-          label="Суть обращения для ответственных"
-          description="Ответственные видят эту суть в письме и в кабинете"
+          label={t.tickets.sutObrashcheniyaDlyaOtvetstvennykh}
+          description={t.tickets.otvetstvennyeVidyatEtuSut}
           value={summary}
           onChange={(e) => setSummary(e.currentTarget.value)}
           minRows={3}
@@ -277,11 +281,11 @@ export function EscalateModal({ conv, opened, onClose }: { conv: Row; opened: bo
           data-testid="esc-summary"
         />
         <MultiSelect
-          label="Ответственные"
+          label={t.tickets.otvetstvennye}
           description={
             ready && defaults.data && !defaults.data.responsibleIds.length
-              ? 'По матрице ответственных не найдено — выберите вручную'
-              : 'Подставлены по матрице; можно заменить или добавить'
+              ? t.tickets.poMatritseOtvetstvennykhNe
+              : t.tickets.podstavlenyPoMatritseMozhno
           }
           data={peopleOptions}
           value={responsible}
@@ -290,7 +294,7 @@ export function EscalateModal({ conv, opened, onClose }: { conv: Row; opened: bo
           data-testid="esc-responsible"
         />
         <MultiSelect
-          label="Кураторы"
+          label={t.tickets.kuratory}
           data={peopleOptions}
           value={curators}
           onChange={setCurators}
@@ -299,15 +303,15 @@ export function EscalateModal({ conv, opened, onClose }: { conv: Row; opened: bo
         />
         <TextInput
           type="date"
-          label="Срок ответа"
-          description="По умолчанию — срок темы или общий (15 дней); можно изменить"
+          label={t.tickets.srokOtveta}
+          description={t.tickets.poUmolchaniyuSrokTemy}
           value={due}
           onChange={(e) => setDue(e.currentTarget.value)}
           data-testid="esc-due"
         />
         <Group justify="flex-end">
           <Button variant="default" onClick={onClose}>
-            Отмена
+            {t.cancel}
           </Button>
           <Button
             onClick={() => send.mutate(undefined)}
@@ -315,11 +319,11 @@ export function EscalateModal({ conv, opened, onClose }: { conv: Row; opened: bo
             disabled={!ready || !summary.trim() || !responsible.length}
             data-testid="esc-submit"
           >
-            Передать
+            {t.tickets.peredat}
           </Button>
         </Group>
         <Text size="xs" c="dimmed" hidden={!!responsible.length}>
-          Без ответственного тикет не сохраняется.
+          {t.tickets.bezOtvetstvennogoTiketNe}
         </Text>
       </Stack>
     </Modal>
@@ -328,13 +332,13 @@ export function EscalateModal({ conv, opened, onClose }: { conv: Row; opened: bo
 
 // ---------------------------------------------------------------- списки
 
-function TicketCard({ t, selected, onOpen }: { t: Row; selected?: boolean; onOpen(id: string): void }) {
-  const mine = t.myRole as string | null;
+function TicketCard({ t: tk, selected, onOpen }: { t: Row; selected?: boolean; onOpen(id: string): void }) {
+  const mine = tk.myRole as string | null;
   return (
     <Card
       withBorder
       padding="xs"
-      onClick={() => onOpen(t.id)}
+      onClick={() => onOpen(tk.id)}
       style={{
         cursor: 'pointer',
         borderLeft: `4px solid ${mine === 'responsible' ? 'var(--mantine-color-blue-6)' : mine === 'curator' ? 'var(--mantine-color-gray-5)' : 'transparent'}`,
@@ -345,32 +349,33 @@ function TicketCard({ t, selected, onOpen }: { t: Row; selected?: boolean; onOpe
       <Group justify="space-between" wrap="nowrap">
         <Group gap={6} wrap="nowrap">
           <Text fw={700} size="sm">
-            №{String(t.number)}
+            №{String(tk.number)}
           </Text>
-          {t.isImportant ? (
+          {tk.isImportant ? (
             <Badge color="red" size="xs" variant="filled">
-              особо важное
+              {t.tickets.osoboVazhnoe}
             </Badge>
           ) : null}
           {mine ? (
             <Badge size="xs" variant={mine === 'responsible' ? 'filled' : 'light'} color="blue">
-              {mine === 'responsible' ? 'я ответственный' : 'я куратор'}
+              {mine === 'responsible' ? t.tickets.yaOtvetstvennyy : t.tickets.yaKurator}
             </Badge>
           ) : null}
         </Group>
-        <StatusBadge status={String(t.status)} testId="ticket-item-status" />
+        <StatusBadge status={String(tk.status)} testId="ticket-item-status" />
       </Group>
       <Text size="xs" lineClamp={1}>
-        {String(t.topicName)} · {String(t.enterpriseName)} / {String(t.departmentName)}
+        {String(tk.topicName)} · {String(tk.enterpriseName)} / {String(tk.departmentName)}
       </Text>
       <Text size="xs" c="dimmed" lineClamp={1}>
-        {String(t.contactName)}: {String(t.summary)}
+        {String(tk.contactName)}: {String(tk.summary)}
       </Text>
       <Group justify="space-between">
-        <Deadline t={t} />
-        {Number(t.returnsCount) > 0 && (
+        <Deadline t={tk} />
+        {Number(tk.returnsCount) > 0 && (
           <Text size="xs" c="orange">
-            возвратов: {String(t.returnsCount)}
+            {t.tickets.vozvratov}
+            {String(tk.returnsCount)}
           </Text>
         )}
       </Group>
@@ -387,17 +392,17 @@ export function TicketList({ view, extra = '' }: { view: string; extra?: string 
     <Stack gap={6}>
       <Checkbox
         size="xs"
-        label="Только особо важные"
+        label={t.tickets.tolkoOsoboVazhnye}
         checked={important}
         onChange={(e) => setImportant(e.currentTarget.checked)}
       />
       {(list.data ?? []).length === 0 && (
         <Text c="dimmed" size="sm">
-          Нет тикетов
+          {t.tickets.netTiketov}
         </Text>
       )}
-      {(list.data ?? []).map((t) => (
-        <TicketCard key={t.id} t={t} onOpen={(id) => nav(`/tickets/${id}`)} />
+      {(list.data ?? []).map((tk) => (
+        <TicketCard key={tk.id} t={tk} onOpen={(id) => nav(`/tickets/${id}`)} />
       ))}
     </Stack>
   );
@@ -412,12 +417,12 @@ export function useTicketCount(view: string, extra = ''): number {
 // ---------------------------------------------------------------- кабинет ответственного
 
 const QUICK: { value: string; label: string; q: string }[] = [
-  { value: 'all', label: 'Все', q: '' },
-  { value: 'resp', label: 'Я ответственный', q: '&role=responsible' },
-  { value: 'cur', label: 'Я куратор', q: '&role=curator' },
-  { value: 'overdue', label: 'Просроченные', q: '&overdue=true' },
-  { value: 'rework', label: 'На доработке', q: '&status=rework' },
-  { value: 'important', label: 'Особо важные', q: '&important=true' },
+  { value: 'all', label: t.all, q: '' },
+  { value: 'resp', label: t.tickets.yaOtvetstvennyy2, q: '&role=responsible' },
+  { value: 'cur', label: t.tickets.yaKurator2, q: '&role=curator' },
+  { value: 'overdue', label: t.tickets.prosrochennye, q: '&overdue=true' },
+  { value: 'rework', label: t.tickets.naDorabotke, q: '&status=rework' },
+  { value: 'important', label: t.tickets.osoboVazhnye, q: '&important=true' },
 ];
 
 /** Кабинет ответственного/куратора (M-TKT-05): список, быстрые фильтры, предпросмотр, переход в обращение. */
@@ -450,7 +455,7 @@ export function CabinetPage() {
     <Grid gutter="sm">
       <Grid.Col span={{ base: 12, md: 5 }}>
         <Title order={3} mb="xs">
-          Кабинет 2-й линии
+          {t.tickets.kabinet2YLinii}
         </Title>
         <SegmentedControl
           size="xs"
@@ -464,7 +469,7 @@ export function CabinetPage() {
         <Group grow gap="xs" mb="xs">
           <Select
             size="xs"
-            placeholder="Предприятие"
+            placeholder={t.tickets.predpriyatie}
             data={options(enterprises.data)}
             value={enterpriseId}
             onChange={setEnterpriseId}
@@ -472,7 +477,7 @@ export function CabinetPage() {
           />
           <Select
             size="xs"
-            placeholder="Подразделение"
+            placeholder={t.tickets.podrazdelenie}
             data={options(departments.data)}
             value={departmentId}
             onChange={setDepartmentId}
@@ -482,10 +487,10 @@ export function CabinetPage() {
         <Group grow gap="xs" mb="xs">
           <Select
             size="xs"
-            placeholder="Тема"
-            data={(topics.data ?? []).map((t) => ({
-              value: t.id,
-              label: `${'— '.repeat(Number(t.level) - 1)}${String(t.name)}`,
+            placeholder={t.tickets.tema}
+            data={(topics.data ?? []).map((topic) => ({
+              value: topic.id,
+              label: `${'— '.repeat(Number(topic.level) - 1)}${String(topic.name)}`,
             }))}
             value={topicId}
             onChange={setTopicId}
@@ -494,7 +499,7 @@ export function CabinetPage() {
           />
           <Select
             size="xs"
-            placeholder="Статус"
+            placeholder={t.tickets.status}
             data={Object.entries(TICKET_STATUS).map(([value, s]) => ({ value, label: s.label }))}
             value={status}
             onChange={setStatus}
@@ -503,7 +508,7 @@ export function CabinetPage() {
           <TextInput
             size="xs"
             type="date"
-            placeholder="Срок до"
+            placeholder={t.tickets.srokDo}
             value={dueTo}
             onChange={(e) => setDueTo(e.currentTarget.value)}
           />
@@ -512,11 +517,11 @@ export function CabinetPage() {
           <Stack gap={6} data-testid="ticket-list">
             {(list.data ?? []).length === 0 && (
               <Text c="dimmed" size="sm">
-                Нет тикетов
+                {t.tickets.netTiketov}
               </Text>
             )}
-            {(list.data ?? []).map((t) => (
-              <TicketCard key={t.id} t={t} selected={selected === t.id} onOpen={setSelected} />
+            {(list.data ?? []).map((tk) => (
+              <TicketCard key={tk.id} t={tk} selected={selected === tk.id} onOpen={setSelected} />
             ))}
           </Stack>
         </ScrollArea>
@@ -525,21 +530,24 @@ export function CabinetPage() {
         {preview.data ? (
           <Paper withBorder p="md" data-testid="ticket-preview">
             <Group justify="space-between" mb="xs">
-              <Title order={4}>Тикет №{String(preview.data.number)}</Title>
+              <Title order={4}>
+                {t.tickets.tiket}
+                {String(preview.data.number)}
+              </Title>
               <StatusBadge status={String(preview.data.status)} testId="ticket-preview-status" />
             </Group>
             <TicketFacts t={preview.data} />
             <Divider my="xs" />
             <Text fw={600} size="sm">
-              История
+              {t.tickets.istoriya}
             </Text>
             <History items={(preview.data.history as Row[]).slice(-6)} />
             <Button mt="md" onClick={() => nav(`/tickets/${selected}`)} data-testid="ticket-open-full">
-              Открыть обращение целиком
+              {t.tickets.otkrytObrashchenieTselikom}
             </Button>
           </Paper>
         ) : (
-          <Text c="dimmed">Выберите тикет слева — здесь появится предпросмотр.</Text>
+          <Text c="dimmed">{t.tickets.vyberiteTiketSlevaZdes}</Text>
         )}
       </Grid.Col>
     </Grid>
@@ -549,18 +557,18 @@ export function CabinetPage() {
 // ---------------------------------------------------------------- карточка тикета
 
 const ACTION: Record<string, string> = {
-  created: 'передан на 2-ю линию',
-  opened: 'взят в работу',
-  answered: 'закрыт ответственным → на согласование',
-  approved: 'принят, тикет закрыт',
-  returned: 'возвращён на доработку',
-  redirected: 'переадресован',
-  reassigned: 'изменены ответственные/срок',
-  commented: 'комментарий',
-  auto_reassigned: 'ответственные пересчитаны автоматически',
-  assignee_removed: 'исключён из назначенных',
-  needs_reassign: 'требует переназначения',
-  matrix_applied: 'применена матрица',
+  created: t.tickets.peredanNa2Yu,
+  opened: t.tickets.vzyatVRabotu,
+  answered: t.tickets.zakrytOtvetstvennymNaSoglasovanie,
+  approved: t.tickets.prinyatTiketZakryt,
+  returned: t.tickets.vozvrashchenNaDorabotku,
+  redirected: t.tickets.pereadresovan,
+  reassigned: t.tickets.izmenenyOtvetstvennyeSrok,
+  commented: t.tickets.kommentariy,
+  auto_reassigned: t.tickets.otvetstvennyePereschitanyAvtomatiche,
+  assignee_removed: t.tickets.isklyuchenIzNaznachennykh,
+  needs_reassign: t.tickets.trebuetPerenaznacheniya,
+  matrix_applied: t.tickets.primenenaMatritsa,
 };
 
 function History({ items }: { items: Row[] }) {
@@ -582,45 +590,49 @@ function History({ items }: { items: Row[] }) {
   );
 }
 
-function TicketFacts({ t }: { t: Row }) {
-  const c = t.conversation as Row | null;
-  const assignees = ((t.assignees as Row[]) ?? []).filter((a) => a.isActive);
+function TicketFacts({ t: tk }: { t: Row }) {
+  const c = tk.conversation as Row | null;
+  const assignees = ((tk.assignees as Row[]) ?? []).filter((a) => a.isActive);
   return (
     <Stack gap={4}>
-      <Deadline t={t} />
+      <Deadline t={tk} />
       <Text size="sm">
-        <b>Тема:</b> {String(t.topicName)}
+        <b>{t.tickets.tema2}</b> {String(tk.topicName)}
       </Text>
       <Text size="sm">
-        <b>Направлено:</b> {String(t.enterpriseName)} / {String(t.departmentName)}
+        <b>{t.tickets.napravleno}</b> {String(tk.enterpriseName)} / {String(tk.departmentName)}
       </Text>
       <Text size="sm">
-        <b>Суть:</b> {String(t.summary)}
+        <b>{t.tickets.sut}</b> {String(tk.summary)}
       </Text>
       <Text size="sm">
-        <b>Клиент:</b>{' '}
-        {[c?.displayName, c?.phone, c?.email].filter(Boolean).join(', ') || String(t.contactName)}
+        <b>{t.tickets.klient}</b>{' '}
+        {[c?.displayName, c?.phone, c?.email].filter(Boolean).join(', ') || String(tk.contactName)}
       </Text>
       <Text size="sm">
-        <b>Ответственные:</b>{' '}
+        <b>{t.tickets.otvetstvennye2}</b>{' '}
         {assignees
           .filter((a) => a.kind === 'responsible')
           .map((a) => String(a.fullName))
           .join(', ') || '—'}
       </Text>
       <Text size="sm">
-        <b>Кураторы:</b>{' '}
+        <b>{t.tickets.kuratory2}</b>{' '}
         {assignees
           .filter((a) => a.kind === 'curator')
           .map((a) => String(a.fullName))
           .join(', ') || '—'}
       </Text>
       <Text size="sm">
-        <b>Передал:</b> {String(t.creatorName)}
+        <b>{t.tickets.peredal}</b> {String(tk.creatorName)}
       </Text>
-      {t.answerSummary ? (
-        <Alert color="violet" variant="light" title={`Ответ клиенту (${String(t.answerMethodName ?? '')})`}>
-          {String(t.answerSummary)}
+      {tk.answerSummary ? (
+        <Alert
+          color="violet"
+          variant="light"
+          title={t.tickets.otvetKlientu(String(tk.answerMethodName ?? ''))}
+        >
+          {String(tk.answerSummary)}
         </Alert>
       ) : null}
     </Stack>
@@ -629,17 +641,17 @@ function TicketFacts({ t }: { t: Row }) {
 
 type Att = { id: string; filename: string };
 
-function Comments({ t }: { t: Row }) {
+function Comments({ t: tk }: { t: Row }) {
   const KIND: Record<string, string> = {
-    answer: 'Ответ клиенту',
-    return: 'Возврат на доработку',
-    redirect: 'Переадресация',
-    comment: 'Комментарий',
-    system: 'Система',
+    answer: t.tickets.otvetKlientu2,
+    return: t.tickets.vozvratNaDorabotku,
+    redirect: t.tickets.pereadresatsiya,
+    comment: t.tickets.kommentariy2,
+    system: t.tickets.sistema,
   };
   return (
     <Stack gap="xs" data-testid="ticket-comments">
-      {((t.comments as Row[]) ?? []).map((c) => (
+      {((tk.comments as Row[]) ?? []).map((c) => (
         <Paper key={c.id} withBorder p="xs">
           <Group justify="space-between">
             <Text size="xs" fw={600}>
@@ -653,7 +665,7 @@ function Comments({ t }: { t: Row }) {
             {String(c.body)}
           </Text>
           {((c.attachments as Att[]) ?? []).map((a) => (
-            <Anchor key={a.id} size="xs" mr="xs" onClick={() => void openTicketFile(t.id, a.id)}>
+            <Anchor key={a.id} size="xs" mr="xs" onClick={() => void openTicketFile(tk.id, a.id)}>
               📎 {a.filename}
             </Anchor>
           ))}
@@ -683,12 +695,12 @@ function Conversation({ ticketId }: { ticketId: string }) {
         >
           <Text size="xs" c="dimmed">
             {m.direction === 'in'
-              ? 'Клиент'
+              ? t.tickets.klient2
               : m.direction === 'out'
-                ? String(m.authorName ?? 'Оператор')
+                ? String(m.authorName ?? t.tickets.operator)
                 : m.direction === 'note'
-                  ? 'Заметка оператора'
-                  : 'Система'}{' '}
+                  ? t.tickets.zametkaOperatora
+                  : t.tickets.sistema}{' '}
             · {fmtTime(m.sentAt)}
           </Text>
           <Text size="sm" style={{ whiteSpace: 'pre-wrap' }}>
@@ -719,49 +731,50 @@ export function TicketPage() {
     queryFn: () => get<Row>(`/tickets/${id}`),
     enabled: !!id,
   });
-  const t = q.data;
-  const can = (t?.can as Record<string, boolean> | undefined) ?? {};
-  const open = useTicketAction(() => post(`/tickets/${id}/open`), 'Тикет взят в работу');
+  const tk = q.data;
+  const can = (tk?.can as Record<string, boolean> | undefined) ?? {};
+  const open = useTicketAction(() => post(`/tickets/${id}/open`), t.tickets.tiketVzyatVRabotu);
   // Ответственный или куратор открыл «Новый» (или возвращённый) тикет — он переходит «В работе» (M-TKT-03).
   // Только при открытии страницы: фоновое обновление по событию (например, возврат на доработку, пока страница
   // открыта) не должно само брать тикет в работу.
   const autoOpened = useRef<string | null>(null);
   useEffect(() => {
-    if (!t || autoOpened.current === id) return;
+    if (!tk || autoOpened.current === id) return;
     autoOpened.current = id ?? null;
     if (can.open) open.mutate(undefined);
-  }, [t, id, can.open, open]);
+  }, [tk, id, can.open, open]);
   const send = useTicketAction(
     () => post(`/tickets/${id}/comments`, { body: comment, attachmentIds: files.map((f) => f.id) }),
-    'Комментарий добавлен',
+    t.tickets.kommentariyDobavlen,
     () => {
       setComment('');
       setFiles([]);
     },
   );
   if (q.error) return <Alert color="red">{errorText(q.error)}</Alert>;
-  if (!t) return null;
+  if (!tk) return null;
   return (
     <Stack gap="sm">
       <Group justify="space-between">
         <Group>
           <Button variant="subtle" size="xs" onClick={() => nav(-1)}>
-            ← Назад
+            {t.tickets.nazad}
           </Button>
           <Title order={3} data-testid="ticket-title">
-            Тикет №{String(t.number)}
+            {t.tickets.tiket}
+            {String(tk.number)}
           </Title>
-          <StatusBadge status={String(t.status)} />
-          {t.isImportant ? (
+          <StatusBadge status={String(tk.status)} />
+          {tk.isImportant ? (
             <Badge color="red" variant="filled">
-              особо важное
+              {t.tickets.osoboVazhnoe}
             </Badge>
           ) : null}
         </Group>
         <Group gap="xs">
           {can.close && (
             <Button size="xs" color="green" onClick={() => setDialog('close')} data-testid="ticket-close">
-              Закрыть (ответ клиенту дан)
+              {t.tickets.zakrytOtvetKlientuDan}
             </Button>
           )}
           {can.redirect && (
@@ -771,7 +784,7 @@ export function TicketPage() {
               onClick={() => setDialog('redirect')}
               data-testid="ticket-redirect"
             >
-              Переадресовать
+              {t.tickets.pereadresovat}
             </Button>
           )}
           {can.approve && (
@@ -782,7 +795,7 @@ export function TicketPage() {
                 onClick={() => setDialog('approve')}
                 data-testid="ticket-approve"
               >
-                Принять
+                {t.tickets.prinyat}
               </Button>
               <Button
                 size="xs"
@@ -791,7 +804,7 @@ export function TicketPage() {
                 onClick={() => setDialog('return')}
                 data-testid="ticket-return"
               >
-                Вернуть на доработку
+                {t.tickets.vernutNaDorabotku}
               </Button>
             </>
           )}
@@ -802,7 +815,7 @@ export function TicketPage() {
               onClick={() => setDialog('reassign')}
               data-testid="ticket-reassign"
             >
-              Ответственные и срок
+              {t.tickets.otvetstvennyeISrok}
             </Button>
           )}
         </Group>
@@ -810,34 +823,34 @@ export function TicketPage() {
       <Grid gutter="md">
         <Grid.Col span={{ base: 12, md: 5 }}>
           <Paper withBorder p="md">
-            <TicketFacts t={t} />
+            <TicketFacts t={tk} />
           </Paper>
           <Paper withBorder p="md" mt="sm">
             <Text fw={600} size="sm" mb={4}>
-              История
+              {t.tickets.istoriya}
             </Text>
-            <History items={(t.history as Row[]) ?? []} />
+            <History items={(tk.history as Row[]) ?? []} />
           </Paper>
         </Grid.Col>
         <Grid.Col span={{ base: 12, md: 7 }}>
           <Tabs defaultValue="messages">
             <Tabs.List mb="xs">
-              <Tabs.Tab value="messages">Переписка с клиентом</Tabs.Tab>
+              <Tabs.Tab value="messages">{t.tickets.perepiskaSKlientom}</Tabs.Tab>
               <Tabs.Tab value="comments" data-testid="tab-ticket-comments">
-                Комментарии и документы
+                {t.tickets.kommentariiIDokumenty}
               </Tabs.Tab>
             </Tabs.List>
             <Tabs.Panel value="messages">
               <ScrollArea h="55vh">
-                <Conversation ticketId={String(t.id)} />
+                <Conversation ticketId={String(tk.id)} />
               </ScrollArea>
             </Tabs.Panel>
             <Tabs.Panel value="comments">
-              <Comments t={t} />
+              <Comments t={tk} />
               {can.comment && (
                 <Stack gap="xs" mt="sm">
                   <Textarea
-                    placeholder="Комментарий к тикету"
+                    placeholder={t.tickets.kommentariyKTiketu}
                     value={comment}
                     onChange={(e) => setComment(e.currentTarget.value)}
                     autosize
@@ -851,7 +864,7 @@ export function TicketPage() {
                     onClick={() => send.mutate(undefined)}
                     data-testid="ticket-comment-send"
                   >
-                    Добавить
+                    {t.add}
                   </Button>
                 </Stack>
               )}
@@ -859,29 +872,29 @@ export function TicketPage() {
           </Tabs>
         </Grid.Col>
       </Grid>
-      <CloseDialog t={t} opened={dialog === 'close'} onClose={() => setDialog(null)} />
-      <RedirectDialog t={t} opened={dialog === 'redirect'} onClose={() => setDialog(null)} />
-      <ApproveDialog t={t} mode="approve" opened={dialog === 'approve'} onClose={() => setDialog(null)} />
-      <ApproveDialog t={t} mode="return" opened={dialog === 'return'} onClose={() => setDialog(null)} />
-      <ReassignDialog t={t} opened={dialog === 'reassign'} onClose={() => setDialog(null)} />
+      <CloseDialog t={tk} opened={dialog === 'close'} onClose={() => setDialog(null)} />
+      <RedirectDialog t={tk} opened={dialog === 'redirect'} onClose={() => setDialog(null)} />
+      <ApproveDialog t={tk} mode="approve" opened={dialog === 'approve'} onClose={() => setDialog(null)} />
+      <ApproveDialog t={tk} mode="return" opened={dialog === 'return'} onClose={() => setDialog(null)} />
+      <ReassignDialog t={tk} opened={dialog === 'reassign'} onClose={() => setDialog(null)} />
     </Stack>
   );
 }
 
-function CloseDialog({ t, opened, onClose }: { t: Row; opened: boolean; onClose(): void }) {
+function CloseDialog({ t: tk, opened, onClose }: { t: Row; opened: boolean; onClose(): void }) {
   const methods = useList('/dict/answer-methods');
   const [method, setMethod] = useState<string | null>(null);
   const [summary, setSummary] = useState('');
   const [files, setFiles] = useState<Att[]>([]);
   const close = useTicketAction(
     () =>
-      post(`/tickets/${t.id}/close`, {
-        version: t.version,
+      post(`/tickets/${tk.id}/close`, {
+        version: tk.version,
         answerMethodId: method,
         answerSummary: summary,
         attachmentIds: files.map((f) => f.id),
       }),
-    'Тикет отправлен на согласование',
+    t.tickets.tiketOtpravlenNaSoglasovanie,
     () => {
       onClose();
       setSummary('');
@@ -889,21 +902,20 @@ function CloseDialog({ t, opened, onClose }: { t: Row; opened: boolean; onClose(
     },
   );
   return (
-    <Modal opened={opened} onClose={onClose} title="Закрытие тикета: как и что ответили клиенту" size="lg">
+    <Modal opened={opened} onClose={onClose} title={t.tickets.zakrytieTiketaKakI} size="lg">
       <Stack gap="xs" data-testid="close-form">
         <Alert color="blue" variant="light">
-          Система ответ клиенту не отправляет: свяжитесь с клиентом сами (телефон, почта, письмо) и
-          зафиксируйте результат.
+          {t.tickets.sistemaOtvetKlientuNe}
         </Alert>
         <Select
-          label="Способ ответа"
+          label={t.tickets.sposobOtveta}
           data={options(methods.data)}
           value={method}
           onChange={setMethod}
           data-testid="answer-method"
         />
         <Textarea
-          label="Суть ответа"
+          label={t.tickets.sutOtveta}
           value={summary}
           onChange={(e) => setSummary(e.currentTarget.value)}
           minRows={4}
@@ -913,7 +925,7 @@ function CloseDialog({ t, opened, onClose }: { t: Row; opened: boolean; onClose(
         <Files value={files} onChange={setFiles} />
         <Group justify="flex-end">
           <Button variant="default" onClick={onClose}>
-            Отмена
+            {t.cancel}
           </Button>
           <Button
             color="green"
@@ -922,7 +934,7 @@ function CloseDialog({ t, opened, onClose }: { t: Row; opened: boolean; onClose(
             onClick={() => close.mutate(undefined)}
             data-testid="close-submit"
           >
-            Отправить на согласование
+            {t.tickets.otpravitNaSoglasovanie}
           </Button>
         </Group>
       </Stack>
@@ -931,7 +943,7 @@ function CloseDialog({ t, opened, onClose }: { t: Row; opened: boolean; onClose(
 }
 
 function ApproveDialog({
-  t,
+  t: tk,
   mode,
   opened,
   onClose,
@@ -949,38 +961,42 @@ function ApproveDialog({
     setFiles([]);
   };
   const approve = useTicketAction(
-    () => post(`/tickets/${t.id}/approve`, { version: t.version, ...(comment.trim() ? { comment } : {}) }),
-    'Тикет принят и закрыт, обращение закрыто',
+    () => post(`/tickets/${tk.id}/approve`, { version: tk.version, ...(comment.trim() ? { comment } : {}) }),
+    t.tickets.tiketPrinyatIZakryt,
     done,
   );
   const back = useTicketAction(
     () =>
-      post(`/tickets/${t.id}/return`, { version: t.version, comment, attachmentIds: files.map((f) => f.id) }),
-    'Тикет возвращён на доработку',
+      post(`/tickets/${tk.id}/return`, {
+        version: tk.version,
+        comment,
+        attachmentIds: files.map((f) => f.id),
+      }),
+    t.tickets.tiketVozvrashchenNaDorabotku,
     done,
   );
   return (
     <Modal
       opened={opened}
       onClose={onClose}
-      title={mode === 'approve' ? 'Принять ответ' : 'Вернуть на доработку'}
+      title={mode === 'approve' ? t.tickets.prinyatOtvet : t.tickets.vernutNaDorabotku}
       size="lg"
     >
       <Stack gap="xs" data-testid={`${mode}-form`}>
-        {t.answerSummary ? (
+        {tk.answerSummary ? (
           <Alert
             color="violet"
             variant="light"
-            title={`Ответ ответственного (${String(t.answerMethodName ?? '')})`}
+            title={t.tickets.otvetOtvetstvennogo(String(tk.answerMethodName ?? ''))}
           >
-            {String(t.answerSummary)}
+            {String(tk.answerSummary)}
           </Alert>
         ) : null}
         <Text size="xs" c="dimmed">
-          Проверьте, приложены ли нужные документы и понятно ли изложена суть ответа.
+          {t.tickets.provertePrilozhenyLiNuzhnye}
         </Text>
         <Textarea
-          label={mode === 'approve' ? 'Комментарий (необязательно)' : 'Что нужно доработать'}
+          label={mode === 'approve' ? t.tickets.kommentariyNeobyazatelno : t.tickets.chtoNuzhnoDorabotat}
           value={comment}
           onChange={(e) => setComment(e.currentTarget.value)}
           minRows={3}
@@ -990,7 +1006,7 @@ function ApproveDialog({
         {mode === 'return' && <Files value={files} onChange={setFiles} />}
         <Group justify="flex-end">
           <Button variant="default" onClick={onClose}>
-            Отмена
+            {t.cancel}
           </Button>
           {mode === 'approve' ? (
             <Button
@@ -999,7 +1015,7 @@ function ApproveDialog({
               onClick={() => approve.mutate(undefined)}
               data-testid="approve-submit"
             >
-              Принять
+              {t.tickets.prinyat}
             </Button>
           ) : (
             <Button
@@ -1009,7 +1025,7 @@ function ApproveDialog({
               onClick={() => back.mutate(undefined)}
               data-testid="return-submit"
             >
-              Вернуть на доработку
+              {t.tickets.vernutNaDorabotku}
             </Button>
           )}
         </Group>
@@ -1018,7 +1034,7 @@ function ApproveDialog({
   );
 }
 
-function RedirectDialog({ t, opened, onClose }: { t: Row; opened: boolean; onClose(): void }) {
+function RedirectDialog({ t: tk, opened, onClose }: { t: Row; opened: boolean; onClose(): void }) {
   const enterprises = useList('/dict/enterprises');
   const topics = useList('/topics');
   const people = useList('/tickets/assignable');
@@ -1029,12 +1045,12 @@ function RedirectDialog({ t, opened, onClose }: { t: Row; opened: boolean; onClo
   const [comment, setComment] = useState('');
   useEffect(() => {
     if (!opened) return;
-    setEnterpriseId(String(t.enterpriseId));
-    setDepartmentId(String(t.departmentId));
-    setTopicId(String(t.topicId));
+    setEnterpriseId(String(tk.enterpriseId));
+    setDepartmentId(String(tk.departmentId));
+    setTopicId(String(tk.topicId));
     setResponsible([]);
     setComment('');
-  }, [opened, t.enterpriseId, t.departmentId, t.topicId]);
+  }, [opened, tk.enterpriseId, tk.departmentId, tk.topicId]);
   const eds = useList(
     enterpriseId
       ? `/enterprise-departments?enterpriseId=${enterpriseId}`
@@ -1042,31 +1058,30 @@ function RedirectDialog({ t, opened, onClose }: { t: Row; opened: boolean; onClo
     !!enterpriseId,
   );
   const dims: Record<string, string> = {};
-  if (enterpriseId && enterpriseId !== t.enterpriseId) dims.enterpriseId = enterpriseId;
-  if (departmentId && departmentId !== t.departmentId) dims.departmentId = departmentId;
-  if (topicId && topicId !== t.topicId) dims.topicId = topicId;
+  if (enterpriseId && enterpriseId !== tk.enterpriseId) dims.enterpriseId = enterpriseId;
+  if (departmentId && departmentId !== tk.departmentId) dims.departmentId = departmentId;
+  if (topicId && topicId !== tk.topicId) dims.topicId = topicId;
   const changed = Object.keys(dims).length > 0;
   const go = useTicketAction(
     () =>
-      post(`/tickets/${t.id}/redirect`, {
-        version: t.version,
+      post(`/tickets/${tk.id}/redirect`, {
+        version: tk.version,
         comment,
         ...dims,
         ...(responsible.length ? { responsibleIds: responsible } : {}),
       }),
-    'Тикет переадресован',
+    t.tickets.tiketPereadresovan,
     onClose,
   );
   return (
-    <Modal opened={opened} onClose={onClose} title="Переадресация тикета" size="lg">
+    <Modal opened={opened} onClose={onClose} title={t.tickets.pereadresatsiyaTiketa} size="lg">
       <Stack gap="xs" data-testid="redirect-form">
         <Text size="xs" c="dimmed">
-          Смена темы, подразделения или предприятия пересчитывает ответственных по матрице; можно и просто
-          выбрать другого ответственного. Срок ответа не меняется.
+          {t.tickets.smenaTemyPodrazdeleniyaIli}
         </Text>
         <Group grow>
           <Select
-            label="Предприятие"
+            label={t.tickets.predpriyatie}
             data={options(enterprises.data)}
             value={enterpriseId}
             onChange={(v) => {
@@ -1075,7 +1090,7 @@ function RedirectDialog({ t, opened, onClose }: { t: Row; opened: boolean; onClo
             }}
           />
           <Select
-            label="Подразделение"
+            label={t.tickets.podrazdelenie}
             data={(eds.data ?? []).map((e) => ({
               value: String(e.departmentId),
               label: String(e.departmentName),
@@ -1086,7 +1101,7 @@ function RedirectDialog({ t, opened, onClose }: { t: Row; opened: boolean; onClo
           />
         </Group>
         <Select
-          label="Тема"
+          label={t.tickets.tema}
           data={(topics.data ?? []).map((x) => ({
             value: x.id,
             label: `${'— '.repeat(Number(x.level) - 1)}${String(x.name)}`,
@@ -1096,9 +1111,9 @@ function RedirectDialog({ t, opened, onClose }: { t: Row; opened: boolean; onClo
           searchable
         />
         <MultiSelect
-          label="Ответственный (вручную)"
+          label={t.tickets.otvetstvennyyVruchnuyu}
           description={
-            changed ? 'Пусто — ответственные подставятся по матрице' : 'Выберите другого ответственного'
+            changed ? t.tickets.pustoOtvetstvennyePodstavyatsyaPo : t.tickets.vyberiteDrugogoOtvetstvennogo
           }
           data={(people.data ?? []).map((p) => ({ value: p.id, label: String(p.fullName) }))}
           value={responsible}
@@ -1107,7 +1122,7 @@ function RedirectDialog({ t, opened, onClose }: { t: Row; opened: boolean; onClo
           data-testid="redirect-responsible"
         />
         <Textarea
-          label="Комментарий (обязателен)"
+          label={t.tickets.kommentariyObyazatelen}
           value={comment}
           onChange={(e) => setComment(e.currentTarget.value)}
           minRows={2}
@@ -1116,7 +1131,7 @@ function RedirectDialog({ t, opened, onClose }: { t: Row; opened: boolean; onClo
         />
         <Group justify="flex-end">
           <Button variant="default" onClick={onClose}>
-            Отмена
+            {t.cancel}
           </Button>
           <Button
             disabled={!comment.trim() || (!changed && !responsible.length)}
@@ -1124,7 +1139,7 @@ function RedirectDialog({ t, opened, onClose }: { t: Row; opened: boolean; onClo
             onClick={() => go.mutate(undefined)}
             data-testid="redirect-submit"
           >
-            Переадресовать
+            {t.tickets.pereadresovat}
           </Button>
         </Group>
       </Stack>
@@ -1132,7 +1147,7 @@ function RedirectDialog({ t, opened, onClose }: { t: Row; opened: boolean; onClo
   );
 }
 
-function ReassignDialog({ t, opened, onClose }: { t: Row; opened: boolean; onClose(): void }) {
+function ReassignDialog({ t: tk, opened, onClose }: { t: Row; opened: boolean; onClose(): void }) {
   const people = useList('/tickets/assignable');
   const [responsible, setResponsible] = useState<string[]>([]);
   const [curators, setCurators] = useState<string[]>([]);
@@ -1141,53 +1156,59 @@ function ReassignDialog({ t, opened, onClose }: { t: Row; opened: boolean; onClo
   const [comment, setComment] = useState('');
   useEffect(() => {
     if (!opened) return;
-    const act = ((t.assignees as Row[]) ?? []).filter((a) => a.isActive);
+    const act = ((tk.assignees as Row[]) ?? []).filter((a) => a.isActive);
     setResponsible(act.filter((a) => a.kind === 'responsible').map((a) => String(a.userId)));
     setCurators(act.filter((a) => a.kind === 'curator').map((a) => String(a.userId)));
-    setDue(String(t.dueDate));
-    setImportant(!!t.isImportant);
+    setDue(String(tk.dueDate));
+    setImportant(!!tk.isImportant);
     setComment('');
-  }, [opened, t.assignees, t.dueDate, t.isImportant]);
+  }, [opened, tk.assignees, tk.dueDate, tk.isImportant]);
   const go = useTicketAction(
     () =>
-      post(`/tickets/${t.id}/reassign`, {
-        version: t.version,
+      post(`/tickets/${tk.id}/reassign`, {
+        version: tk.version,
         responsibleIds: responsible,
         curatorIds: curators.filter((c) => !responsible.includes(c)),
-        ...(due && due !== t.dueDate ? { dueDate: due } : {}),
-        ...(important !== !!t.isImportant ? { isImportant: important } : {}),
+        ...(due && due !== tk.dueDate ? { dueDate: due } : {}),
+        ...(important !== !!tk.isImportant ? { isImportant: important } : {}),
         ...(comment.trim() ? { comment } : {}),
       }),
-    'Изменения сохранены',
+    t.tickets.izmeneniyaSokhraneny,
     onClose,
   );
   const opts = (people.data ?? []).map((p) => ({ value: p.id, label: String(p.fullName) }));
   return (
-    <Modal opened={opened} onClose={onClose} title="Ответственные, срок и важность" size="lg">
+    <Modal opened={opened} onClose={onClose} title={t.tickets.otvetstvennyeSrokIVazhnost} size="lg">
       <Stack gap="xs" data-testid="reassign-form">
         <MultiSelect
-          label="Ответственные"
+          label={t.tickets.otvetstvennye}
           data={opts}
           value={responsible}
           onChange={setResponsible}
           searchable
           data-testid="reassign-responsible"
         />
-        <MultiSelect label="Кураторы" data={opts} value={curators} onChange={setCurators} searchable />
+        <MultiSelect
+          label={t.tickets.kuratory}
+          data={opts}
+          value={curators}
+          onChange={setCurators}
+          searchable
+        />
         <TextInput
           type="date"
-          label="Срок ответа"
+          label={t.tickets.srokOtveta}
           value={due}
           onChange={(e) => setDue(e.currentTarget.value)}
           data-testid="reassign-due"
         />
         <Checkbox
-          label="Особо важное"
+          label={t.tickets.osoboVazhnoe2}
           checked={important}
           onChange={(e) => setImportant(e.currentTarget.checked)}
         />
         <Textarea
-          label="Комментарий"
+          label={t.tickets.kommentariy2}
           value={comment}
           onChange={(e) => setComment(e.currentTarget.value)}
           minRows={2}
@@ -1195,7 +1216,7 @@ function ReassignDialog({ t, opened, onClose }: { t: Row; opened: boolean; onClo
         />
         <Group justify="flex-end">
           <Button variant="default" onClick={onClose}>
-            Отмена
+            {t.cancel}
           </Button>
           <Button
             disabled={!responsible.length}
@@ -1203,7 +1224,7 @@ function ReassignDialog({ t, opened, onClose }: { t: Row; opened: boolean; onClo
             onClick={() => go.mutate(undefined)}
             data-testid="reassign-submit"
           >
-            Сохранить
+            {t.save}
           </Button>
         </Group>
       </Stack>
@@ -1230,22 +1251,32 @@ export function SubstitutesPanel({ all = false }: { all?: boolean }) {
         ...(from ? { validFrom: from } : {}),
         ...(to ? { validTo: to } : {}),
       }),
-    'Заместитель назначен',
+    t.tickets.zamestitelNaznachen,
   );
-  const del = useAction((id: string) => api('DELETE', `/approval-substitutes/${id}`), 'Заместитель снят');
+  const del = useAction(
+    (id: string) => api('DELETE', `/approval-substitutes/${id}`),
+    t.tickets.zamestitelSnyat,
+  );
   const ops = options(operators.data, 'fullName');
   return (
     <Stack gap="xs" data-testid="substitutes">
       <Text size="sm" c="dimmed">
-        Заместитель согласует тикеты вместо оператора на период отсутствия.
+        {t.tickets.zamestitelSoglasuetTiketyVmesto}
       </Text>
       <Group align="flex-end" gap="xs">
         {all && (
-          <Select size="xs" label="Оператор" data={ops} value={userId} onChange={setUserId} searchable />
+          <Select
+            size="xs"
+            label={t.tickets.operator}
+            data={ops}
+            value={userId}
+            onChange={setUserId}
+            searchable
+          />
         )}
         <Select
           size="xs"
-          label="Заместитель"
+          label={t.tickets.zamestitel}
           data={ops.filter((o) => o.value !== me?.id)}
           value={substituteId}
           onChange={setSubstituteId}
@@ -1255,14 +1286,14 @@ export function SubstitutesPanel({ all = false }: { all?: boolean }) {
         <TextInput
           size="xs"
           type="date"
-          label="С"
+          label={t.tickets.s}
           value={from}
           onChange={(e) => setFrom(e.currentTarget.value)}
         />
         <TextInput
           size="xs"
           type="date"
-          label="По"
+          label={t.tickets.po}
           value={to}
           onChange={(e) => setTo(e.currentTarget.value)}
         />
@@ -1272,7 +1303,7 @@ export function SubstitutesPanel({ all = false }: { all?: boolean }) {
           onClick={() => add.mutate(undefined)}
           data-testid="substitute-add"
         >
-          Назначить
+          {t.tickets.naznachit}
         </Button>
       </Group>
       <Table>
@@ -1285,12 +1316,12 @@ export function SubstitutesPanel({ all = false }: { all?: boolean }) {
               <Table.Td>
                 {s.validFrom || s.validTo
                   ? `${fmtDate(s.validFrom) || '…'} — ${fmtDate(s.validTo) || '…'}`
-                  : 'без ограничения'}
+                  : t.tickets.bezOgranicheniya}
               </Table.Td>
               <Table.Td>
                 {s.userId === me?.id || all ? (
                   <Button size="compact-xs" variant="subtle" color="red" onClick={() => del.mutate(s.id)}>
-                    Снять
+                    {t.tickets.snyat}
                   </Button>
                 ) : null}
               </Table.Td>
@@ -1309,22 +1340,22 @@ export function TicketControlPage() {
   const [tab, setTab] = useState<string | null>(can('supervisor.approvals') ? 'approvals' : 'attention');
   const apply = useAction(
     () => post<{ changed: number; unchanged: number; unresolved: string[] }>('/tickets/apply-matrix'),
-    'Матрица применена к открытым тикетам',
+    t.tickets.matritsaPrimenenaKOtkrytym,
   );
   return (
     <Stack>
-      <Title order={3}>Контроль 2-й линии</Title>
+      <Title order={3}>{t.tickets.kontrol2YLinii}</Title>
       <Tabs value={tab} onChange={setTab}>
         <Tabs.List mb="sm">
           {can('supervisor.approvals') && (
             <Tabs.Tab value="approvals" data-testid="tab-approvals-all">
-              Все согласования
+              {t.tickets.vseSoglasovaniya}
             </Tabs.Tab>
           )}
           <Tabs.Tab value="attention" data-testid="tab-attention">
-            Требуют переназначения
+            {t.tickets.trebuyutPerenaznacheniya}
           </Tabs.Tab>
-          {can('admin.users') && <Tabs.Tab value="substitutes">Заместители</Tabs.Tab>}
+          {can('admin.users') && <Tabs.Tab value="substitutes">{t.tickets.zamestiteli}</Tabs.Tab>}
         </Tabs.List>
         <Tabs.Panel value="approvals">
           <TicketList view="approvals_all" />
@@ -1333,7 +1364,7 @@ export function TicketControlPage() {
           <Stack>
             <Group>
               <Text size="sm" c="dimmed" style={{ flex: 1 }}>
-                Открытые тикеты, у которых не осталось активного ответственного.
+                {t.tickets.otkrytyeTiketyUKotorykh}
               </Text>
               {can('admin.matrix') && (
                 <Button
@@ -1343,7 +1374,7 @@ export function TicketControlPage() {
                   onClick={() => apply.mutate(undefined)}
                   data-testid="apply-matrix"
                 >
-                  Применить матрицу к открытым тикетам
+                  {t.tickets.primenitMatritsuKOtkrytym}
                 </Button>
               )}
             </Group>
@@ -1355,7 +1386,7 @@ export function TicketControlPage() {
         </Tabs.Panel>
       </Tabs>
       <Anchor size="xs" onClick={() => nav('/tickets')}>
-        Кабинет 2-й линии
+        {t.tickets.kabinet2YLinii}
       </Anchor>
     </Stack>
   );

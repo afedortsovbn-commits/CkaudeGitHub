@@ -20,8 +20,8 @@ import { type Row, options, useAction, useList } from '../lib/data';
 import { t } from '../lib/i18n';
 
 const KINDS = [
-  { value: 'responsible', label: 'Ответственный' },
-  { value: 'curator', label: 'Куратор' },
+  { value: 'responsible', label: t.matrix.otvetstvennyy },
+  { value: 'curator', label: t.matrix.kurator },
 ];
 
 function useTopicOptions() {
@@ -44,13 +44,13 @@ function AssignModal({ onClose }: { onClose(): void }) {
   });
   const save = useAction(
     () => post<{ affected: number }>('/responsibilities/bulk', v),
-    'Назначения сохранены',
+    t.matrix.naznacheniyaSokhraneny,
   );
   return (
-    <Modal opened onClose={onClose} title="Назначить ответственных / кураторов" size="lg">
+    <Modal opened onClose={onClose} title={t.matrix.naznachitOtvetstvennykhKuratorov} size="lg">
       <Stack>
         <MultiSelect
-          label="Подразделения на предприятиях"
+          label={t.matrix.podrazdeleniyaNaPredpriyatiyakh}
           data={(links.data ?? []).map((l) => ({
             value: l.id,
             label: `${String(l.enterpriseName)} — ${String(l.departmentName)}`,
@@ -61,7 +61,7 @@ function AssignModal({ onClose }: { onClose(): void }) {
           data-testid="assign-eds"
         />
         <MultiSelect
-          label="Темы / подтемы"
+          label={t.matrix.temyPodtemy}
           data={topicOptions}
           value={v.topicIds}
           onChange={(x) => setV({ ...v, topicIds: x })}
@@ -69,7 +69,7 @@ function AssignModal({ onClose }: { onClose(): void }) {
           data-testid="assign-topics"
         />
         <MultiSelect
-          label="Сотрудники (роль 2-й линии)"
+          label={t.matrix.sotrudnikiRol2Y}
           data={(users.data ?? []).map((u) => ({
             value: u.id,
             label: `${String(u.fullName)} <${String(u.email)}>`,
@@ -80,22 +80,21 @@ function AssignModal({ onClose }: { onClose(): void }) {
           data-testid="assign-users"
         />
         <Select
-          label="Роль в матрице"
+          label={t.matrix.rolVMatritse}
           data={KINDS}
           value={v.kind}
           onChange={(x) => setV({ ...v, kind: x ?? 'responsible' })}
           data-testid="assign-kind"
         />
         <Text size="xs" c="dimmed">
-          Создаются все сочетания выбранных подразделений, тем и сотрудников. Назначение на тему действует на
-          её подтемы, пока для подтемы не задано своё.
+          {t.matrix.sozdayutsyaVseSochetaniyaVybrannykh}
         </Text>
         <Button
           onClick={() => save.mutate(undefined, { onSuccess: onClose })}
           loading={save.isPending}
           data-testid="assign-save"
         >
-          Назначить
+          {t.matrix.naznachit}
         </Button>
       </Stack>
     </Modal>
@@ -109,21 +108,32 @@ function CopyModal({ onClose }: { onClose(): void }) {
   const [res, setRes] = useState<{ copied: number; missingDepartmentIds: string[] } | null>(null);
   const copy = useAction(
     async () => setRes(await post('/responsibilities/copy', { fromEnterpriseId: from, toEnterpriseId: to })),
-    'Скопировано',
+    t.matrix.skopirovano,
   );
   return (
-    <Modal opened onClose={onClose} title="Копировать назначения между предприятиями">
+    <Modal opened onClose={onClose} title={t.matrix.kopirovatNaznacheniyaMezhduPredpriya}>
       <Stack>
-        <Select label="С предприятия" data={options(enterprises.data)} value={from} onChange={setFrom} />
-        <Select label="На предприятие" data={options(enterprises.data)} value={to} onChange={setTo} />
+        <Select
+          label={t.matrix.sPredpriyatiya}
+          data={options(enterprises.data)}
+          value={from}
+          onChange={setFrom}
+        />
+        <Select
+          label={t.matrix.naPredpriyatie}
+          data={options(enterprises.data)}
+          value={to}
+          onChange={setTo}
+        />
         <Button disabled={!from || !to} onClick={() => copy.mutate(undefined)}>
-          Копировать
+          {t.matrix.kopirovat}
         </Button>
         {res && (
           <Alert color={res.missingDepartmentIds.length ? 'yellow' : 'green'}>
-            Скопировано назначений: {res.copied}.
+            {t.matrix.skopirovanoNaznacheniy}
+            {res.copied}.
             {res.missingDepartmentIds.length > 0 &&
-              ` Подразделений нет на целевом предприятии: ${res.missingDepartmentIds.length} — их назначения пропущены.`}
+              t.matrix.podrazdeleniyNetNaTselevom(res.missingDepartmentIds.length)}
           </Alert>
         )}
       </Stack>
@@ -153,27 +163,27 @@ function DefaultsCheck() {
   };
   const names = (list: unknown) =>
     ((list as { fullName: string }[] | undefined) ?? []).map((u) => u.fullName).join(', ') ||
-    '— не найдено, оператор выберет вручную';
+    t.matrix.neNaydenoOperatorVyberet;
   return (
     <Stack maw={700}>
       <Text size="sm" c="dimmed">
-        Кого система подставит в тикет при передаче на 2-ю линию и какой срок предложит.
+        {t.matrix.kogoSistemaPodstavitV}
       </Text>
       <Group grow>
         <Select
-          label="Предприятие"
+          label={t.matrix.predpriyatie}
           data={options(enterprises.data)}
           value={q.e}
           onChange={(e) => setQ({ ...q, e })}
         />
         <Select
-          label="Подразделение"
+          label={t.matrix.podrazdelenie}
           data={options(departments.data)}
           value={q.d}
           onChange={(d) => setQ({ ...q, d })}
         />
         <Select
-          label="Тема"
+          label={t.matrix.tema}
           data={topicOptions}
           value={q.t}
           onChange={(tp) => setQ({ ...q, t: tp })}
@@ -181,15 +191,24 @@ function DefaultsCheck() {
         />
       </Group>
       <Button onClick={() => void run()} disabled={!q.e || !q.d || !q.t}>
-        Проверить подстановку
+        {t.matrix.proveritPodstanovku}
       </Button>
       {err && <Alert color="red">{err}</Alert>}
       {res && (
         <Alert color="blue" data-testid="defaults-result">
-          <div>Ответственные: {names(res.responsibles)}</div>
-          <div>Кураторы: {names(res.curators)}</div>
           <div>
-            Срок ответа: {String(res.responseDays)} дн. (до {String(res.dueDate)})
+            {t.matrix.otvetstvennye}
+            {names(res.responsibles)}
+          </div>
+          <div>
+            {t.matrix.kuratory}
+            {names(res.curators)}
+          </div>
+          <div>
+            {t.matrix.srokOtveta}
+            {String(res.responseDays)}
+            {t.matrix.dnDo}
+            {String(res.dueDate)})
           </div>
         </Alert>
       )}
@@ -237,31 +256,31 @@ export function MatrixPage() {
         {writable && (
           <Group>
             <Button variant="outline" onClick={() => setModal('copy')}>
-              Копировать с предприятия
+              {t.matrix.kopirovatSPredpriyatiya}
             </Button>
             <Button onClick={() => setModal('assign')} data-testid="assign-open">
-              Назначить
+              {t.matrix.naznachit}
             </Button>
           </Group>
         )}
       </Group>
       <Group grow mb="md">
         <Select
-          label="Предприятие"
+          label={t.matrix.predpriyatie}
           data={options(enterprises.data)}
           value={f.enterpriseId}
           onChange={(v) => setF({ ...f, enterpriseId: v })}
           clearable
         />
         <Select
-          label="Подразделение"
+          label={t.matrix.podrazdelenie}
           data={options(departments.data)}
           value={f.departmentId}
           onChange={(v) => setF({ ...f, departmentId: v })}
           clearable
         />
         <Select
-          label="Тема (с подтемами)"
+          label={t.matrix.temaSPodtemami}
           data={topicOptions}
           value={f.topicId}
           onChange={(v) => setF({ ...f, topicId: v })}
@@ -269,7 +288,7 @@ export function MatrixPage() {
           searchable
         />
         <Select
-          label="Роль"
+          label={t.matrix.rol}
           data={KINDS}
           value={f.kind}
           onChange={(v) => setF({ ...f, kind: v })}
@@ -278,28 +297,32 @@ export function MatrixPage() {
       </Group>
       <Tabs defaultValue="list">
         <Tabs.List mb="md">
-          <Tabs.Tab value="list">Назначения ({list.data?.length ?? 0})</Tabs.Tab>
+          <Tabs.Tab value="list">
+            {t.matrix.naznacheniya}
+            {list.data?.length ?? 0})
+          </Tabs.Tab>
           <Tabs.Tab value="gaps">
-            Без ответственного (
+            {t.matrix.bezOtvetstvennogo}
             {(gapData?.withoutAssignments.length ?? 0) + (gapData?.topicsWithoutResponsible.length ?? 0)})
           </Tabs.Tab>
-          <Tabs.Tab value="check">Проверка подстановки</Tabs.Tab>
+          <Tabs.Tab value="check">{t.matrix.proverkaPodstanovki}</Tabs.Tab>
         </Tabs.List>
         <Tabs.Panel value="list">
           {writable && selected.length > 0 && (
             <Button color="red" variant="light" mb="sm" onClick={() => deactivate.mutate(undefined)}>
-              Снять выбранные назначения ({selected.length})
+              {t.matrix.snyatVybrannyeNaznacheniya}
+              {selected.length})
             </Button>
           )}
           <Table striped data-testid="matrix-table">
             <Table.Thead>
               <Table.Tr>
                 <Table.Th />
-                <Table.Th>Предприятие</Table.Th>
-                <Table.Th>Подразделение</Table.Th>
-                <Table.Th>Тема</Table.Th>
-                <Table.Th>Сотрудник</Table.Th>
-                <Table.Th>Роль</Table.Th>
+                <Table.Th>{t.matrix.predpriyatie}</Table.Th>
+                <Table.Th>{t.matrix.podrazdelenie}</Table.Th>
+                <Table.Th>{t.matrix.tema}</Table.Th>
+                <Table.Th>{t.matrix.sotrudnik}</Table.Th>
+                <Table.Th>{t.matrix.rol}</Table.Th>
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
@@ -324,13 +347,13 @@ export function MatrixPage() {
                     {String(r.topicName)}
                   </Table.Td>
                   <Table.Td>
-                    {String(r.userName)} {!r.userActive && <Badge color="gray">отключён</Badge>}
+                    {String(r.userName)} {!r.userActive && <Badge color="gray">{t.matrix.otklyuchen}</Badge>}
                   </Table.Td>
                   <Table.Td>
                     {r.kind === 'responsible' ? (
-                      <Badge>Ответственный</Badge>
+                      <Badge>{t.matrix.otvetstvennyy}</Badge>
                     ) : (
-                      <Badge color="grape">Куратор</Badge>
+                      <Badge color="grape">{t.matrix.kurator}</Badge>
                     )}
                   </Table.Td>
                 </Table.Tr>
@@ -339,14 +362,14 @@ export function MatrixPage() {
           </Table>
         </Tabs.Panel>
         <Tabs.Panel value="gaps">
-          <Title order={5}>Подразделения без назначений</Title>
+          <Title order={5}>{t.matrix.podrazdeleniyaBezNaznacheniy}</Title>
           {(gapData?.withoutAssignments ?? []).map((g) => (
             <Text key={String(g.enterpriseDepartmentId)} size="sm">
               {String(g.enterpriseName)} — {String(g.departmentName)}
             </Text>
           ))}
           <Title order={5} mt="md">
-            Подтемы без ответственного (в используемых ветках)
+            {t.matrix.podtemyBezOtvetstvennogoV}
           </Title>
           {(gapData?.topicsWithoutResponsible ?? []).map((g) => (
             <Text key={`${String(g.enterpriseDepartmentId)}-${String(g.topicId)}`} size="sm">

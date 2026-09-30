@@ -34,31 +34,36 @@ import { softphone, useSoftphone } from '../lib/softphone';
 import { setDraft } from '../lib/app-version';
 import { EscalateModal, SubstitutesPanel, TicketList, useTicketCount } from './TicketPages';
 import { MergeContactModal } from '../components/MergeContactModal';
+import { t } from '../lib/i18n';
 
 const CHANNEL: Record<string, string> = {
-  webchat: 'Сайт',
-  app: 'Приложение',
+  webchat: t.workspace.sayt,
+  app: t.workspace.prilozhenie,
   telegram: 'Telegram',
   email: 'Email',
-  voice: 'Звонок',
-  api: 'Внешняя система',
+  voice: t.workspace.zvonok,
+  api: t.workspace.vneshnyayaSistema,
 };
 const STATUS: Record<string, string> = {
-  bot: 'У бота / в IVR',
-  offered: 'Предложено',
-  queued: 'В очереди',
-  active: 'В работе',
-  closed: 'Закрыто',
-  hold: 'Удержание',
-  waiting_customer: 'Ждём клиента',
-  waiting_2nd_line: 'На 2-й линии',
+  bot: t.workspace.uBotaVIvr,
+  offered: t.workspace.predlozheno,
+  queued: t.workspace.vOcheredi,
+  active: t.workspace.vRabote,
+  closed: t.workspace.zakryto,
+  hold: t.workspace.uderzhanie,
+  waiting_customer: t.workspace.zhdemKlienta,
+  waiting_2nd_line: t.workspace.na2YLinii,
 };
 const time = (s: unknown) =>
   s ? new Date(String(s)).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }) : '';
 const since = (s: unknown) => {
   if (!s) return '';
   const min = Math.floor((Date.now() - new Date(String(s)).getTime()) / 60000);
-  return min < 1 ? 'только что' : min < 60 ? `${min} мин` : `${Math.floor(min / 60)} ч ${min % 60} мин`;
+  return min < 1
+    ? t.workspace.tolkoChto
+    : min < 60
+      ? t.workspace.min(min)
+      : t.workspace.chMin(Math.floor(min / 60), min % 60);
 };
 
 interface Att {
@@ -77,14 +82,19 @@ function AgentStatusBar() {
     queryFn: () => get<Row>('/agent-status/me'),
     refetchInterval: BREAK_POLL_MS,
   });
-  const setStatus = useAction((b: Record<string, unknown>) => post('/agent-status', b), 'Статус изменён');
+  const setStatus = useAction(
+    (b: Record<string, unknown>) => post('/agent-status', b),
+    t.workspace.statusIzmenen,
+  );
   const cur = String(status.data?.status ?? 'offline');
   if (cur === 'wrap_up') {
     const until = status.data?.wrapUpUntil ? new Date(String(status.data.wrapUpUntil)).getTime() : 0;
     const left = Math.max(0, Math.round((until - Date.now()) / 1000));
     return (
       <Badge color="yellow" variant="light" data-testid="agent-status">
-        Постобработка · {left} с
+        {t.workspace.postobrabotka}
+        {left}
+        {t.workspace.s}
       </Badge>
     );
   }
@@ -99,8 +109,8 @@ function AgentStatusBar() {
           if (v === 'ready' && softphone.getSnapshot().reg !== 'registered')
             notifications.show({
               color: 'yellow',
-              title: 'Телефон не подключён',
-              message: 'Звонки поступать не будут, пока софтфон не подключится; чаты — будут',
+              title: t.workspace.telefonNePodklyuchen,
+              message: t.workspace.zvonkiPostupatNeBudut,
               autoClose: 8000,
             });
           setStatus.mutate(
@@ -108,16 +118,16 @@ function AgentStatusBar() {
           );
         }}
         data={[
-          { value: 'ready', label: 'Готов' },
-          { value: 'break', label: 'Перерыв' },
-          { value: 'offline', label: 'Офлайн' },
+          { value: 'ready', label: t.workspace.gotov },
+          { value: 'break', label: t.workspace.pereryv },
+          { value: 'offline', label: t.workspace.oflayn },
         ]}
       />
       {cur === 'break' && (
         <Select
           size="xs"
           w={170}
-          placeholder="Причина"
+          placeholder={t.workspace.prichina}
           data-testid="agent-status-reason"
           data={options(reasons.data)}
           value={(status.data?.reasonId as string) ?? null}
@@ -153,27 +163,33 @@ function List({
   const list = useList(
     `/conversations?tab=${tab}${important ? '&important=true' : ''}${callback ? '&callback=true' : ''}`,
   );
-  const take = useAction((id: string) => post(`/conversations/${id}/take`), 'Диалог взят в работу');
-  const accept = useAction((id: string) => post(`/conversations/${id}/accept`), 'Обращение принято');
-  const decline = useAction((id: string) => post(`/conversations/${id}/decline`), 'Обращение отклонено');
+  const take = useAction((id: string) => post(`/conversations/${id}/take`), t.workspace.dialogVzyatVRabotu);
+  const accept = useAction(
+    (id: string) => post(`/conversations/${id}/accept`),
+    t.workspace.obrashcheniePrinyato,
+  );
+  const decline = useAction(
+    (id: string) => post(`/conversations/${id}/decline`),
+    t.workspace.obrashchenieOtkloneno,
+  );
   return (
     <Stack gap={6}>
       <Checkbox
         size="xs"
-        label="Только особо важные"
+        label={t.workspace.tolkoOsoboVazhnye}
         checked={important}
         onChange={(e) => setImportant(e.currentTarget.checked)}
       />
       <Checkbox
         size="xs"
-        label="Только «перезвонить»"
+        label={t.workspace.tolkoPerezvonit}
         checked={callback}
         onChange={(e) => setCallback(e.currentTarget.checked)}
         data-testid="filter-callback"
       />
       {(list.data ?? []).length === 0 && (
         <Text c="dimmed" size="sm">
-          Нет обращений
+          {t.workspace.netObrashcheniy}
         </Text>
       )}
       {(list.data ?? []).map((c) => (
@@ -197,7 +213,7 @@ function List({
             </Text>
           </Group>
           <Text size="xs" c="dimmed" lineClamp={2}>
-            {c.lastDirection === 'out' ? 'Вы: ' : ''}
+            {c.lastDirection === 'out' ? t.workspace.vy : ''}
             {String(c.lastMessage ?? '')}
           </Text>
           <Group gap={4} mt={4}>
@@ -206,17 +222,17 @@ function List({
             </Badge>
             {c.isImportant ? (
               <Badge size="xs" color="red">
-                особо важное
+                {t.workspace.osoboVazhnoe}
               </Badge>
             ) : null}
             {c.isUrgent ? (
               <Badge size="xs" color="orange">
-                срочное
+                {t.workspace.srochnoe}
               </Badge>
             ) : null}
             {c.callbackRequested ? (
               <Badge size="xs" color="grape" data-testid="badge-callback">
-                перезвонить
+                {t.workspace.perezvonit}
               </Badge>
             ) : null}
             {c.topicName ? (
@@ -226,7 +242,7 @@ function List({
             ) : null}
             {c.status === 'offered' ? (
               <Badge size="xs" color="blue">
-                предложено
+                {t.workspace.predlozheno2}
               </Badge>
             ) : null}
             {tab !== 'mine' && c.assigneeName ? (
@@ -245,7 +261,7 @@ function List({
                 take.mutate(c.id, { onSuccess: () => onSelect(c.id) });
               }}
             >
-              Взять
+              {t.workspace.vzyat}
             </Button>
           )}
           {c.status === 'offered' && c.assigneeId === me?.id && (
@@ -259,7 +275,7 @@ function List({
                   accept.mutate(c.id, { onSuccess: () => onSelect(c.id) });
                 }}
               >
-                Принять
+                {t.workspace.prinyat}
               </Button>
               <Button
                 size="compact-xs"
@@ -271,7 +287,7 @@ function List({
                   decline.mutate(c.id);
                 }}
               >
-                Отклонить
+                {t.workspace.otklonit}
               </Button>
             </Group>
           )}
@@ -285,34 +301,36 @@ function List({
 function autoLabel(m: Row): string {
   const meta = m.meta as { auto?: string; external?: string } | undefined;
   if (!meta?.auto) return '';
-  if (meta.auto === 'bot') return meta.external ? `Внешний бот · ${meta.external}` : 'Бот';
-  return 'Автоответ';
+  if (meta.auto === 'bot') return meta.external ? t.workspace.vneshniyBot(meta.external) : t.workspace.bot;
+  return t.workspace.avtootvet;
 }
 
 /** Автор заметки: сотрудник, внешняя система (ключ API, Ф9) или система. */
 function noteAuthor(m: Row): string {
   const ext = (m.meta as { external?: string } | undefined)?.external;
-  if (ext) return `внешняя система «${ext}»`;
-  return String(m.authorName ?? 'система');
+  if (ext) return t.workspace.vneshnyayaSistema2(ext);
+  return String(m.authorName ?? t.workspace.sistema);
 }
 
 /** Доставка ответа во внешний канал (Telegram, email): ставится в очередь → отправлено / ошибка. */
 function Delivery({ m }: { m: Row }) {
   if (m.deliveryStatus === 'sent')
     return (
-      <span data-testid="delivery-sent" title="Отправлено клиенту">
+      <span data-testid="delivery-sent" title={t.workspace.otpravlenoKlientu}>
         {' '}
-        · ✓ отправлено
+        {t.workspace.otpravleno}
       </span>
     );
   if (m.deliveryStatus === 'failed')
     return (
       <span data-testid="delivery-failed" style={{ color: 'var(--mantine-color-red-7)' }}>
         {' '}
-        · ⚠ не доставлено{m.deliveryError ? `: ${String(m.deliveryError)}` : ''}
+        {t.workspace.neDostavleno}
+        {m.deliveryError ? `: ${String(m.deliveryError)}` : ''}
       </span>
     );
-  if (m.deliveryStatus === 'pending') return <span data-testid="delivery-pending"> · отправляется…</span>;
+  if (m.deliveryStatus === 'pending')
+    return <span data-testid="delivery-pending">{t.workspace.otpravlyaetsya}</span>;
   return null;
 }
 
@@ -390,7 +408,7 @@ function Messages({ conv, typing, onTyping }: { conv: Row; typing: boolean; onTy
                     {dir === 'in'
                       ? String(conv.contactName)
                       : dir === 'note'
-                        ? `Заметка · ${noteAuthor(m)}`
+                        ? t.workspace.zametka(noteAuthor(m))
                         : autoLabel(m) || String(m.authorName ?? '')}{' '}
                     · {time(m.sentAt)}
                     {dir === 'out' && <Delivery m={m} />}
@@ -421,7 +439,8 @@ function Messages({ conv, typing, onTyping }: { conv: Row; typing: boolean; onTy
                     style={{ cursor: 'pointer' }}
                     onClick={() => void openAttachment(a.id)}
                   >
-                    📎 {a.filename} ({Math.ceil(a.size / 1024)} КБ)
+                    📎 {a.filename} ({Math.ceil(a.size / 1024)}
+                    {t.workspace.kb}
                   </Text>
                 ))}
               </Paper>
@@ -431,20 +450,20 @@ function Messages({ conv, typing, onTyping }: { conv: Row; typing: boolean; onTy
       </ScrollArea>
       {typing && (
         <Text size="xs" c="dimmed">
-          Клиент печатает…
+          {t.workspace.klientPechataet}
         </Text>
       )}
       {conv.status === 'closed' ? (
         <Text c="dimmed" size="sm">
-          Обращение закрыто.
+          {t.workspace.obrashchenieZakryto}
         </Text>
       ) : !note && conv.status === 'offered' && conv.assigneeId === me?.id ? (
         <Text c="dimmed" size="sm">
-          Примите предложенное обращение, чтобы ответить клиенту (заметку можно оставить всегда).
+          {t.workspace.primitePredlozhennoeObrashchenieChto}
         </Text>
       ) : !note && conv.assigneeId !== me?.id ? (
         <Text c="dimmed" size="sm">
-          Возьмите обращение, чтобы ответить клиенту (заметку можно оставить всегда).
+          {t.workspace.vozmiteObrashchenieChtobyOtvetit}
         </Text>
       ) : null}
       {!note && canWrite && conv.channelKind !== 'voice' && (
@@ -483,11 +502,7 @@ function Messages({ conv, typing, onTyping }: { conv: Row; typing: boolean; onTy
           autosize
           minRows={2}
           maxRows={6}
-          placeholder={
-            note
-              ? 'Внутренняя заметка (клиент её не увидит)'
-              : 'Ответ клиенту… («/» — шаблоны, Enter — отправить, Shift+Enter — новая строка)'
-          }
+          placeholder={note ? t.workspace.vnutrennyayaZametkaKlientEe : t.workspace.otvetKlientuShablonyEnter}
           value={text}
           data-testid="reply"
           onChange={(e) => {
@@ -519,7 +534,7 @@ function Messages({ conv, typing, onTyping }: { conv: Row; typing: boolean; onTy
           >
             {(props) => (
               <Button {...props} variant="default" size="xs" data-testid="attach">
-                📎 Файл
+                {t.workspace.fayl}
               </Button>
             )}
           </FileButton>
@@ -530,13 +545,13 @@ function Messages({ conv, typing, onTyping }: { conv: Row; typing: boolean; onTy
             disabled={!canWrite}
             data-testid="send"
           >
-            Отправить
+            {t.workspace.otpravit}
           </Button>
         </Stack>
       </Group>
       <Switch
         size="xs"
-        label="Внутренняя заметка"
+        label={t.workspace.vnutrennyayaZametka}
         checked={note}
         onChange={(e) => setNote(e.currentTarget.checked)}
       />
@@ -572,13 +587,13 @@ function ContactCard({ conv, onOpen }: { conv: Row; onOpen(id: string): void }) 
     <Stack gap="xs">
       <TextInput
         size="xs"
-        label="Имя"
+        label={t.workspace.imya}
         value={v.displayName ?? ''}
         onChange={(e) => setV({ ...v, displayName: e.currentTarget.value })}
       />
       <TextInput
         size="xs"
-        label="Телефон"
+        label={t.workspace.telefon}
         value={v.phone ?? ''}
         onChange={(e) => setV({ ...v, phone: e.currentTarget.value })}
       />
@@ -590,7 +605,8 @@ function ContactCard({ conv, onOpen }: { conv: Row; onOpen(id: string): void }) 
           onClick={() => void softphone.call(v.phone!, conv.assigneeId === me?.id ? String(conv.id) : null)}
           data-testid="contact-call"
         >
-          Позвонить {v.phone}
+          {t.workspace.pozvonit}
+          {v.phone}
         </Button>
       )}
       <TextInput
@@ -601,7 +617,7 @@ function ContactCard({ conv, onOpen }: { conv: Row; onOpen(id: string): void }) 
       />
       <Group grow>
         <Button size="xs" variant="light" onClick={() => save.mutate(undefined)}>
-          Сохранить клиента
+          {t.workspace.sokhranitKlienta}
         </Button>
         {can('contacts.merge') && c.data && (
           <Button
@@ -611,20 +627,23 @@ function ContactCard({ conv, onOpen }: { conv: Row; onOpen(id: string): void }) 
             onClick={() => setMerging(true)}
             data-testid="contact-merge"
           >
-            Объединить с…
+            {t.workspace.obedinitS}
           </Button>
         )}
       </Group>
       {c.data && <MergeContactModal contact={c.data} opened={merging} onClose={() => setMerging(false)} />}
       {((c.data?.consents as Row[] | undefined) ?? []).slice(0, 1).map((k) => (
         <Text size="xs" c="dimmed" key="consent" data-testid="contact-consent">
-          Согласие на обработку ПДн: версия {String(k.textVersion)} от{' '}
-          {new Date(String(k.acceptedAt)).toLocaleDateString('ru-RU')} ({String(k.channelName)})
+          {t.workspace.soglasieNaObrabotkuPdn}
+          {String(k.textVersion)}
+          {t.workspace.ot} {new Date(String(k.acceptedAt)).toLocaleDateString('ru-RU')} (
+          {String(k.channelName)})
         </Text>
       ))}
       <ExternalDataPanel contactId={String(conv.contactId)} conversationId={String(conv.id)} />
       <Title order={6} mt="sm">
-        История обращений ({history.data?.length ?? 0})
+        {t.workspace.istoriyaObrashcheniy}
+        {history.data?.length ?? 0})
       </Title>
       <Stack gap={4} data-testid="history">
         {(history.data ?? []).map((h) => (
@@ -657,7 +676,7 @@ function ExtraFields({ fields, defined }: { fields: Record<string, unknown>; def
   return (
     <Paper withBorder p={6} data-testid="extra-fields">
       <Text size="xs" c="dimmed">
-        Данные внешних систем
+        {t.workspace.dannyeVneshnikhSistem}
       </Text>
       {extra.map(([k, v]) => (
         <Text size="xs" key={k} data-testid={`extra-field-${k}`}>
@@ -704,12 +723,12 @@ function ConversationCard({ conv }: { conv: Row }) {
         dispositionId: disp,
         ...(isPostponed && callbackAt ? { callbackAt: new Date(callbackAt).toISOString() } : {}),
       }),
-    'Обращение закрыто',
+    t.workspace.obrashchenieZakryto2,
   );
   const transfer = useAction(() => {
     const [kind, id] = String(to).split(':');
     return post(`/conversations/${conv.id}/transfer`, kind === 'u' ? { toUserId: id } : { toQueueId: id });
-  }, 'Диалог передан');
+  }, t.workspace.dialogPeredan);
   const topicOptions = (topics.data ?? []).map((t) => ({
     value: t.id,
     label: `${'— '.repeat(Number(t.level) - 1)}${String(t.name)}${t.isImportant ? ' ❗' : ''}`,
@@ -722,17 +741,20 @@ function ConversationCard({ conv }: { conv: Row }) {
       <EscalateModal conv={conv} opened={escalating} onClose={() => setEscalating(false)} />
       {ticket && (
         <Badge color="violet" variant="light" data-testid="conv-ticket">
-          2-я линия: тикет №{String(ticket.number)}
+          {t.workspace.n2YaLiniyaTiket}
+          {String(ticket.number)}
         </Badge>
       )}
       {conv.chatCsat ? (
         <Badge color="yellow" variant="light" data-testid="chat-csat">
-          Оценка клиента: {String(conv.chatCsat)} из 5
+          {t.workspace.otsenkaKlienta}
+          {String(conv.chatCsat)}
+          {t.workspace.iz5}
         </Badge>
       ) : null}
       <Select
         size="xs"
-        label="Тема"
+        label={t.workspace.tema}
         data={topicOptions}
         value={(conv.topicId as string) ?? null}
         onChange={(v) => upd.mutate({ topicId: v })}
@@ -743,7 +765,7 @@ function ConversationCard({ conv }: { conv: Row }) {
       />
       <Select
         size="xs"
-        label="Предприятие"
+        label={t.workspace.predpriyatie}
         data={options(enterprises.data)}
         value={(conv.enterpriseId as string) ?? null}
         onChange={(v) => upd.mutate({ enterpriseId: v, departmentId: null, objectId: null })}
@@ -753,7 +775,7 @@ function ConversationCard({ conv }: { conv: Row }) {
       <Group grow>
         <Select
           size="xs"
-          label="Подразделение"
+          label={t.workspace.podrazdelenie}
           data={(eds.data ?? []).map((e) => ({
             value: String(e.departmentId),
             label: String(e.departmentName),
@@ -765,7 +787,7 @@ function ConversationCard({ conv }: { conv: Row }) {
         />
         <Select
           size="xs"
-          label="Объект"
+          label={t.workspace.obekt}
           data={options(objects.data)}
           value={(conv.objectId as string) ?? null}
           onChange={(v) => upd.mutate({ objectId: v })}
@@ -780,7 +802,7 @@ function ConversationCard({ conv }: { conv: Row }) {
           size="xs"
           label={`${String(f.label)}${f.requiredOnClose ? ' *' : ''}`}
           description={
-            f.requiredOnEscalate && !f.requiredOnClose ? 'обязательно при передаче на 2-ю линию' : undefined
+            f.requiredOnEscalate && !f.requiredOnClose ? t.workspace.obyazatelnoPriPeredacheNa : undefined
           }
           placeholder={(f.mask as string) ?? undefined}
           type={f.type === 'date' ? 'date' : f.type === 'number' ? 'number' : 'text'}
@@ -793,8 +815,8 @@ function ConversationCard({ conv }: { conv: Row }) {
       <ExtraFields fields={(conv.fields as Record<string, unknown>) ?? {}} defined={fields.data ?? []} />
       <MultiSelect
         size="xs"
-        label={conv.queueRequireTag ? 'Теги *' : 'Теги'}
-        description={conv.queueRequireTag ? 'В этой очереди тег обязателен при закрытии' : undefined}
+        label={conv.queueRequireTag ? t.workspace.tegi : t.workspace.tegi2}
+        description={conv.queueRequireTag ? t.workspace.vEtoyOcherediTeg : undefined}
         data={options(tags.data)}
         value={(conv.tagIds as string[]) ?? []}
         onChange={(v) => upd.mutate({ tagIds: v })}
@@ -802,10 +824,10 @@ function ConversationCard({ conv }: { conv: Row }) {
         data-testid="tags"
       />
       <Group>
-        <Tooltip label="Ставится автоматически по теме; можно выставить вручную">
+        <Tooltip label={t.workspace.stavitsyaAvtomaticheskiPoTeme}>
           <Switch
             size="xs"
-            label="Особо важное"
+            label={t.workspace.osoboVazhnoe2}
             checked={!!conv.isImportant}
             onChange={(e) => upd.mutate({ isImportant: e.currentTarget.checked })}
             disabled={closed}
@@ -813,7 +835,7 @@ function ConversationCard({ conv }: { conv: Row }) {
         </Tooltip>
         <Switch
           size="xs"
-          label="Срочное"
+          label={t.workspace.srochnoe2}
           checked={!!conv.isUrgent}
           onChange={(e) => upd.mutate({ isUrgent: e.currentTarget.checked })}
           disabled={closed}
@@ -824,7 +846,7 @@ function ConversationCard({ conv }: { conv: Row }) {
           <Paper withBorder p="xs">
             <Select
               size="xs"
-              label="Результат обработки"
+              label={t.workspace.rezultatObrabotki}
               data={options(dispositions.data)}
               value={disp}
               onChange={setDisp}
@@ -835,7 +857,7 @@ function ConversationCard({ conv }: { conv: Row }) {
                 size="xs"
                 mt="xs"
                 type="datetime-local"
-                label="Дата и время перезвона"
+                label={t.workspace.dataIVremyaPerezvona}
                 value={callbackAt}
                 onChange={(e) => setCallbackAt(e.currentTarget.value)}
                 data-testid="callback-at"
@@ -851,7 +873,7 @@ function ConversationCard({ conv }: { conv: Row }) {
                 onClick={() => setEscalating(true)}
                 data-testid="escalate"
               >
-                Передать на 2-ю линию…
+                {t.workspace.peredatNa2Yu}
               </Button>
             ) : (
               <Button
@@ -863,24 +885,24 @@ function ConversationCard({ conv }: { conv: Row }) {
                 onClick={() => close.mutate(undefined)}
                 data-testid="close"
               >
-                Завершить обращение
+                {t.workspace.zavershitObrashchenie}
               </Button>
             )}
           </Paper>
           <Paper withBorder p="xs">
             <Select
               size="xs"
-              label="Передать"
+              label={t.workspace.peredat}
               data={[
                 {
-                  group: 'Операторам',
+                  group: t.workspace.operatoram,
                   items: (operators.data ?? []).map((o) => ({
                     value: `u:${o.id}`,
                     label: String(o.fullName),
                   })),
                 },
                 {
-                  group: 'В очередь',
+                  group: t.workspace.vOchered,
                   items: (queues.data ?? []).map((q) => ({ value: `q:${q.id}`, label: String(q.name) })),
                 },
               ]}
@@ -896,7 +918,7 @@ function ConversationCard({ conv }: { conv: Row }) {
               disabled={!to}
               onClick={() => transfer.mutate(undefined)}
             >
-              Передать с контекстом
+              {t.workspace.peredatSKontekstom}
             </Button>
           </Paper>
         </>
@@ -906,39 +928,39 @@ function ConversationCard({ conv }: { conv: Row }) {
 }
 
 const CALL_STATE: Record<string, string> = {
-  ivr: 'в IVR',
-  queued: 'ожидает оператора',
-  dialing: 'вызов',
-  talking: 'разговор',
-  external: 'переведён на внешний номер',
-  ended: 'завершён',
+  ivr: t.workspace.vIvr,
+  queued: t.workspace.ozhidaetOperatora,
+  dialing: t.workspace.vyzov,
+  talking: t.workspace.razgovor,
+  external: t.workspace.perevedenNaVneshniyNomer,
+  ended: t.workspace.zavershen,
 };
 const CALL_EVENT: Record<string, string> = {
-  queued: 'в очереди',
-  offered: 'вызов оператора',
-  agent_connected: 'оператор ответил',
-  agent_no_answer: 'оператор не ответил',
-  agent_declined: 'оператор отклонил',
-  hold: 'удержание',
-  unhold: 'снято с удержания',
-  transfer_queue: 'перевод в очередь',
-  transfer_user: 'перевод оператору',
-  transfer_external: 'прямой перевод',
-  external_connected: 'подразделение ответило',
-  listen: 'прослушивание супервизором',
-  dialing_out: 'исходящий вызов',
-  ended: 'завершён',
+  queued: t.workspace.vOcheredi2,
+  offered: t.workspace.vyzovOperatora,
+  agent_connected: t.workspace.operatorOtvetil,
+  agent_no_answer: t.workspace.operatorNeOtvetil,
+  agent_declined: t.workspace.operatorOtklonil,
+  hold: t.workspace.uderzhanie2,
+  unhold: t.workspace.snyatoSUderzhaniya,
+  transfer_queue: t.workspace.perevodVOchered,
+  transfer_user: t.workspace.perevodOperatoru,
+  transfer_external: t.workspace.pryamoyPerevod,
+  external_connected: t.workspace.podrazdelenieOtvetilo,
+  listen: t.workspace.proslushivanieSupervizorom,
+  dialing_out: t.workspace.iskhodyashchiyVyzov,
+  ended: t.workspace.zavershen,
   ivr_start: 'IVR',
-  queue_left: 'ушёл из очереди по сценарию',
-  agent_done: 'оператор завершил, клиент в IVR',
-  csat: 'оценка',
-  voicemail: 'голосовое сообщение',
-  callback_requested: 'заказ перезвона',
-  transfer_failed: 'перевод не состоялся',
-  ivr_resumed: 'продолжен после переключения',
-  consult_start: 'консультация',
-  consult_connected: 'адресат консультации ответил',
-  consult_end: 'консультация без перевода',
+  queue_left: t.workspace.ushelIzOcherediPo,
+  agent_done: t.workspace.operatorZavershilKlientV,
+  csat: t.workspace.otsenka,
+  voicemail: t.workspace.golosovoeSoobshchenie,
+  callback_requested: t.workspace.zakazPerezvona,
+  transfer_failed: t.workspace.perevodNeSostoyalsya,
+  ivr_resumed: t.workspace.prodolzhenPoslePereklyucheniya,
+  consult_start: t.workspace.konsultatsiya,
+  consult_connected: t.workspace.adresatKonsultatsiiOtvetil,
+  consult_end: t.workspace.konsultatsiyaBezPerevoda,
 };
 /** В кратком журнале стадий — без шагов IVR (они — отдельной строкой «Путь по IVR»). */
 const IVR_STEP = new Set(['ivr', 'ivr_dtmf', 'ivr_http']);
@@ -950,7 +972,8 @@ function ivrPath(events: CallRow['events']): string {
     const d = e.data ?? {};
     if (e.type === 'ivr' && !d.exit && d.name) out.push(String(d.name));
     else if (e.type === 'ivr_dtmf') out.push(`[${String(d.digit)}]`);
-    else if (e.type === 'ivr_http') out.push(d.ok ? '(ответ получен)' : `(ошибка: ${String(d.error ?? '')})`);
+    else if (e.type === 'ivr_http')
+      out.push(d.ok ? t.workspace.otvetPoluchen : t.workspace.oshibka(String(d.error ?? '')));
   }
   return out.join(' → ');
 }
@@ -991,7 +1014,7 @@ function Recording({ id }: { id: string }) {
       }
       data-testid="recording-play"
     >
-      Прослушать запись
+      {t.workspace.proslushatZapis}
     </Button>
   );
 }
@@ -1002,12 +1025,12 @@ function CallsPanel({ conv }: { conv: Row }) {
   const calls = useList<CallRow>(`/conversations/${conv.id}/calls`);
   const listen = useAction(
     (id: string) => post(`/calls/${id}/listen`),
-    'Звонок прослушивания — ответьте в софтфоне',
+    t.workspace.zvonokProslushivaniyaOtvetteV,
   );
   if (!calls.data?.length)
     return (
       <Text c="dimmed" size="sm">
-        Звонков нет
+        {t.workspace.zvonkovNet}
       </Text>
     );
   return (
@@ -1016,14 +1039,21 @@ function CallsPanel({ conv }: { conv: Row }) {
         <Paper key={c.id} withBorder p="xs" data-testid="call-item">
           <Group justify="space-between">
             <Text size="sm" fw={600}>
-              {c.direction === 'in' ? `Входящий ${c.fromNumber ?? ''}` : `Исходящий ${c.toNumber ?? ''}`}
+              {c.direction === 'in'
+                ? t.workspace.vkhodyashchiy(c.fromNumber ?? '')
+                : t.workspace.iskhodyashchiy(c.toNumber ?? '')}
             </Text>
             <Badge variant="light" data-testid="call-state">
               {CALL_STATE[c.state] ?? c.state}
             </Badge>
           </Group>
           <Text size="xs" c="dimmed">
-            {time(c.startedAt)} · ожидание {c.waitS} с · разговор {c.talkS} с
+            {time(c.startedAt)}
+            {t.workspace.ozhidanie}
+            {c.waitS}
+            {t.workspace.sRazgovor}
+            {c.talkS}
+            {t.workspace.s}
             {c.agentName ? ` · ${c.agentName}` : ''}
           </Text>
           <Text size="xs" c="dimmed">
@@ -1031,20 +1061,23 @@ function CallsPanel({ conv }: { conv: Row }) {
               .filter((e) => !IVR_STEP.has(e.type))
               .map(
                 (e) =>
-                  `${time(e.at)} ${CALL_EVENT[e.type] ?? e.type}${e.data?.consult ? ' после консультации' : ''}${e.type === 'csat' ? ` ${String(e.data?.score)} из 5` : ''}`,
+                  `${time(e.at)} ${CALL_EVENT[e.type] ?? e.type}${e.data?.consult ? t.workspace.posleKonsultatsii : ''}${e.type === 'csat' ? t.workspace.iz52(String(e.data?.score)) : ''}`,
               )
               .join(' → ')}
           </Text>
           {c.events.some((e) => e.type === 'ivr') && (
             <Text size="xs" data-testid="call-ivr-path">
-              Путь по IVR: {ivrPath(c.events)}
+              {t.workspace.putPoIvr}
+              {ivrPath(c.events)}
             </Text>
           )}
           {c.events
             .filter((e) => e.type === 'csat')
             .map((e) => (
               <Badge key={e.at} color="yellow" variant="light" data-testid="call-csat">
-                Оценка клиента: {String(e.data?.score)} из 5
+                {t.workspace.otsenkaKlienta}
+                {String(e.data?.score)}
+                {t.workspace.iz5}
               </Badge>
             ))}
           {c.state === 'talking' && can('supervisor.monitor') && (
@@ -1055,26 +1088,27 @@ function CallsPanel({ conv }: { conv: Row }) {
               onClick={() => listen.mutate(c.id)}
               data-testid="call-listen"
             >
-              Прослушать разговор
+              {t.workspace.proslushatRazgovor}
             </Button>
           )}
           {c.recordings.map((r) =>
             r.deletedAt ? (
               <Text key={r.id} size="xs" c="dimmed" data-testid="recording-deleted">
-                Запись удалена (срок хранения или обезличивание)
+                {t.workspace.zapisUdalenaSrokKhraneniya}
               </Text>
             ) : r.status === 'uploaded' ? (
               <Box key={r.id}>
                 {r.kind === 'voicemail' && (
                   <Text size="xs" fw={600}>
-                    Голосовое сообщение клиента
+                    {t.workspace.golosovoeSoobshchenieKlienta}
                   </Text>
                 )}
                 <Recording id={r.id} />
               </Box>
             ) : (
               <Text key={r.id} size="xs" c="dimmed">
-                Запись: {r.status === 'failed' ? 'не сохранилась' : 'обрабатывается…'}
+                {t.workspace.zapis}
+                {r.status === 'failed' ? t.workspace.neSokhranilas : t.workspace.obrabatyvaetsya}
               </Text>
             ),
           )}
@@ -1128,16 +1162,17 @@ export function WorkspacePage() {
         });
         const m = e.data.message as Row | undefined;
         if (e.event === 'conversation.message_created' && m?.direction === 'in') {
-          if (e.data.assigneeId === me?.id) notify('Новое сообщение', String(m.body ?? '').slice(0, 100));
+          if (e.data.assigneeId === me?.id)
+            notify(t.workspace.novoeSoobshchenie, String(m.body ?? '').slice(0, 100));
           if (id === selected) setTypingContact(null);
         }
         // Звонок в IVR (статус «bot») ещё не в очереди — уведомим, когда сценарий поставит его в очередь.
         if (e.event === 'conversation.created' && e.data.status !== 'bot')
-          notify('Новое обращение в очереди', 'Откройте вкладку «Очередь»');
+          notify(t.workspace.novoeObrashchenieVOcheredi, t.workspace.otkroyteVkladkuOchered);
         if (e.event === 'conversation.updated' && e.data.action === 'bot_handoff')
-          notify('Новое обращение в очереди', 'Бот передал диалог оператору');
+          notify(t.workspace.novoeObrashchenieVOcheredi, t.workspace.botPeredalDialogOperatoru);
         if (e.event === 'conversation.updated' && e.data.action === 'offered' && e.data.assigneeId === me?.id)
-          notify('Вам предложено обращение', 'Примите или отклоните во вкладке «Мои»');
+          notify(t.workspace.vamPredlozhenoObrashchenie, t.workspace.primiteIliOtkloniteVo);
       }),
     [qc, me?.id, selected],
   );
@@ -1151,11 +1186,11 @@ export function WorkspacePage() {
   const nWrapup = useCount('wrapup');
   const tabs = useMemo(
     () => [
-      { value: 'mine', label: 'Мои' },
-      { value: 'queue', label: 'Очередь' },
-      { value: 'bot', label: 'У бота' },
-      ...(can('supervisor.monitor') ? [{ value: 'active', label: 'Все открытые' }] : []),
-      { value: 'closed', label: 'Закрытые' },
+      { value: 'mine', label: t.workspace.moi },
+      { value: 'queue', label: t.workspace.ochered },
+      { value: 'bot', label: t.workspace.uBota },
+      ...(can('supervisor.monitor') ? [{ value: 'active', label: t.workspace.vseOtkrytye }] : []),
+      { value: 'closed', label: t.workspace.zakrytye },
     ],
     [can],
   );
@@ -1164,9 +1199,9 @@ export function WorkspacePage() {
     <Grid gutter="sm">
       <Grid.Col span={3}>
         <Group justify="space-between" mb="xs">
-          <Title order={4}>Обращения</Title>
+          <Title order={4}>{t.workspace.obrashcheniya}</Title>
           <Badge color={rt.connected ? 'green' : 'red'} variant="dot" data-testid="rt-status">
-            {rt.connected ? 'онлайн' : 'нет связи'}
+            {rt.connected ? t.workspace.onlayn : t.workspace.netSvyazi}
           </Badge>
         </Group>
         <Box mb="xs">
@@ -1185,8 +1220,11 @@ export function WorkspacePage() {
           fullWidth
           size="xs"
           data={[
-            { value: 'hold', label: nHold ? `Удержание (${nHold})` : 'Удержание' },
-            { value: 'wrapup', label: nWrapup ? `Постобработка (${nWrapup})` : 'Постобработка' },
+            { value: 'hold', label: nHold ? t.workspace.uderzhanie3(nHold) : t.workspace.uderzhanie },
+            {
+              value: 'wrapup',
+              label: nWrapup ? t.workspace.postobrabotka2(nWrapup) : t.workspace.postobrabotka3,
+            },
           ]}
           value={workTab ? tab : ''}
           onChange={setTab}
@@ -1197,8 +1235,11 @@ export function WorkspacePage() {
           fullWidth
           size="xs"
           data={[
-            { value: 'approvals', label: nApprovals ? `На согласовании (${nApprovals})` : 'На согласовании' },
-            { value: 'created', label: 'Переданные' },
+            {
+              value: 'approvals',
+              label: nApprovals ? t.workspace.naSoglasovanii(nApprovals) : t.workspace.naSoglasovanii2,
+            },
+            { value: 'created', label: t.workspace.peredannye },
           ]}
           value={secondLine ? tab : ''}
           onChange={setTab}
@@ -1212,7 +1253,7 @@ export function WorkspacePage() {
               {tab === 'approvals' && (
                 <Paper withBorder p="xs">
                   <Text size="sm" fw={600} mb={4}>
-                    Заместитель на период отсутствия
+                    {t.workspace.zamestitelNaPeriodOtsutstviya}
                   </Text>
                   <SubstitutesPanel />
                 </Paper>
@@ -1232,7 +1273,7 @@ export function WorkspacePage() {
                 <Text size="xs" c="dimmed">
                   {CHANNEL[String(conv.data.channelKind)]} ·{' '}
                   {STATUS[String(conv.data.status)] ?? String(conv.data.status)}
-                  {conv.data.assigneeName ? ` · ведёт ${String(conv.data.assigneeName)}` : ''}
+                  {conv.data.assigneeName ? t.workspace.vedet(String(conv.data.assigneeName)) : ''}
                 </Text>
               </Box>
               {conv.data.status === 'queued' && (
@@ -1243,7 +1284,7 @@ export function WorkspacePage() {
                   }
                   data-testid="take-open"
                 >
-                  Взять
+                  {t.workspace.vzyat}
                 </Button>
               )}
               {conv.data.status === 'offered' && conv.data.assigneeId === me?.id && (
@@ -1256,7 +1297,7 @@ export function WorkspacePage() {
                       void post(`/conversations/${selected}/accept`).then(() => qc.invalidateQueries())
                     }
                   >
-                    Принять
+                    {t.workspace.prinyat}
                   </Button>
                   <Button
                     size="xs"
@@ -1270,7 +1311,7 @@ export function WorkspacePage() {
                       })
                     }
                   >
-                    Отклонить
+                    {t.workspace.otklonit}
                   </Button>
                 </Group>
               )}
@@ -1288,7 +1329,7 @@ export function WorkspacePage() {
           </Stack>
         ) : (
           <Text c="dimmed" mt="xl" ta="center">
-            Выберите обращение слева
+            {t.workspace.vyberiteObrashchenieSleva}
           </Text>
         )}
       </Grid.Col>
@@ -1296,10 +1337,10 @@ export function WorkspacePage() {
         {conv.data && (
           <Tabs defaultValue="card">
             <Tabs.List mb="xs">
-              <Tabs.Tab value="card">Обращение</Tabs.Tab>
-              <Tabs.Tab value="contact">Клиент</Tabs.Tab>
+              <Tabs.Tab value="card">{t.workspace.obrashchenie}</Tabs.Tab>
+              <Tabs.Tab value="contact">{t.workspace.klient}</Tabs.Tab>
               <Tabs.Tab value="calls" data-testid="tab-calls">
-                Звонки
+                {t.workspace.zvonki}
               </Tabs.Tab>
             </Tabs.List>
             <ScrollArea h="calc(100vh - 170px)">

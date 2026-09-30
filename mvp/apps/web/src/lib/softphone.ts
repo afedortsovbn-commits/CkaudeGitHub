@@ -6,6 +6,7 @@ import { get } from './api';
 import { applySink, audioDevices, toneUrl } from './audio-devices';
 import { connectHeadset, type HeadsetAction, type HidHeadset, onHeadsetDisconnect } from './headset';
 import { onRealtime } from './realtime';
+import { t } from './i18n';
 
 /**
  * Софтфон оператора (M-OP-05, 02-архитектура 8.1): JsSIP регистрируется в Kamailio по WSS (в обход Traefik)
@@ -162,7 +163,7 @@ class Softphone {
     ua.on('registered', () => this.set({ reg: 'registered', error: null }));
     ua.on('unregistered', () => this.state.reg !== 'error' && this.set({ reg: 'connecting' }));
     ua.on('registrationFailed', (e: { cause?: string }) =>
-      this.set({ reg: 'error', error: `Регистрация не удалась: ${e.cause ?? ''}` }),
+      this.set({ reg: 'error', error: t.softphoneLib.registratsiyaNeUdalas(e.cause ?? '') }),
     );
     ua.on('newRTCSession', (e: RTCSessionEvent) => this.onSession(e));
     ua.start();
@@ -296,7 +297,7 @@ class Softphone {
       );
     }
     if ('Notification' in window && Notification.permission === 'granted')
-      new Notification('Входящий звонок', {
+      new Notification(t.softphoneLib.vkhodyashchiyZvonok, {
         body: this.state.call?.remoteName || this.state.call?.remote || '',
       });
   }

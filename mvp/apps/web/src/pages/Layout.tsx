@@ -12,30 +12,34 @@ import { t } from '../lib/i18n';
 
 const MENU: { to: string; label: string; perms?: string[] }[] = [
   { to: '/', label: t.nav.home },
-  { to: '/workspace', label: 'Рабочее место оператора', perms: ['conversations.work'] },
-  { to: '/supervisor', label: 'Супервизор', perms: ['supervisor.monitor'] },
-  { to: '/reports', label: 'Отчёты', perms: ['reports.view'] },
-  { to: '/tickets', label: 'Кабинет 2-й линии', perms: ['tickets.work'] },
-  { to: '/tickets-control', label: 'Контроль 2-й линии', perms: ['supervisor.approvals', 'admin.matrix'] },
-  { to: '/channels', label: 'Каналы', perms: ['admin.directories'] },
-  { to: '/ivr', label: 'Сценарии IVR', perms: ['admin.directories', 'supervisor.monitor'] },
-  { to: '/ivr-audio', label: 'Аудиобиблиотека', perms: ['admin.directories'] },
-  { to: '/bots', label: 'Боты', perms: ['admin.directories', 'supervisor.monitor'] },
-  { to: '/templates', label: 'Шаблоны ответов', perms: ['conversations.work', 'admin.directories'] },
+  { to: '/workspace', label: t.layout.rabocheeMestoOperatora, perms: ['conversations.work'] },
+  { to: '/supervisor', label: t.layout.supervizor, perms: ['supervisor.monitor'] },
+  { to: '/reports', label: t.layout.otchety, perms: ['reports.view'] },
+  { to: '/tickets', label: t.layout.kabinet2YLinii, perms: ['tickets.work'] },
+  { to: '/tickets-control', label: t.layout.kontrol2YLinii, perms: ['supervisor.approvals', 'admin.matrix'] },
+  { to: '/channels', label: t.layout.kanaly, perms: ['admin.directories'] },
+  { to: '/ivr', label: t.layout.stsenariiIvr, perms: ['admin.directories', 'supervisor.monitor'] },
+  { to: '/ivr-audio', label: t.layout.audiobiblioteka, perms: ['admin.directories'] },
+  { to: '/bots', label: t.layout.boty, perms: ['admin.directories', 'supervisor.monitor'] },
+  { to: '/templates', label: t.layout.shablonyOtvetov, perms: ['conversations.work', 'admin.directories'] },
   {
     to: '/kb',
-    label: 'База знаний',
+    label: t.layout.bazaZnaniy,
     perms: ['conversations.work', 'admin.directories', 'supervisor.monitor'],
   },
-  { to: '/auto-replies', label: 'Автоответы', perms: ['admin.directories'] },
-  { to: '/assist', label: 'Подсказки: провайдеры', perms: ['admin.directories'] },
-  { to: '/announcements', label: 'Объявления о сбоях', perms: ['admin.directories', 'supervisor.monitor'] },
-  { to: '/integrations', label: 'Интеграции', perms: ['admin.directories'] },
-  { to: '/api-keys', label: 'Ключи API', perms: ['admin.settings'] },
+  { to: '/auto-replies', label: t.layout.avtootvety, perms: ['admin.directories'] },
+  { to: '/assist', label: t.layout.podskazkiProvaydery, perms: ['admin.directories'] },
+  {
+    to: '/announcements',
+    label: t.layout.obyavleniyaOSboyakh,
+    perms: ['admin.directories', 'supervisor.monitor'],
+  },
+  { to: '/integrations', label: t.layout.integratsii, perms: ['admin.directories'] },
+  { to: '/api-keys', label: t.layout.klyuchiApi, perms: ['admin.settings'] },
   { to: '/webhooks', label: 'Webhooks', perms: ['admin.settings'] },
-  { to: '/external-bots', label: 'Внешний бот (Bot Gateway)', perms: ['admin.settings'] },
-  { to: '/api-docs', label: 'Документация API', perms: ['admin.settings', 'admin.directories'] },
-  { to: '/config-transfer', label: 'Экспорт и импорт', perms: ['admin.settings'] },
+  { to: '/external-bots', label: t.layout.vneshniyBotBotGateway, perms: ['admin.settings'] },
+  { to: '/api-docs', label: t.layout.dokumentatsiyaApi, perms: ['admin.settings', 'admin.directories'] },
+  { to: '/config-transfer', label: t.layout.eksportIImport, perms: ['admin.settings'] },
   { to: '/enterprises', label: t.nav.enterprises, perms: ['admin.directories'] },
   { to: '/departments', label: t.nav.departments, perms: ['admin.directories'] },
   { to: '/topics', label: t.nav.topics, perms: ['admin.directories'] },
@@ -45,7 +49,11 @@ const MENU: { to: string; label: string; perms?: string[] }[] = [
   { to: '/dictionaries', label: t.nav.dictionaries, perms: ['admin.directories'] },
   { to: '/settings', label: t.nav.settings, perms: ['admin.settings'] },
   { to: '/audit', label: t.nav.audit, perms: ['admin.audit'] },
-  { to: '/privacy', label: 'Персональные данные', perms: ['admin.audit', 'admin.settings', 'admin.users'] },
+  {
+    to: '/privacy',
+    label: t.layout.personalnyeDannye,
+    perms: ['admin.audit', 'admin.settings', 'admin.users'],
+  },
 ];
 
 export function Layout() {
@@ -117,12 +125,10 @@ export function HomePage() {
   return (
     <>
       <Text size="xl" fw={600} mb="sm">
-        Здравствуйте, {me?.fullName}!
+        {t.layout.zdravstvuyte}
+        {me?.fullName}!
       </Text>
-      <Text c="dimmed">
-        Разделы — в меню слева: рабочее место оператора, панель супервизора, настройка IVR, каналов,
-        оргструктуры, прав и справочников.
-      </Text>
+      <Text c="dimmed">{t.layout.razdelyVMenyuSleva}</Text>
     </>
   );
 }

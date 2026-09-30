@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { errorText, get, post } from '../lib/api';
 import type { Row } from '../lib/data';
+import { t } from '../lib/i18n';
 
 interface Suggestion {
   type: 'template' | 'article' | 'draft';
@@ -22,15 +23,16 @@ interface Outcome {
 }
 
 const TYPE: Record<Suggestion['type'], { label: string; color: string }> = {
-  template: { label: 'шаблон', color: 'blue' },
-  article: { label: 'статья БЗ', color: 'teal' },
-  draft: { label: 'ИИ', color: 'grape' },
+  template: { label: t.assistPanelUi.shablon, color: 'blue' },
+  article: { label: t.assistPanelUi.statyaBz, color: 'teal' },
+  draft: { label: t.assistPanelUi.ii, color: 'grape' },
 };
 
 /** Переменные шаблона ответа — те же, что подставляет сервер в подсказках. */
 export function renderTemplate(body: string, conv: Row, operatorName: string): string {
   const vars: Record<string, string> = {
-    'client.name': conv.contactName && conv.contactName !== 'Клиент' ? String(conv.contactName) : '',
+    'client.name':
+      conv.contactName && conv.contactName !== t.assistPanelUi.klient ? String(conv.contactName) : '',
     'operator.name': operatorName,
     'operator.firstName': operatorName.split(' ')[1] ?? operatorName,
     'conversation.topic': String(conv.topicName ?? ''),
@@ -81,13 +83,16 @@ export function AssistPanel({
     <Paper withBorder p={6} data-testid="assist">
       <Group justify="space-between" gap={4}>
         <Text size="xs" fw={600} style={{ cursor: 'pointer' }} onClick={() => setOpen(!open)}>
-          {open ? '▾' : '▸'} Подсказки{list.length ? ` (${list.length})` : ''}
+          {open ? '▾' : '▸'}
+          {t.assistPanelUi.podskazki}
+          {list.length ? ` (${list.length})` : ''}
         </Text>
         <Group gap={4}>
           {failed.map((p) => (
             <Tooltip key={p.providerId} label={p.error ?? ''}>
               <Badge size="xs" color="orange" variant="light" data-testid="assist-provider-failed">
-                {p.name}: недоступен
+                {p.name}
+                {t.assistPanelUi.nedostupen}
               </Badge>
             </Tooltip>
           ))}
@@ -99,7 +104,7 @@ export function AssistPanel({
             onClick={() => void draft()}
             data-testid="assist-draft"
           >
-            Черновик (ИИ)
+            {t.assistPanelUi.chernovikIi}
           </Button>
         </Group>
       </Group>
@@ -107,12 +112,12 @@ export function AssistPanel({
         <Stack gap={4} mt={4} mah={170} style={{ overflowY: 'auto' }}>
           {q.isLoading && (
             <Text size="xs" c="dimmed">
-              Подбираем…
+              {t.assistPanelUi.podbiraem}
             </Text>
           )}
           {!q.isLoading && !list.length && (
             <Text size="xs" c="dimmed">
-              Нет подходящих шаблонов и статей
+              {t.assistPanelUi.netPodkhodyashchikhShablonovI}
             </Text>
           )}
           {list.map((s, i) => (
@@ -132,7 +137,7 @@ export function AssistPanel({
                   </Text>
                 </Group>
                 <Button size="compact-xs" onClick={() => onInsert(s.text, s)} data-testid="suggestion-insert">
-                  Вставить
+                  {t.assistPanelUi.vstavit}
                 </Button>
               </Group>
               <Text size="xs" c="dimmed" lineClamp={2} style={{ whiteSpace: 'pre-wrap' }}>
@@ -164,7 +169,7 @@ export function SlashList({ items, onPick }: { items: Row[]; onPick(r: Row): voi
     <Paper withBorder shadow="sm" p={4} data-testid="slash-list">
       {!items.length && (
         <Text size="xs" c="dimmed" p={4}>
-          Шаблоны не найдены
+          {t.assistPanelUi.shablonyNeNaydeny}
         </Text>
       )}
       {items.map((r, i) => (

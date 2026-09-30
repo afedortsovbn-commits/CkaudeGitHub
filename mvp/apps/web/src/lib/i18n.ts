@@ -1,3 +1,34 @@
+import { apiLib } from './i18n/apiLib';
+import { assistPanelUi } from './i18n/assistPanelUi';
+import { audioDevicesLib } from './i18n/audioDevicesLib';
+import { audioSettingsUi } from './i18n/audioSettingsUi';
+import { authLib } from './i18n/authLib';
+import { automation } from './i18n/automation';
+import { channels } from './i18n/channels';
+import { dataLib } from './i18n/dataLib';
+import { demoCall } from './i18n/demoCall';
+import { dictPageUi } from './i18n/dictPageUi';
+import { flowEditor } from './i18n/flowEditor';
+import { integrations } from './i18n/integrations';
+import { ivr } from './i18n/ivr';
+import { layout } from './i18n/layout';
+import { matrix } from './i18n/matrix';
+import { mergeContactModalUi } from './i18n/mergeContactModalUi';
+import { notificationBellUi } from './i18n/notificationBellUi';
+import { org } from './i18n/org';
+import { privacy } from './i18n/privacy';
+import { profilePage } from './i18n/profilePage';
+import { reports } from './i18n/reports';
+import { settingsPage } from './i18n/settingsPage';
+import { softphoneLib } from './i18n/softphoneLib';
+import { softphoneUi } from './i18n/softphoneUi';
+import { supervisor } from './i18n/supervisor';
+import { tickets } from './i18n/tickets';
+import { topics } from './i18n/topics';
+import { updateBannerUi } from './i18n/updateBannerUi';
+import { users } from './i18n/users';
+import { workspace } from './i18n/workspace';
+
 /** Строки интерфейса. Русский — основной язык; структура позволяет добавить другие (M-NFR-08). */
 const ru = {
   appName: 'Контакт-центр',
@@ -79,6 +110,37 @@ const ru = {
     duration: 'Длительность',
     status: 'Итог',
   },
-} as const;
+  // Разделы страниц и компонентов (Ф12b): lib/i18n/<раздел>.ts.
+  apiLib,
+  assistPanelUi,
+  audioDevicesLib,
+  audioSettingsUi,
+  authLib,
+  automation,
+  channels,
+  dataLib,
+  demoCall,
+  dictPageUi,
+  flowEditor,
+  integrations,
+  ivr,
+  layout,
+  matrix,
+  mergeContactModalUi,
+  notificationBellUi,
+  org,
+  privacy,
+  profilePage,
+  reports,
+  settingsPage,
+  softphoneLib,
+  softphoneUi,
+  supervisor,
+  tickets,
+  topics,
+  updateBannerUi,
+  users,
+  workspace,
+};
 
 export const t = ru;

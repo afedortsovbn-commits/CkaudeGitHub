@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { applySink, audioDevices, type DeviceKind, toneUrl, useAudioDevices } from '../lib/audio-devices';
 import { webHidSupported } from '../lib/headset';
 import { softphone, useSoftphone } from '../lib/softphone';
+import { t } from '../lib/i18n';
 
 /** Индикатор уровня микрофона (тест микрофона, M-OP-06). */
 function MicMeter({ deviceKey }: { deviceKey: string }) {
@@ -45,13 +46,14 @@ function MicMeter({ deviceKey }: { deviceKey: string }) {
   if (error)
     return (
       <Text c="red" size="xs">
-        Микрофон недоступен: {error}
+        {t.audioSettingsUi.mikrofonNedostupen}
+        {error}
       </Text>
     );
   return (
     <Stack gap={2}>
       <Text size="xs" c="dimmed">
-        Скажите что-нибудь — полоса должна двигаться
+        {t.audioSettingsUi.skazhiteChtoNibudPolosa}
       </Text>
       <Progress
         value={level}
@@ -92,79 +94,77 @@ export function AudioSettings({ onClose }: { onClose(): void }) {
     const ok = await softphone.attachHeadset(true);
     notifications.show(
       ok
-        ? { color: 'green', message: 'Гарнитура подключена: кнопки ответа, отбоя и микрофона работают' }
+        ? { color: 'green', message: t.audioSettingsUi.garnituraPodklyuchenaKnopkiOtveta }
         : {
             color: 'yellow',
-            message: 'Гарнитура не выбрана или не поддерживает стандартные кнопки телефонии (HID Telephony)',
+            message: t.audioSettingsUi.garnituraNeVybranaIli,
           },
     );
   };
   return (
-    <Modal opened onClose={onClose} title="Настройки звука и гарнитуры" size="lg">
+    <Modal opened onClose={onClose} title={t.audioSettingsUi.nastroykiZvukaIGarnitury} size="lg">
       <Stack>
-        {sel('mic', 'Микрофон', d.inputs, 'device-mic')}
+        {sel('mic', t.audioSettingsUi.mikrofon, d.inputs, 'device-mic')}
         <MicMeter deviceKey={`${d.effective.mic?.id}|${JSON.stringify(d.processing)}`} />
         {d.sinkSupported ? (
           <>
             <Group align="end" grow>
-              {sel('speaker', 'Динамик разговора', d.outputs, 'device-speaker')}
+              {sel('speaker', t.audioSettingsUi.dinamikRazgovora, d.outputs, 'device-speaker')}
               <Button variant="light" onClick={() => void playTest('speaker')} data-testid="test-speaker">
-                Проверить динамик
+                {t.audioSettingsUi.proveritDinamik}
               </Button>
             </Group>
             <Group align="end" grow>
-              {sel('ringer', 'Звонок (рингтон)', d.outputs, 'device-ringer')}
+              {sel('ringer', t.audioSettingsUi.zvonokRington, d.outputs, 'device-ringer')}
               <Button variant="light" onClick={() => void playTest('ringer')} data-testid="test-ringer">
-                Проверить звонок
+                {t.audioSettingsUi.proveritZvonok}
               </Button>
             </Group>
           </>
         ) : (
-          <Alert color="yellow">
-            Браузер не поддерживает выбор динамика — звук идёт на устройство по умолчанию.
-          </Alert>
+          <Alert color="yellow">{t.audioSettingsUi.brauzerNePodderzhivaetVybor}</Alert>
         )}
         <Text fw={600} size="sm">
-          Обработка звука
+          {t.audioSettingsUi.obrabotkaZvuka}
         </Text>
         <Group>
           <Switch
-            label="Подавление эха"
+            label={t.audioSettingsUi.podavlenieEkha}
             checked={d.processing.echoCancellation}
             onChange={(e) => audioDevices.setProcessing({ echoCancellation: e.currentTarget.checked })}
           />
           <Switch
-            label="Шумоподавление"
+            label={t.audioSettingsUi.shumopodavlenie}
             checked={d.processing.noiseSuppression}
             onChange={(e) => audioDevices.setProcessing({ noiseSuppression: e.currentTarget.checked })}
           />
           <Switch
-            label="Автоусиление"
+            label={t.audioSettingsUi.avtousilenie}
             checked={d.processing.autoGainControl}
             onChange={(e) => audioDevices.setProcessing({ autoGainControl: e.currentTarget.checked })}
           />
         </Group>
         <Text fw={600} size="sm">
-          Кнопки гарнитуры
+          {t.audioSettingsUi.knopkiGarnitury}
         </Text>
         {webHidSupported() ? (
           <Group>
             <Text size="sm" data-testid="headset-name">
-              {phone.headset ? `Подключена: ${phone.headset}` : 'Не подключена'}
+              {phone.headset
+                ? t.audioSettingsUi.podklyuchena(phone.headset)
+                : t.audioSettingsUi.nePodklyuchena}
             </Text>
             <Button variant="light" size="xs" onClick={() => void connect()}>
-              {phone.headset ? 'Выбрать другую' : 'Подключить гарнитуру'}
+              {phone.headset ? t.audioSettingsUi.vybratDruguyu : t.audioSettingsUi.podklyuchitGarnituru}
             </Button>
           </Group>
         ) : (
           <Text size="sm" c="dimmed">
-            Браузер не поддерживает WebHID — используйте кнопки в интерфейсе и горячие клавиши.
+            {t.audioSettingsUi.brauzerNePodderzhivaetWebhid}
           </Text>
         )}
         <Text size="xs" c="dimmed">
-          Горячие клавиши: Ctrl+Alt+A — ответить, Ctrl+Alt+H — завершить/отклонить, Ctrl+Alt+M — микрофон.
-          Bluetooth-гарнитура при захвате микрофона переходит в режим гарнитуры (узкая полоса) — это
-          нормально; при её отключении звонок продолжится на другом устройстве.
+          {t.audioSettingsUi.goryachieKlavishiCtrlAlt}
         </Text>
       </Stack>
     </Modal>

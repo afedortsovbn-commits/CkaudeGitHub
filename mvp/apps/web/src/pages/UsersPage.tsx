@@ -40,9 +40,9 @@ interface UserDetail extends Row {
 }
 
 const UNCLASSIFIED_OPTIONS = [
-  { value: 'role', label: 'как в ролях' },
-  { value: 'yes', label: 'видит' },
-  { value: 'no', label: 'не видит' },
+  { value: 'role', label: t.users.kakVRolyakh },
+  { value: 'yes', label: t.users.vidit },
+  { value: 'no', label: t.users.neVidit },
 ];
 
 /** Неклассифицированные обращения (без предприятия и темы, В-52): отметка сотрудника важнее роли. */
@@ -56,8 +56,8 @@ function UnclassifiedSelect({ user }: { user: UserDetail }) {
   return (
     <Group align="flex-end">
       <Select
-        label="Неклассифицированные обращения (без предприятия и темы)"
-        description="При ограниченной области. Область «всё» видит их всегда."
+        label={t.users.neklassifitsirovannyeObrashcheniyaBe}
+        description={t.users.priOgranichennoyOblastiOblast}
         data={UNCLASSIFIED_OPTIONS}
         value={v}
         onChange={(x) => x && setV(x)}
@@ -88,7 +88,7 @@ function ScopeEditor({ user }: { user: UserDetail }) {
   const save = useAction(() => put(`/users/${user.id}/scopes`, { rules }));
   const saveTemplate = useAction(
     (name: string) => post('/dict/scope-templates', { name, rules }),
-    'Шаблон сохранён',
+    t.users.shablonSokhranen,
   );
   const apply = useAction((templateId: string) =>
     post(`/users/${user.id}/scopes/apply-template`, { templateId }),
@@ -102,33 +102,31 @@ function ScopeEditor({ user }: { user: UserDetail }) {
   return (
     <Stack>
       <Text size="sm" c="dimmed">
-        Определяют, какие обращения, тикеты и данные сотрудник видит в списках, поиске и отчётах. Пустое поле
-        — «все». Тема включает свои подтемы. Нет ни одного правила — сотрудник ничего не видит. Назначенный
-        ответственный видит свои тикеты всегда.
+        {t.users.opredelyayutKakieObrashcheniyaTikety}
       </Text>
       <UnclassifiedSelect user={user} />
       {rules.map((r, i) => (
         <Paper key={i} withBorder p="sm">
           <Group grow align="flex-start">
             <MultiSelect
-              label="Предприятия"
-              placeholder="все"
+              label={t.nav.enterprises}
+              placeholder={t.users.vse}
               data={options(enterprises.data)}
               value={r.enterpriseIds ?? []}
               onChange={(v) => upd(i, 'enterpriseIds', v)}
               searchable
             />
             <MultiSelect
-              label="Подразделения"
-              placeholder="все"
+              label={t.nav.departments}
+              placeholder={t.users.vse}
               data={options(departments.data)}
               value={r.departmentIds ?? []}
               onChange={(v) => upd(i, 'departmentIds', v)}
               searchable
             />
             <MultiSelect
-              label="Темы"
-              placeholder="все"
+              label={t.users.temy}
+              placeholder={t.users.vse}
               data={topicOptions}
               value={r.topicIds ?? []}
               onChange={(v) => upd(i, 'topicIds', v)}
@@ -142,7 +140,7 @@ function ScopeEditor({ user }: { user: UserDetail }) {
             mt="xs"
             onClick={() => setRules((rs) => rs.filter((_, j) => j !== i))}
           >
-            Удалить правило
+            {t.users.udalitPravilo}
           </Button>
         </Paper>
       ))}
@@ -153,24 +151,24 @@ function ScopeEditor({ user }: { user: UserDetail }) {
             setRules((rs) => [...rs, { enterpriseIds: null, departmentIds: null, topicIds: null }])
           }
         >
-          Добавить правило
+          {t.users.dobavitPravilo}
         </Button>
         <Button onClick={() => save.mutate(undefined)} loading={save.isPending} data-testid="save-scopes">
-          Сохранить области
+          {t.users.sokhranitOblasti}
         </Button>
         <Button
           variant="subtle"
           onClick={() => {
-            const name = window.prompt('Название шаблона');
+            const name = window.prompt(t.users.nazvanieShablona);
             if (name) saveTemplate.mutate(name);
           }}
         >
-          Сохранить как шаблон
+          {t.users.sokhranitKakShablon}
         </Button>
       </Group>
       {(templates.data ?? []).length > 0 && (
         <Group>
-          <Text size="sm">Применить шаблон:</Text>
+          <Text size="sm">{t.users.primenitShablon}</Text>
           {(templates.data ?? []).map((tpl) => (
             <Button key={tpl.id} size="xs" variant="light" onClick={() => apply.mutate(tpl.id)}>
               {String(tpl.name)}
@@ -209,11 +207,11 @@ function UserDrawer({ id, onClose }: { id: string; onClose(): void }) {
   const saveRoles = useAction(() => put(`/users/${id}/roles`, { roles: form.roles }).then(load));
   const resetTotp = useAction(
     () => post(`/users/${id}/totp/reset`).then(load),
-    '2FA сброшена, сессии сотрудника завершены',
+    t.users.n2faSbroshenaSessiiSotrudnika,
   );
   const anonymize = useAction(
     (reason: string) => post(`/users/${id}/anonymize`, { confirm: true, reason }).then(load),
-    'Сотрудник обезличен',
+    t.users.sotrudnikObezlichen,
   );
   const roleUnclassified = useAction((a: { code: string; on: boolean }) =>
     patch(`/users/roles/${a.code}`, { seesUnclassified: a.on }),
@@ -221,7 +219,7 @@ function UserDrawer({ id, onClose }: { id: string; onClose(): void }) {
   const saveQueues = useAction(() => put(`/users/${id}/queues`, { queueIds: form.queueIds }).then(load));
   const resetPwd = useAction(
     () => post(`/users/${id}/password`, { password: pwd }),
-    'Пароль изменён, сессии сотрудника завершены',
+    t.users.parolIzmenenSessiiSotrudnika,
   );
   const toggle = useAction(() =>
     post(`/users/${id}/${user?.isActive ? 'deactivate' : 'activate'}`).then(load),
@@ -232,44 +230,44 @@ function UserDrawer({ id, onClose }: { id: string; onClose(): void }) {
     <Drawer opened onClose={onClose} position="right" size="xl" title={user.fullName}>
       {!user.isActive && (
         <Alert color="gray" mb="sm">
-          Сотрудник отключён: вход невозможен.
+          {t.users.sotrudnikOtklyuchenVkhodNevozmozhen}
         </Alert>
       )}
       <Tabs defaultValue="main">
         <Tabs.List mb="md">
-          <Tabs.Tab value="main">Данные</Tabs.Tab>
-          <Tabs.Tab value="roles">Роли</Tabs.Tab>
-          <Tabs.Tab value="scopes">Области видимости</Tabs.Tab>
-          <Tabs.Tab value="queues">Очереди</Tabs.Tab>
-          <Tabs.Tab value="security">Доступ</Tabs.Tab>
+          <Tabs.Tab value="main">{t.users.dannye}</Tabs.Tab>
+          <Tabs.Tab value="roles">{t.users.roli}</Tabs.Tab>
+          <Tabs.Tab value="scopes">{t.users.oblastiVidimosti}</Tabs.Tab>
+          <Tabs.Tab value="queues">{t.users.ocheredi}</Tabs.Tab>
+          <Tabs.Tab value="security">{t.users.dostup}</Tabs.Tab>
         </Tabs.List>
         <Tabs.Panel value="main">
           <Stack>
             <TextInput
-              label="ФИО"
+              label={t.users.fio}
               value={String(form.fullName ?? '')}
               onChange={(e) => set('fullName', e.currentTarget.value)}
             />
             <TextInput
-              label="Email (обязателен для ответственных и кураторов)"
+              label={t.users.emailObyazatelenDlyaOtvetstvennykh}
               value={String(form.email ?? '')}
               onChange={(e) => set('email', e.currentTarget.value)}
             />
             <TextInput
-              label="Телефон"
+              label={t.users.telefon}
               value={String(form.phone ?? '')}
               onChange={(e) => set('phone', e.currentTarget.value)}
             />
             <Group grow>
               <MultiSelect
-                label="Основное предприятие"
+                label={t.users.osnovnoePredpriyatie}
                 maxValues={1}
                 data={options(enterprises.data)}
                 value={form.primaryEnterpriseId ? [String(form.primaryEnterpriseId)] : []}
                 onChange={(v) => set('primaryEnterpriseId', v[0] ?? null)}
               />
               <MultiSelect
-                label="Основное подразделение"
+                label={t.users.osnovnoePodrazdelenie}
                 maxValues={1}
                 data={options(departments.data)}
                 value={form.primaryDepartmentId ? [String(form.primaryDepartmentId)] : []}
@@ -277,7 +275,7 @@ function UserDrawer({ id, onClose }: { id: string; onClose(): void }) {
               />
             </Group>
             <Switch
-              label="Может входить в систему"
+              label={t.users.mozhetVkhoditVSistemu}
               checked={!!form.canLogin}
               onChange={(e) => set('canLogin', e.currentTarget.checked)}
             />
@@ -303,10 +301,10 @@ function UserDrawer({ id, onClose }: { id: string; onClose(): void }) {
               />
             ))}
             <Button onClick={() => saveRoles.mutate(undefined)} loading={saveRoles.isPending}>
-              Сохранить роли
+              {t.users.sokhranitRoli}
             </Button>
             <Text size="sm" fw={500} mt="md">
-              Роли видят неклассифицированные обращения (для всех сотрудников с ролью)
+              {t.users.roliVidyatNeklassifitsirovannyeObras}
             </Text>
             {(roles.data ?? [])
               .filter((r) => !(r.permissions as string[]).includes('scope.all'))
@@ -328,7 +326,7 @@ function UserDrawer({ id, onClose }: { id: string; onClose(): void }) {
         <Tabs.Panel value="queues">
           <Stack>
             <MultiSelect
-              label="Очереди сотрудника"
+              label={t.users.ocherediSotrudnika}
               data={options(queues.data)}
               value={(form.queueIds as string[]) ?? []}
               onChange={(v) => set('queueIds', v)}
@@ -339,27 +337,27 @@ function UserDrawer({ id, onClose }: { id: string; onClose(): void }) {
         <Tabs.Panel value="security">
           <Stack>
             <PasswordInput
-              label="Новый пароль (не короче 8 символов)"
+              label={t.profile.newPassword}
               value={pwd}
               onChange={(e) => setPwd(e.currentTarget.value)}
             />
             <Button onClick={() => resetPwd.mutate(undefined)} disabled={pwd.length < 8}>
-              Задать пароль
+              {t.users.zadatParol}
             </Button>
             <Group>
-              <Text size="sm">Вход с кодом (2FA):</Text>
+              <Text size="sm">{t.users.vkhodSKodom2fa}</Text>
               <Badge color={user.totpEnabled ? 'green' : 'gray'} data-testid="user-totp">
-                {user.totpEnabled ? 'включён' : 'выключен'}
+                {user.totpEnabled ? t.users.vklyuchen : t.users.vyklyuchen}
               </Badge>
               {user.totpEnabled ? (
                 <Button size="xs" variant="outline" onClick={() => resetTotp.mutate(undefined)}>
-                  Сбросить (потерян телефон)
+                  {t.users.sbrositPoteryanTelefon}
                 </Button>
               ) : null}
             </Group>
             {user.lockedUntil ? (
               <Button variant="outline" onClick={() => void post(`/users/${id}/unlock`).then(load)}>
-                Снять блокировку входа
+                {t.users.snyatBlokirovkuVkhoda}
               </Button>
             ) : null}
             <Button
@@ -367,18 +365,18 @@ function UserDrawer({ id, onClose }: { id: string; onClose(): void }) {
               variant="outline"
               onClick={() => toggle.mutate(undefined)}
             >
-              {user.isActive ? 'Отключить (уволить)' : 'Включить'}
+              {user.isActive ? t.users.otklyuchitUvolit : t.activate}
             </Button>
             {!user.isActive && !user.anonymizedAt && (
               <Button
                 color="red"
                 variant="subtle"
                 onClick={() => {
-                  const reason = window.prompt('Обезличить сотрудника (необратимо). Основание:');
+                  const reason = window.prompt(t.users.obezlichitSotrudnikaNeobratimoOsnova);
                   if (reason) anonymize.mutate(reason);
                 }}
               >
-                Обезличить (ФИО, email, телефон)
+                {t.users.obezlichitFioEmailTelefon}
               </Button>
             )}
           </Stack>
@@ -416,10 +414,10 @@ export function UsersPage() {
       <Table striped highlightOnHover>
         <Table.Thead>
           <Table.Tr>
-            <Table.Th>ФИО</Table.Th>
+            <Table.Th>{t.users.fio}</Table.Th>
             <Table.Th>Email</Table.Th>
-            <Table.Th>Роли</Table.Th>
-            <Table.Th>Статус</Table.Th>
+            <Table.Th>{t.users.roli}</Table.Th>
+            <Table.Th>{t.users.status}</Table.Th>
           </Table.Tr>
         </Table.Thead>
         <Table.Tbody>
@@ -435,10 +433,14 @@ export function UsersPage() {
                 ))}
               </Table.Td>
               <Table.Td>
-                {u.isActive ? <Badge color="green">Активен</Badge> : <Badge color="gray">Отключён</Badge>}
+                {u.isActive ? (
+                  <Badge color="green">{t.users.aktiven}</Badge>
+                ) : (
+                  <Badge color="gray">{t.users.otklyuchen}</Badge>
+                )}
                 {u.lockedUntil ? (
                   <Badge color="orange" ml={4}>
-                    Вход заблокирован
+                    {t.users.vkhodZablokirovan}
                   </Badge>
                 ) : null}
               </Table.Td>
@@ -448,16 +450,16 @@ export function UsersPage() {
       </Table>
       <FormModal
         opened={creating}
-        title="Новый сотрудник"
+        title={t.users.novyySotrudnik}
         isCreate
         fields={[
-          { key: 'fullName', label: 'ФИО', required: true },
+          { key: 'fullName', label: t.users.fio, required: true },
           { key: 'email', label: 'Email', required: true },
-          { key: 'phone', label: 'Телефон' },
-          { key: 'password', label: 'Пароль (не короче 8 символов)', type: 'password' },
+          { key: 'phone', label: t.users.telefon },
+          { key: 'password', label: t.users.parolNeKoroche8, type: 'password' },
           {
             key: 'roles',
-            label: 'Роли',
+            label: t.users.roli,
             type: 'multiselect',
             options: (roles.data ?? []).map((r) => ({ value: String(r.code), label: String(r.name) })),
           },

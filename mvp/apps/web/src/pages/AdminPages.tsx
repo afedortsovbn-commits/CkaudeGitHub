@@ -26,30 +26,30 @@ export function SettingsPage() {
     <Stack maw={520}>
       <Title order={3}>{t.nav.settings}</Title>
       <NumberInput
-        label="Срок ответа 2-й линии по умолчанию, календарных дней"
-        description="Действует, если у темы и её родителей срок не задан"
+        label={t.settingsPage.srokOtveta2Y}
+        description={t.settingsPage.deystvuetEsliUTemy}
         min={1}
         max={365}
         value={Number(v['ticket.default_response_days'] ?? 15)}
         onChange={(x) => setV({ ...v, 'ticket.default_response_days': Number(x) })}
       />
       <TextInput
-        label="Время ежедневной рассылки по тикетам"
-        description="Письма «осталось N дней / просрочено» — каждый день, включая выходные"
+        label={t.settingsPage.vremyaEzhednevnoyRassylkiPo}
+        description={t.settingsPage.pismaOstalosNDney}
         value={String(v['ticket.daily_notification_time'] ?? '08:00')}
         onChange={(e) => setV({ ...v, 'ticket.daily_notification_time': e.currentTarget.value })}
       />
       <NumberInput
-        label="Надбавка приоритета при эскалации по времени ожидания"
-        description="Прибавляется к приоритету обращения один раз, когда истекает «Макс. ожидание» очереди (M-RT-04)"
+        label={t.settingsPage.nadbavkaPrioritetaPriEskalatsii}
+        description={t.settingsPage.pribavlyaetsyaKPrioritetuObrashcheni}
         min={0}
         max={100000}
         value={Number(v['routing.escalation_boost'] ?? 1000)}
         onChange={(x) => setV({ ...v, 'routing.escalation_boost': Number(x) })}
       />
       <NumberInput
-        label="Чат во вкладке «Постобработка» после молчания клиента, с"
-        description="Последним написал оператор, клиент не отвечает — обращение ждёт классификации и закрытия"
+        label={t.settingsPage.chatVoVkladkePostobrabotka}
+        description={t.settingsPage.poslednimNapisalOperatorKlient}
         min={10}
         max={86400}
         value={Number(v['operator.wrapup_chat_idle_s'] ?? 300)}
@@ -57,33 +57,33 @@ export function SettingsPage() {
         data-testid="setting-wrapup-idle"
       />
       <Select
-        label="Кто согласует закрытие тикета"
+        label={t.settingsPage.ktoSoglasuetZakrytieTiketa}
         data={[
-          { value: 'creator', label: 'Создатель тикета, его заместитель или супервизор' },
-          { value: 'supervisor', label: 'Только супервизор' },
+          { value: 'creator', label: t.settingsPage.sozdatelTiketaEgoZamestitel },
+          { value: 'supervisor', label: t.settingsPage.tolkoSupervizor },
         ]}
         value={String(v['ticket.approval_mode'] ?? 'creator')}
         onChange={(x) => setV({ ...v, 'ticket.approval_mode': x })}
       />
       <TextInput
-        label="Автосообщение клиенту при передаче на 2-ю линию"
-        description="Уходит в текстовых каналах; пусто — не отправлять"
+        label={t.settingsPage.avtosoobshchenieKlientuPriPeredache}
+        description={t.settingsPage.ukhoditVTekstovykhKanalakh}
         value={String(v['ticket.transfer_message'] ?? '')}
         onChange={(e) => setV({ ...v, 'ticket.transfer_message': e.currentTarget.value })}
       />
       <Title order={5} mt="md">
-        Безопасность и персональные данные
+        {t.settingsPage.bezopasnostIPersonalnyeDannye}
       </Title>
       <Switch
-        label="Вход с кодом (2FA) обязателен для администраторов"
-        description="Сотрудники с административными правами настраивают приложение-аутентификатор при следующем входе"
+        label={t.settingsPage.vkhodSKodom2fa}
+        description={t.settingsPage.sotrudnikiSAdministrativnymiPravami}
         checked={Boolean(v['security.admin_2fa_required'] ?? false)}
         onChange={(e) => setV({ ...v, 'security.admin_2fa_required': e.currentTarget.checked })}
         data-testid="setting-admin-2fa"
       />
       <NumberInput
-        label="Срок хранения записей разговоров, дней"
-        description="Записи старше срока удаляются из хранилища ежедневно; карточка обращения остаётся"
+        label={t.settingsPage.srokKhraneniyaZapiseyRazgovorov}
+        description={t.settingsPage.zapisiStarsheSrokaUdalyayutsya}
         min={1}
         max={3650}
         value={Number(v['recording.retention_days'] ?? 180)}
@@ -91,16 +91,16 @@ export function SettingsPage() {
         data-testid="setting-recording-retention"
       />
       <Title order={5} mt="md">
-        Панель супервизора и отчёты
+        {t.settingsPage.panelSupervizoraIOtchety}
       </Title>
       {(
         [
-          ['waitWarnS', 'Ожидание в очереди — внимание, с', 60],
-          ['waitCritS', 'Ожидание в очереди — критично, с', 180],
-          ['queueWarn', 'Ожидающих в очереди — внимание', 5],
-          ['queueCrit', 'Ожидающих в очереди — критично', 15],
-          ['breakWarnS', 'Подсвечивать перерыв оператора дольше, с', 900],
-          ['slTargetPct', 'Цель SL за сегодня, %', 80],
+          ['waitWarnS', t.settingsPage.ozhidanieVOcherediVnimanie, 60],
+          ['waitCritS', t.settingsPage.ozhidanieVOcherediKritichno, 180],
+          ['queueWarn', t.settingsPage.ozhidayushchikhVOcherediVnimanie, 5],
+          ['queueCrit', t.settingsPage.ozhidayushchikhVOcherediKritichno, 15],
+          ['breakWarnS', t.settingsPage.podsvechivatPereryvOperatoraDolshe, 900],
+          ['slTargetPct', t.settingsPage.tselSlZaSegodnya, 80],
         ] as const
       ).map(([k, label, def]) => (
         <NumberInput
@@ -114,10 +114,10 @@ export function SettingsPage() {
       ))}
       {(
         [
-          ['report.sl_voice_s', 'SL: ответ на звонок в пределах, с', 20],
-          ['report.sl_text_s', 'SL: ответ в текстовом канале в пределах, с', 60],
-          ['report.short_abandon_s', 'Короткий сброс (не считается пропущенным), с', 5],
-          ['report.first_response_s', 'Первый ответ в чате вовремя, с', 120],
+          ['report.sl_voice_s', t.settingsPage.slOtvetNaZvonok, 20],
+          ['report.sl_text_s', t.settingsPage.slOtvetVTekstovom, 60],
+          ['report.short_abandon_s', t.settingsPage.korotkiySbrosNeSchitaetsya, 5],
+          ['report.first_response_s', t.settingsPage.pervyyOtvetVChate, 120],
         ] as const
       ).map(([k, label, def]) => (
         <NumberInput
@@ -165,28 +165,28 @@ function SlRules({ v, setV }: { v: Record<string, unknown>; setV(x: Record<strin
     <>
       {flag(
         'report.sl_count_short_abandons',
-        'SL: учитывать короткие сбросы как пропущенные',
-        'Выключено — сбросы быстрее порога короткого сброса не входят в знаменатель SL',
+        t.settingsPage.slUchityvatKorotkieSbrosy,
+        t.settingsPage.vyklyuchenoSbrosyBystreePoroga,
         false,
       )}
       {flag(
         'report.sl_count_ivr_returns',
-        'SL: учитывать возвраты из очереди в IVR/бот в знаменателе',
-        'Включено — такой эпизод считается не отвеченным в пределах SL',
+        t.settingsPage.slUchityvatVozvratyIz,
+        t.settingsPage.vklyuchenoTakoyEpizodSchitaetsya,
         false,
       )}
       {flag(
         'report.sl_transfer_new_arrival',
-        'SL: постановка в очередь после перевода — новое поступление',
-        'Выключено — в расчёт входит только первое поступление обращения в очередь',
+        t.settingsPage.slPostanovkaVOchered,
+        t.settingsPage.vyklyuchenoVRaschetVkhodit,
         true,
       )}
       <Table data-testid="sl-queue-thresholds">
         <Table.Thead>
           <Table.Tr>
-            <Table.Th>Порог SL по очереди</Table.Th>
-            <Table.Th>Голос, с</Table.Th>
-            <Table.Th>Текст, с</Table.Th>
+            <Table.Th>{t.settingsPage.porogSlPoOcheredi}</Table.Th>
+            <Table.Th>{t.settingsPage.golosS}</Table.Th>
+            <Table.Th>{t.settingsPage.tekstS}</Table.Th>
           </Table.Tr>
         </Table.Thead>
         <Table.Tbody>
@@ -198,10 +198,10 @@ function SlRules({ v, setV }: { v: Record<string, unknown>; setV(x: Record<strin
                   <NumberInput
                     size="xs"
                     min={1}
-                    placeholder="общий"
+                    placeholder={t.settingsPage.obshchiy}
                     value={per[q.id]?.[k] ?? ''}
                     onChange={(x) => setQueue(q.id, k, x)}
-                    aria-label={`${String(q.name)}: ${k === 'voiceS' ? 'голос' : 'текст'}`}
+                    aria-label={`${String(q.name)}: ${k === 'voiceS' ? t.settingsPage.golos : t.settingsPage.tekst}`}
                   />
                 </Table.Td>
               ))}
@@ -214,10 +214,10 @@ function SlRules({ v, setV }: { v: Record<string, unknown>; setV(x: Record<strin
 }
 
 const RELEASE_STATUS: Record<string, [string, string]> = {
-  started: ['идёт', 'blue'],
-  succeeded: ['успешно', 'green'],
-  failed: ['ошибка', 'red'],
-  rolled_back: ['откат', 'orange'],
+  started: [t.settingsPage.idet, 'blue'],
+  succeeded: [t.settingsPage.uspeshno, 'green'],
+  failed: [t.settingsPage.oshibka, 'red'],
+  rolled_back: [t.settingsPage.otkat, 'orange'],
 };
 
 /**
@@ -272,7 +272,7 @@ function ReleasePanel() {
                 <Table.Td>
                   {new Date(String(r.startedAt)).toLocaleString('ru-RU', { timeZone: 'Europe/Minsk' })}
                 </Table.Td>
-                <Table.Td>{ms === null ? '—' : `${Math.round(ms / 1000)} с`}</Table.Td>
+                <Table.Td>{ms === null ? '—' : t.settingsPage.s(Math.round(ms / 1000))}</Table.Td>
                 <Table.Td>
                   <Badge color={color} variant="light">
                     {label}
@@ -298,18 +298,18 @@ export function AuditPage() {
       <TextInput
         mb="md"
         maw={300}
-        placeholder="Объект (например, topic, app_user)"
+        placeholder={t.settingsPage.obektNaprimerTopicApp}
         value={entity}
         onChange={(e) => setEntity(e.currentTarget.value)}
       />
       <Table striped>
         <Table.Thead>
           <Table.Tr>
-            <Table.Th>Когда</Table.Th>
-            <Table.Th>Кто</Table.Th>
-            <Table.Th>Действие</Table.Th>
-            <Table.Th>Объект</Table.Th>
-            <Table.Th>Было → стало</Table.Th>
+            <Table.Th>{t.settingsPage.kogda}</Table.Th>
+            <Table.Th>{t.settingsPage.kto}</Table.Th>
+            <Table.Th>{t.settingsPage.deystvie}</Table.Th>
+            <Table.Th>{t.settingsPage.obekt}</Table.Th>
+            <Table.Th>{t.settingsPage.byloStalo}</Table.Th>
           </Table.Tr>
         </Table.Thead>
         <Table.Tbody>
