@@ -175,8 +175,10 @@ jobs:
       - run: cd e2e && pnpm exec playwright install --with-deps chromium
       # Линтер миграций и совместимость контрактов уже проверены задачей checks — предпроверка выпуска их не повторяет
       # (компилятор TypeScript на раннере отнимал CPU у стека под нагрузкой).
+      # Клиент пишет раз в ~15 с (≈7 сообщ./с на 100 чатов): раннер (4 vCPU — весь стек, 10 Chromium, 30 разговоров)
+      # при 6 с (17 сообщ./с) копил хвост и p50 > 5 с ещё до начала выпуска; нагрузка 6 с — в локальном прогоне.
       - name: Обновление N → N+1 под нагрузкой — 0 обрывов, 0 потерь и дублей, 0 разлогиненных, p99 < 5 с
-        run: SKIP_COMPAT=1 MEDIA_TAG=n1 MOCK_TELEGRAM_TAG=n node ops/zero-downtime-test/run.mjs n1
+        run: SKIP_COMPAT=1 MSG_EVERY_S=15 MEDIA_TAG=n1 MOCK_TELEGRAM_TAG=n node ops/zero-downtime-test/run.mjs n1
       - if: always()
         uses: actions/upload-artifact@v4
         with:
