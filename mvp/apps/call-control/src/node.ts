@@ -779,7 +779,8 @@ export class MediaNode {
         return;
       case 'unhold':
         if (!c.on_hold) return;
-        if (c.consult_channel) throw new CommandError('Идёт консультация — вернитесь к клиенту или соедините его');
+        if (c.consult_channel)
+          throw new CommandError('Идёт консультация — вернитесь к клиенту или соедините его');
         await this.o.ari.channels.mohStop(c.client_channel);
         await this.o.ari.bridges.add(bridge, [c.client_channel]);
         await this.tx((tx) => setCallHold(tx, c.id, false, cmd.userId));
@@ -788,7 +789,8 @@ export class MediaNode {
         await this.o.ari.channels.hangup(c.agent_channel);
         return;
       case 'transfer':
-        if (c.consult_channel) throw new CommandError('Идёт консультация — соедините клиента или вернитесь к нему');
+        if (c.consult_channel)
+          throw new CommandError('Идёт консультация — соедините клиента или вернитесь к нему');
         return this.transfer(c, bridge, cmd);
       case 'consult':
         return this.consult(c, bridge, cmd);
@@ -890,14 +892,17 @@ export class MediaNode {
         [queueId, byUserId],
       );
       if (!rows[0])
-        throw new CommandError('Нет свободного оператора для консультации — переведите звонок без консультации');
+        throw new CommandError(
+          'Нет свободного оператора для консультации — переведите звонок без консультации',
+        );
       return rows[0];
     };
     if (t.kind === 'user') return { label: `оператор ${await operator(t.userId)}`, userId: t.userId };
     if (t.kind === 'queue') {
-      const q = await this.o.pool.query<{ name: string }>(`SELECT name FROM queue WHERE id = $1 AND is_active`, [
-        t.queueId,
-      ]);
+      const q = await this.o.pool.query<{ name: string }>(
+        `SELECT name FROM queue WHERE id = $1 AND is_active`,
+        [t.queueId],
+      );
       if (!q.rows[0]) throw new CommandError('Очередь не найдена');
       const u = await freeInQueue(t.queueId);
       return { label: `оператор ${u.full_name} (очередь «${q.rows[0].name}»)`, userId: u.id };

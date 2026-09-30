@@ -48,7 +48,10 @@ export async function mergeContacts(
     throw new ApiError(409, 'anonymized', 'Обезличенного клиента объединять нельзя');
   const moved: Record<string, number> = {};
   for (const table of ['contact_identity', 'conversation', 'consent', 'attachment']) {
-    const r = await tx.query(`UPDATE ${table} SET contact_id = $1 WHERE contact_id = $2`, [mainId, duplicateId]);
+    const r = await tx.query(`UPDATE ${table} SET contact_id = $1 WHERE contact_id = $2`, [
+      mainId,
+      duplicateId,
+    ]);
     moved[table] = r.rowCount ?? 0;
   }
   // Ранее присоединённые к дублю — сразу к основному (цепочек не бывает: поиск основного — один шаг).
@@ -112,7 +115,9 @@ export class ContactsController {
     const { duplicateId } = parse(MergeBody, body);
     if (!/^[0-9a-f-]{36}$/i.test(id)) throw notFound('Клиент');
     const r = await withTx(this.ctx.pool, (tx) => mergeContacts(tx, id, duplicateId, p));
-    const c = await one(this.ctx.pool, 'SELECT id, display_name, phone, email FROM contact WHERE id = $1', [id]);
+    const c = await one(this.ctx.pool, 'SELECT id, display_name, phone, email FROM contact WHERE id = $1', [
+      id,
+    ]);
     return { ...toApi(c!), moved: r.moved };
   }
 }

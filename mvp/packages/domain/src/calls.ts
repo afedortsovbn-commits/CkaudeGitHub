@@ -699,7 +699,9 @@ export async function completeConsult(
     action: 'transferred',
     byUserId: o.byUserId,
     consult: true,
-    ...(t.data?.direct ? directTransferData(t.data, toUser ? 'queue' : 'external') : { transferKind: 'user' }),
+    ...(t.data?.direct
+      ? directTransferData(t.data, toUser ? 'queue' : 'external')
+      : { transferKind: 'user' }),
   });
   await emitCallState(tx, callId);
   return { agentUserId: toUser };
