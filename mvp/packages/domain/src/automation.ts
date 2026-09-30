@@ -505,6 +505,7 @@ export async function closeAuto(tx: PoolClient, conversationId: string, reason: 
   await emitConversation(tx, CONVERSATION_EVENTS.updated, await loadRef(tx, conversationId), {
     action: 'closed',
     auto: true,
+    dispositionKind: 'auto_closed',
   });
 }
 

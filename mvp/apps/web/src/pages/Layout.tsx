@@ -12,6 +12,7 @@ const MENU: { to: string; label: string; perms?: string[] }[] = [
   { to: '/', label: t.nav.home },
   { to: '/workspace', label: 'Рабочее место оператора', perms: ['conversations.work'] },
   { to: '/supervisor', label: 'Супервизор', perms: ['supervisor.monitor'] },
+  { to: '/reports', label: 'Отчёты', perms: ['reports.view'] },
   { to: '/tickets', label: 'Кабинет 2-й линии', perms: ['tickets.work'] },
   { to: '/tickets-control', label: 'Контроль 2-й линии', perms: ['supervisor.approvals', 'admin.matrix'] },
   { to: '/channels', label: 'Каналы', perms: ['admin.directories'] },

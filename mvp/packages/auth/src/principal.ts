@@ -13,6 +13,7 @@ export const PERMISSIONS = [
   'tickets.work',
   'supervisor.monitor',
   'supervisor.approvals',
+  'reports.view',
 ] as const;
 export type Permission = (typeof PERMISSIONS)[number];
 

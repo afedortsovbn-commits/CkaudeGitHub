@@ -190,6 +190,7 @@ export async function handleOfferTimeout(
     });
     await emitConversation(tx, CONVERSATION_EVENTS.updated, await loadRef(tx, conv.id), {
       action: 'offer_timeout',
+      userId: offer.user_id,
     });
   });
 }

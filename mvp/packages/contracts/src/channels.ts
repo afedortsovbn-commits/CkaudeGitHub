@@ -123,6 +123,10 @@ export interface ConversationRef {
   departmentId: string | null;
   topicPath: string[];
   isImportant: boolean;
+  /** Тема или подтема обращения (последний элемент topicPath; Ф10 — измерение отчётов). */
+  topicId?: string | null;
+  /** Объект (АЗС/ЭЗС) обращения (Ф10 — измерение отчётов). */
+  objectId?: string | null;
 }
 
 export interface MessageDto {

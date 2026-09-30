@@ -13,6 +13,7 @@ import { LoginPage } from './pages/LoginPage';
 import { MatrixPage } from './pages/MatrixPage';
 import { DepartmentsPage, DictionariesPage, EnterprisesPage, ObjectsPage } from './pages/OrgPages';
 import { SupervisorPage } from './pages/SupervisorPage';
+import { ReportsPage } from './pages/ReportsPage';
 import { TopicsPage } from './pages/TopicsPage';
 import { CabinetPage, TicketControlPage, TicketPage } from './pages/TicketPages';
 import { UsersPage } from './pages/UsersPage';
@@ -52,6 +53,7 @@ function App() {
         <Route index element={<HomePage />} />
         <Route path="workspace" element={<WorkspacePage />} />
         <Route path="supervisor" element={<SupervisorPage />} />
+        <Route path="reports" element={<ReportsPage />} />
         <Route path="tickets" element={<CabinetPage />} />
         <Route path="tickets/:id" element={<TicketPage />} />
         <Route path="tickets-control" element={<TicketControlPage />} />

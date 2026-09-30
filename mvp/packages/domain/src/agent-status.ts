@@ -1,4 +1,5 @@
-import { newId } from '@cc/contracts';
+import { AGENT_EVENTS, type AgentStatusEventData, makeEvent, newId } from '@cc/contracts';
+import { enqueueEvent } from '@cc/service-kit';
 import type { PoolClient } from 'pg';
 
 export type AgentStatusValue = 'ready' | 'break' | 'wrap_up' | 'offline';
@@ -22,6 +23,10 @@ export async function setAgentStatus(
   status: AgentStatusValue,
   opts: { reasonId?: string | null; wrapUpUntil?: Date | null } = {},
 ): Promise<AgentStatusDto> {
+  const prev = await tx.query<{ status: string; reason_id: string | null }>(
+    `SELECT status, reason_id FROM agent_status WHERE user_id = $1`,
+    [userId],
+  );
   await tx.query(`UPDATE agent_status_log SET ended_at = now() WHERE user_id = $1 AND ended_at IS NULL`, [
     userId,
   ]);
@@ -43,6 +48,15 @@ export async function setAgentStatus(
     [userId, status, opts.reasonId ?? null, opts.wrapUpUntil ?? null],
   );
   const r = rows[0]!;
+  // Журнал событий (Ф10, M-REP-01): отчёт по статусам операторов строится по нему. Повтор того же статуса
+  // (например, «Готов» → «Готов») тоже пишется — он продлевает период и ничего не искажает.
+  const data: AgentStatusEventData = {
+    userId,
+    status,
+    prevStatus: prev.rows[0]?.status ?? null,
+    reasonId: opts.reasonId ?? null,
+  };
+  await enqueueEvent(tx, makeEvent({ type: AGENT_EVENTS.status, source: 'agents', data }));
   return {
     userId: r.user_id,
     status: r.status,
