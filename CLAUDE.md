@@ -16,7 +16,7 @@
 
 ## Текущее состояние (30.09.2026)
 
-- **Выполнены Ф0–Ф11** (PR #1–#3, #5–#13, #15, см. `mvp/docs/PROGRESS.md`). Код — в `mvp/`, как запустить —
+- **Выполнены Ф0–Ф12** (PR #1–#3, #5–#13, #15 и PR Ф12, см. `mvp/docs/PROGRESS.md`). Код — в `mvp/`, как запустить —
   `mvp/README.md`.
 - **Ф5a** добавила телефонию: `infra/asterisk` (2 узла, образ на `andrius/asterisk:22`), `infra/kamailio` (Kamailio 6
   из RPM на AlmaLinux 9, WSS 8443, auth_ephemeral, dispatcher), coturn ×2, сервис `call-control` (ARI, активный/
@@ -65,9 +65,15 @@
   «Настройки»), баннер новой версии и автообновление вне звонка (`apps/web/src/lib/app-version.ts`), автотест
   `ops/zero-downtime-test/run.mjs` (10 операторов, 30 вызовов, 100 чатов во время выпуска; в CI — задача
   `zero-downtime`, N = базовая ветка), `ops/test/kamailio-restart.mjs`. Регламент — `mvp/docs/регламент-обновления.md`.
-- **Следующая — Ф12** (доводка и приёмка, в т.ч. В-51, В-52), затем Ф13 по плану.
-- **Ответы заказчика от 30.09** (после Ф10, `sources/…`, раздел 5; 04 — В-51, В-52): решения по умолчанию подтверждены, но
-  нужны **право «видит неклассифицированные обращения»** и **настраиваемые параметры SL** — включены в состав Ф12 (03).
+- **Ф12** добавила: право «видит неклассифицированные обращения» (`scope.unclassified` у роли, `app_user.sees_unclassified`
+  у сотрудника — в `scopeFilter`/`inScope`, В-52), настраиваемые параметры SL (В-51, `reports/reports.ts` `slParams`),
+  вход с кодом TOTP (`packages/auth/src/totp.ts`, «Профиль», `security.admin_2fa_required`), маскирование ПДн в логах
+  (`service-kit/src/pii.ts`) и сквозной `correlationId` (`service-kit/src/trace.ts`, `x-request-id` → `traceId`
+  событий), версии текстов согласий (`consent_text` + триггер), срок хранения записей (pg-boss в api), обезличивание
+  клиента и сотрудника (`apps/api/src/privacy/`), `ops/backup.sh` / `ops/restore.sh [--verify]`, `ops/demo.sh`,
+  сертификат домена Traefik (`TRAEFIK_TLS`), `TRUNK_ALLOW` в Kamailio, руководства и отчёт о соответствии в `mvp/docs/`.
+- **Следующая — Ф13** (Rocket Data, синхронизация объектов) — после получения описаний API от заказчика; открытые
+  пробелы «частично» перечислены в `mvp/docs/соответствие-требованиям.md`.
 - Ждём от заказчика: параметры SIP-транка МТС (подключается переменной `TRUNK_HOST`), описание API Rocket Data и
   источника справочника объектов (к Ф13). Их отсутствие работу не блокирует — см. соответствующие фазы в плане.
 
@@ -150,6 +156,13 @@
   обрабатывает входящие параллельно по ключу «канал + отправитель» (`INBOUND_CONCURRENCY`). Новые тесты с
   Playwright/SIPp/БД — через `ops/test/lib/stack.mjs`. Docker Hub в облаке упирается в лимит — базовые образы при
   сборке через `mirror.gcr.io` (`--build-arg NGINX_IMAGE=…`, `KAMAILIO_RPMS_IMAGE`, `BASE_IMAGE`).
+- Ф12: Traefik читает **каталог** динамической конфигурации (`routes.yml` = `infra/traefik/dynamic.yml` + `tls.yml` из
+  `TRAEFIK_TLS`); ссылка на отсутствующий файл сертификата ломает TLS целиком, пустой `tls: {}` — ошибка. web после
+  `stop`/`start` раньше оставался в «осушении» (`/tmp/draining`) — entrypoint теперь удаляет отметку. Журнал `event`
+  меняется только в транзакции обезличивания (`SET LOCAL cc.pd_erase = 'on'`). Логгер `createLogger` маскирует ПДн —
+  в тестах логов учитывать (`maskPii: false` или `LOG_PII=1`). Бэкап — `umask 077`, утилита S3 запускается
+  `--user $(id -u)`. e2e: в статусе «Готов» router предлагает оператору чаты, оставшиеся от прошлых тестов (лимит
+  чатов) — брать из очереди до перехода в «Готов».
 - JetStream при старте кластера отвечает не сразу: сервисы подключаются через `connectNats` (ждёт готовности), новые
   потоки/потребители/KV создавать через `ensureStream` или обёртку `retryJs` из `service-kit`.
 - Стек для e2e Ф4/Ф5 и проверок: `COMPOSE_PROFILES=test MOCK_TELEGRAM_TAG=<тег> PUBLIC_BASE_URL=https://traefik TRUNK_HOST=trunk-sim:5060`,

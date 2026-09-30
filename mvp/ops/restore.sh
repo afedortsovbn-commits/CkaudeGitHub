@@ -20,7 +20,7 @@ ABS="$(cd "$DIR" && pwd)"
 SERVICES="${SERVICES:-connector-telegram connector-email worker router realtime api call-control web}"
 cid="$(dc ps -q api 2>/dev/null | head -1 || true)"
 TAG="${API_TAG:-$( [ -n "$cid" ] && docker inspect -f '{{.Config.Image}}' "$cid" | sed 's/.*://' || echo dev)}"
-s3cli() { API_TAG="$TAG" dc run --rm --no-deps -T -v "$ABS/s3:/backup:ro" migrate node dist/cli/storage-backup.js "$@"; }
+s3cli() { API_TAG="$TAG" dc run --rm --no-deps -T --user "$(id -u):$(id -g)" -v "$ABS/s3:/backup:ro" migrate node dist/cli/storage-backup.js "$@"; }
 psql_db() { dc exec -T postgres psql -U cc -d "$1" -v ON_ERROR_STOP=1 -Atq "${@:2}"; }
 
 # Сверка числа строк восстановленной БД с дампом (db-rows.txt) — одним запросом; печатает число расхождений.

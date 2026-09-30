@@ -5,6 +5,7 @@ import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fa
 import { AppModule } from './app.module';
 import type { AppContext } from './context';
 import { ErrorFilter } from './lib/errors';
+import { correlationIdFrom, withCorrelation } from '@cc/service-kit';
 
 /** Создаёт HTTP-приложение (используется в main и в интеграционных тестах). */
 export async function createApp(ctx: AppContext): Promise<NestFastifyApplication> {
@@ -26,6 +27,13 @@ export async function createApp(ctx: AppContext): Promise<NestFastifyApplication
   fastify.removeContentTypeParser('text/plain');
   fastify.addContentTypeParser('text/plain', raw, (_req, body, done) => done(null, body));
   fastify.addContentTypeParser('*', raw, (_req, body, done) => done(null, body));
+  // correlation-id (M-NFR-04): из заголовка x-request-id или новый; возвращается в ответе, попадает в логи и в
+  // traceId событий, созданных запросом (service-kit trace.ts).
+  fastify.addHook('onRequest', (req, reply, done) => {
+    const id = correlationIdFrom(req.headers['x-request-id']);
+    reply.header('x-request-id', id);
+    withCorrelation(id, done);
+  });
   // CORS только для клиентского API виджета: он встраивается на сайты заказчика (разрешённые домены — в настройках канала).
   fastify.addHook('onRequest', async (req, reply) => {
     if (!req.url.startsWith('/api/v1/client/')) return;

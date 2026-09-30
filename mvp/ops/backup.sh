@@ -12,6 +12,8 @@
 #   backup.json    — версия, миграции, размеры и контрольные суммы
 # Проверка копии без влияния на работу: ops/restore.sh --verify <каталог>. PITR и кластер PostgreSQL — позже.
 set -euo pipefail
+# Копия содержит персональные данные и секреты — доступ только владельцу.
+umask 077
 cd "$(dirname "$0")/.."
 COMPOSE_FILE="${COMPOSE_FILE:-infra/compose/docker-compose.yml}"
 ENV_FILE="$(dirname "$COMPOSE_FILE")/.env"

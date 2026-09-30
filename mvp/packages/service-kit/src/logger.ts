@@ -1,6 +1,7 @@
 import { hostname } from 'node:os';
 import pino, { type Logger } from 'pino';
 import { maskPii, maskPiiDeep } from './pii';
+import { currentCorrelationId } from './trace';
 
 export type { Logger };
 
@@ -23,6 +24,11 @@ export function createLogger(opts: {
     base: { service: opts.service, version: opts.version, instance: hostname() },
     timestamp: pino.stdTimeFunctions.isoTime,
     messageKey: 'msg',
+    // correlation-id текущего запроса/сообщения (trace.ts) — в каждой строке журнала.
+    mixin: () => {
+      const id = currentCorrelationId();
+      return id ? { correlationId: id } : {};
+    },
     formatters: {
       level: (label) => ({ level: label }),
       ...(mask ? { log: (obj: Record<string, unknown>) => maskPiiDeep(obj) as Record<string, unknown> } : {}),

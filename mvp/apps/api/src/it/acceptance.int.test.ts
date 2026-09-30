@@ -501,3 +501,31 @@ describe.skipIf(!ADMIN_URL)('Ф12: согласия, сроки хранения
     expect(login.status).toBe(401);
   });
 });
+
+describe.skipIf(!ADMIN_URL)('Ф12: correlation-id запроса (M-NFR-04)', () => {
+  let t: Awaited<ReturnType<typeof createTestApp>>;
+  beforeAll(async () => {
+    t = await createTestApp({ seed: false });
+  }, 120_000);
+  afterAll(async () => t?.cleanup());
+
+  it('x-request-id возвращается в ответе и становится traceId событий, созданных запросом', async () => {
+    const admin = await t.login('admin@test.local');
+    const r = await t.call(
+      'PATCH',
+      '/api/v1/settings',
+      admin,
+      { 'operator.max_chats': 6 },
+      { 'x-request-id': 'req-f12-1' },
+    );
+    expect(r.status).toBe(200);
+    expect(r.res.headers['x-request-id']).toBe('req-f12-1');
+    const ev = await t.pool.query(
+      `SELECT trace_id FROM event WHERE type = 'config.changed' ORDER BY occurred_at DESC LIMIT 1`,
+    );
+    expect(ev.rows[0].trace_id).toBe('req-f12-1');
+    // Без заголовка — новый идентификатор.
+    const r2 = await t.call('GET', '/api/v1/ping');
+    expect(String(r2.res.headers['x-request-id'])).toMatch(/^[0-9a-f-]{36}$/);
+  });
+});

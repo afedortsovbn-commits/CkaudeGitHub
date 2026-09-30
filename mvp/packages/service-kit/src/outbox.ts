@@ -2,12 +2,16 @@ import { subjectFor, type EventEnvelope } from '@cc/contracts';
 import { headers, type JetStreamClient } from 'nats';
 import type { Pool, PoolClient } from 'pg';
 import type { Logger } from 'pino';
+import { currentCorrelationId } from './trace';
 
 /**
  * Записывает событие в журнал `event` и в `outbox` в рамках транзакции вызывающего кода
  * (transactional outbox, 02-архитектура, принцип 4). Публикацию выполняет OutboxRelay.
  */
-export async function enqueueEvent(tx: PoolClient, event: EventEnvelope): Promise<void> {
+export async function enqueueEvent(tx: PoolClient, input: EventEnvelope): Promise<void> {
+  // traceId события — correlation-id обработки, в которой оно возникло (запрос API, входящее сообщение).
+  const traceId = input.traceId ?? currentCorrelationId();
+  const event = traceId && !input.traceId ? { ...input, traceId } : input;
   await tx.query(
     `INSERT INTO event (id, type, version, occurred_at, source, trace_id, data)
      VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT (id) DO NOTHING`,

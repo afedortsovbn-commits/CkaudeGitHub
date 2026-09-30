@@ -1,6 +1,6 @@
-import { InboundMessageSchema } from '@cc/contracts';
+import { type InboundMessage, InboundMessageSchema } from '@cc/contracts';
 import { afterInbound, type BotHttp, ingestInbound } from '@cc/domain';
-import { type Logger, retryJs } from '@cc/service-kit';
+import { type Logger, retryJs, withCorrelation } from '@cc/service-kit';
 import { AckPolicy, type Consumer, type JetStreamClient, type JetStreamManager, type JsMsg } from 'nats';
 import type { Pool } from 'pg';
 import { Counter } from 'prom-client';
@@ -143,6 +143,11 @@ export class InboundProcessor {
       m.term();
       return;
     }
+    // correlation-id обработки — id входящего сообщения: логи и события (traceId) этой обработки связаны с ним.
+    return withCorrelation(parsed.id, () => this.process(m, parsed));
+  }
+
+  private async process(m: JsMsg, parsed: InboundMessage): Promise<void> {
     const client = await this.o.pool.connect();
     try {
       await client.query('BEGIN');
