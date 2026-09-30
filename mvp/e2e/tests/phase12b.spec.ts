@@ -178,7 +178,7 @@ test.describe.serial('Ф12b: пробелы приёмки', () => {
       await op.getByRole('option', { name: 'Решено на 1-й линии' }).click();
       await expect(op.getByText('В этой очереди тег обязателен при закрытии')).toBeVisible();
       await expect(op.getByTestId('close')).toBeDisabled();
-      await op.getByTestId('tags').click();
+      await op.getByRole('textbox', { name: 'Теги *' }).click({ force: true });
       await op.getByRole('option', { name: 'VIP' }).click();
       await op.keyboard.press('Escape');
       await expect(op.getByTestId('close')).toBeEnabled({ timeout: 10_000 });
