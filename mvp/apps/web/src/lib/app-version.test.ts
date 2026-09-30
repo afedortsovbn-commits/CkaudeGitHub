@@ -52,9 +52,14 @@ describe('наблюдатель новой версии (M-OP-11)', () => {
     const stop = m.startUpdateWatcher();
     await vi.advanceTimersByTimeAsync(3000);
     expect(reload).not.toHaveBeenCalled(); // черновик
+    // Задержка автообновления случайна (5–20 с) — в тесте минимальная: 5 с.
+    const rnd = vi.spyOn(Math, 'random').mockReturnValue(0);
     m.setDraft('reply:1', false);
-    await vi.advanceTimersByTimeAsync(21_000);
+    await vi.advanceTimersByTimeAsync(4000);
+    expect(reload).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(2000);
     expect(reload).toHaveBeenCalledTimes(1);
+    rnd.mockRestore();
     stop();
     vi.useRealTimers();
     vi.unstubAllGlobals();
