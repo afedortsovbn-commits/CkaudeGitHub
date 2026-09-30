@@ -65,7 +65,12 @@ function UnclassifiedSelect({ user }: { user: UserDetail }) {
         w={420}
         data-testid="unclassified-select"
       />
-      <Button variant="light" onClick={() => save.mutate(v)} loading={save.isPending}>
+      <Button
+        variant="light"
+        onClick={() => save.mutate(v)}
+        loading={save.isPending}
+        data-testid="unclassified-save"
+      >
         {t.save}
       </Button>
     </Group>

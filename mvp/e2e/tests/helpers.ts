@@ -1,3 +1,4 @@
+import { createHmac } from 'node:crypto';
 import { expect, type Page } from '@playwright/test';
 
 export const ADMIN = {
@@ -28,4 +29,25 @@ export async function pick(
 ) {
   await scope.getByRole('textbox', { name: label }).click();
   await page.getByRole('option', { name: option, exact }).first().click();
+}
+
+/** Код TOTP (RFC 6238, SHA1, 30 с, 6 цифр) для входа со второй ступенью в e2e; shift — смещение в шагах. */
+export function totpCode(secretB32: string, shift = 0): string {
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+  let bits = 0;
+  let value = 0;
+  const bytes: number[] = [];
+  for (const ch of secretB32.replace(/\s/g, '').toUpperCase()) {
+    value = (value << 5) | alphabet.indexOf(ch);
+    bits += 5;
+    if (bits >= 8) {
+      bytes.push((value >>> (bits - 8)) & 255);
+      bits -= 8;
+    }
+  }
+  const msg = Buffer.alloc(8);
+  msg.writeBigUInt64BE(BigInt(Math.floor(Date.now() / 30_000) + shift));
+  const h = createHmac('sha1', Buffer.from(bytes)).update(msg).digest();
+  const off = h[h.length - 1]! & 0x0f;
+  return String((h.readUInt32BE(off) & 0x7fffffff) % 1_000_000).padStart(6, '0');
 }
