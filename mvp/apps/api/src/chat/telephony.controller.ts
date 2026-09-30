@@ -232,6 +232,10 @@ export class TelephonyController {
     let cmd: CallControlCommand;
     if (op === 'hold' || op === 'unhold' || op === 'hangup') cmd = { op, callId: id, userId: p.id };
     else if (op === 'transfer') cmd = { op, callId: id, userId: p.id, ...parse(TransferBody, body) };
+    // Консультативный перевод (Ф12b): консультация с адресатом → «соединить» или «вернуться к клиенту».
+    else if (op === 'consult')
+      cmd = { op, callId: id, userId: p.id, target: parse(TransferBody, body).target };
+    else if (op === 'consult_complete' || op === 'consult_cancel') cmd = { op, callId: id, userId: p.id };
     else if (op === 'listen') {
       if (!hasPerm(p, 'supervisor.monitor')) throw new ApiError(403, 'forbidden', 'Недостаточно прав');
       cmd = { op, callId: id, userId: p.id };

@@ -25,8 +25,8 @@ import { options, type Row, useAction, useList } from '../lib/data';
 import { t } from '../lib/i18n';
 
 const TEXT_CHANNELS = [
-  { value: 'webchat', label: 'Чат на сайте' },
-  { value: 'app', label: 'Чат в приложении' },
+  { value: 'webchat', label: t.automation.chatNaSayte },
+  { value: 'app', label: t.automation.chatVPrilozhenii },
   { value: 'telegram', label: 'Telegram' },
   { value: 'email', label: 'Email' },
 ];
@@ -49,16 +49,16 @@ export function TemplatesPage() {
   return (
     <>
       <Group justify="space-between" mb="md">
-        <Title order={3}>Шаблоны ответов</Title>
+        <Title order={3}>{t.automation.shablonyOtvetov}</Title>
         <Group>
           <SegmentedControl
             size="xs"
             value={scope}
             onChange={setScope}
             data={[
-              { value: 'all', label: 'Все' },
-              { value: 'shared', label: 'Общие' },
-              { value: 'mine', label: 'Мои' },
+              { value: 'all', label: t.all },
+              { value: 'shared', label: t.automation.obshchie },
+              { value: 'mine', label: t.automation.moi },
             ]}
           />
           <TextInput placeholder={t.search} value={q} onChange={(e) => setQ(e.currentTarget.value)} />
@@ -73,18 +73,24 @@ export function TemplatesPage() {
         </Group>
       </Group>
       <Text size="sm" c="dimmed" mb="sm">
-        Переменные: <Code>{'{{client.name}}'}</Code> — имя клиента, <Code>{'{{operator.name}}'}</Code> —
-        оператор, <Code>{'{{conversation.topic}}'}</Code> — тема. В поле ответа наберите <Code>/</Code> и код
-        шаблона.
+        {t.automation.peremennye}
+        <Code>{'{{client.name}}'}</Code>
+        {t.automation.imyaKlienta}
+        <Code>{'{{operator.name}}'}</Code>
+        {t.automation.operator}
+        <Code>{'{{conversation.topic}}'}</Code>
+        {t.automation.temaVPoleOtveta}
+        <Code>/</Code>
+        {t.automation.iKodShablona}
       </Text>
       <Table striped highlightOnHover data-testid="templates">
         <Table.Thead>
           <Table.Tr>
-            <Table.Th>Название</Table.Th>
-            <Table.Th>Код</Table.Th>
-            <Table.Th>Текст</Table.Th>
-            <Table.Th>Тема</Table.Th>
-            <Table.Th>Вид</Table.Th>
+            <Table.Th>{t.automation.nazvanie}</Table.Th>
+            <Table.Th>{t.automation.kod}</Table.Th>
+            <Table.Th>{t.automation.tekst}</Table.Th>
+            <Table.Th>{t.automation.tema}</Table.Th>
+            <Table.Th>{t.automation.vid}</Table.Th>
             <Table.Th />
           </Table.Tr>
         </Table.Thead>
@@ -101,7 +107,7 @@ export function TemplatesPage() {
               <Table.Td>{String(r.topicName ?? '—')}</Table.Td>
               <Table.Td>
                 <Badge variant="light" color={r.shared ? 'blue' : 'grape'}>
-                  {r.shared ? 'общий' : 'личный'}
+                  {r.shared ? t.automation.obshchiy : t.automation.lichnyy}
                 </Badge>
               </Table.Td>
               <Table.Td>
@@ -157,23 +163,28 @@ function TemplateForm({ row, admin, onClose }: { row: Row | null; admin: boolean
     return row ? patch(`/templates/${row.id}`, data) : post('/templates', { ...data, shared: v.shared });
   });
   return (
-    <Modal opened onClose={onClose} title={row ? 'Шаблон: изменение' : 'Новый шаблон'} size="lg">
+    <Modal
+      opened
+      onClose={onClose}
+      title={row ? t.automation.shablonIzmenenie : t.automation.novyyShablon}
+      size="lg"
+    >
       <Stack>
         <TextInput
-          label="Название"
+          label={t.automation.nazvanie}
           required
           value={v.title}
           onChange={(e) => setV({ ...v, title: e.currentTarget.value })}
           data-testid="template-title"
         />
         <TextInput
-          label="Код быстрого вызова (без «/»)"
+          label={t.automation.kodBystrogoVyzovaBez}
           value={v.shortcut}
           onChange={(e) => setV({ ...v, shortcut: e.currentTarget.value })}
           data-testid="template-shortcut"
         />
         <Textarea
-          label="Текст"
+          label={t.automation.tekst}
           required
           autosize
           minRows={4}
@@ -182,8 +193,8 @@ function TemplateForm({ row, admin, onClose }: { row: Row | null; admin: boolean
           data-testid="template-body"
         />
         <Select
-          label="Тема"
-          description="Подсказка поднимает шаблон выше, если у обращения эта тема"
+          label={t.automation.tema}
+          description={t.automation.podskazkaPodnimaetShablonVyshe}
           data={topics.data?.map((x) => ({ value: x.id, label: String(x.pathName ?? x.name) })) ?? []}
           value={v.topicId}
           onChange={(x) => setV({ ...v, topicId: x })}
@@ -191,15 +202,15 @@ function TemplateForm({ row, admin, onClose }: { row: Row | null; admin: boolean
           searchable
         />
         <MultiSelect
-          label="Каналы"
-          description="Пусто — во всех текстовых каналах"
+          label={t.automation.kanaly}
+          description={t.automation.pustoVoVsekhTekstovykh}
           data={TEXT_CHANNELS}
           value={v.channelKinds}
           onChange={(x) => setV({ ...v, channelKinds: x })}
         />
         {!row && admin && (
           <Switch
-            label="Общий шаблон (виден всем операторам)"
+            label={t.automation.obshchiyShablonVidenVsem}
             checked={v.shared}
             onChange={(e) => setV({ ...v, shared: e.currentTarget.checked })}
           />
@@ -229,12 +240,12 @@ export function KnowledgePage() {
   return (
     <>
       <Title order={3} mb="md">
-        База знаний
+        {t.automation.bazaZnaniy}
       </Title>
       <Tabs defaultValue="articles">
         <Tabs.List mb="md">
-          <Tabs.Tab value="articles">Статьи</Tabs.Tab>
-          {can('admin.directories') && <Tabs.Tab value="categories">Рубрики</Tabs.Tab>}
+          <Tabs.Tab value="articles">{t.automation.stati}</Tabs.Tab>
+          {can('admin.directories') && <Tabs.Tab value="categories">{t.automation.rubriki}</Tabs.Tab>}
         </Tabs.List>
         <Tabs.Panel value="articles">
           <Articles />
@@ -242,15 +253,15 @@ export function KnowledgePage() {
         <Tabs.Panel value="categories">
           <DictPage
             kind="kb-categories"
-            title="Рубрики"
+            title={t.automation.rubriki}
             hideTitle
             columns={[
-              { key: 'name', label: 'Название' },
-              { key: 'sortOrder', label: 'Порядок' },
+              { key: 'name', label: t.automation.nazvanie },
+              { key: 'sortOrder', label: t.automation.poryadok },
             ]}
             fields={[
-              { key: 'name', label: 'Название', required: true },
-              { key: 'sortOrder', label: 'Порядок', type: 'number' },
+              { key: 'name', label: t.automation.nazvanie, required: true },
+              { key: 'sortOrder', label: t.automation.poryadok, type: 'number' },
             ]}
           />
         </Tabs.Panel>
@@ -278,13 +289,19 @@ function Articles() {
     <>
       <Group mb="md">
         <TextInput
-          placeholder="Поиск по статьям (полнотекстовый)"
+          placeholder={t.automation.poiskPoStatyamPolnotekstovyy}
           value={q}
           onChange={(e) => setQ(e.currentTarget.value)}
           w={320}
           data-testid="kb-search"
         />
-        <Select placeholder="Рубрика" data={options(cats.data)} value={cat} onChange={setCat} clearable />
+        <Select
+          placeholder={t.automation.rubrika}
+          data={options(cats.data)}
+          value={cat}
+          onChange={setCat}
+          clearable
+        />
         {admin && (
           <>
             <Switch
@@ -293,7 +310,7 @@ function Articles() {
               onChange={(e) => setInactive(e.currentTarget.checked)}
             />
             <Button onClick={() => setEditing('new')} data-testid="kb-new">
-              Новая статья
+              {t.automation.novayaStatya}
             </Button>
           </>
         )}
@@ -301,9 +318,9 @@ function Articles() {
       <Table striped highlightOnHover data-testid="kb-articles">
         <Table.Thead>
           <Table.Tr>
-            <Table.Th>Статья</Table.Th>
-            <Table.Th>Рубрика</Table.Th>
-            <Table.Th>Изменена</Table.Th>
+            <Table.Th>{t.automation.statya}</Table.Th>
+            <Table.Th>{t.automation.rubrika}</Table.Th>
+            <Table.Th>{t.automation.izmenena}</Table.Th>
             <Table.Th />
           </Table.Tr>
         </Table.Thead>
@@ -371,38 +388,43 @@ function ArticleForm({ row, cats, onClose }: { row: Row | null; cats: Row[]; onC
     return row ? patch(`/kb/articles/${row.id}`, data) : post('/kb/articles', data);
   });
   return (
-    <Modal opened onClose={onClose} title={row ? 'Статья: изменение' : 'Новая статья'} size="xl">
+    <Modal
+      opened
+      onClose={onClose}
+      title={row ? t.automation.statyaIzmenenie : t.automation.novayaStatya}
+      size="xl"
+    >
       <Stack>
         <TextInput
-          label="Заголовок"
+          label={t.automation.zagolovok}
           required
           value={v.title}
           onChange={(e) => setV({ ...v, title: e.currentTarget.value })}
           data-testid="kb-title"
         />
         <Select
-          label="Рубрика"
+          label={t.automation.rubrika}
           data={options(cats)}
           value={v.categoryId}
           onChange={(x) => setV({ ...v, categoryId: x })}
           clearable
         />
         <MultiSelect
-          label="Темы обращений"
-          description="Подсказка показывает статью по теме обращения"
+          label={t.automation.temyObrashcheniy}
+          description={t.automation.podskazkaPokazyvaetStatyuPo}
           data={topics.data?.map((x) => ({ value: x.id, label: String(x.pathName ?? x.name) })) ?? []}
           value={v.topicIds}
           onChange={(x) => setV({ ...v, topicIds: x })}
           searchable
         />
         <TextInput
-          label="Ключевые слова для поиска"
-          description="Синонимы и разговорные формы через запятую"
+          label={t.automation.klyuchevyeSlovaDlyaPoiska}
+          description={t.automation.sinonimyIRazgovornyeFormy}
           value={v.keywords}
           onChange={(e) => setV({ ...v, keywords: e.currentTarget.value })}
         />
         <Textarea
-          label="Текст статьи"
+          label={t.automation.tekstStati}
           required
           autosize
           minRows={8}
@@ -431,11 +453,11 @@ function ArticleForm({ row, cats, onClose }: { row: Row | null; cats: Row[]; onC
 // ------------------------------------------------------------------ правила автоответов (M-AUTO-02)
 
 const RULE_KINDS = [
-  { value: 'greeting', label: 'Приветствие при первом сообщении' },
-  { value: 'queued', label: '«Вы в очереди»' },
-  { value: 'after_hours', label: 'Нерабочее время' },
-  { value: 'keyword', label: 'Ответ на ключевые слова' },
-  { value: 'inactivity', label: 'Автозакрытие при молчании клиента' },
+  { value: 'greeting', label: t.automation.privetstviePriPervomSoobshchenii },
+  { value: 'queued', label: t.automation.vyVOcheredi },
+  { value: 'after_hours', label: t.automation.nerabocheeVremya },
+  { value: 'keyword', label: t.automation.otvetNaKlyuchevyeSlova },
+  { value: 'inactivity', label: t.automation.avtozakrytiePriMolchaniiKlienta },
 ];
 
 export function AutoRepliesPage() {
@@ -446,17 +468,17 @@ export function AutoRepliesPage() {
     <>
       <DictPage
         kind="auto-replies"
-        title="Правила автоответов"
+        title={t.automation.pravilaAvtootvetov}
         columns={[
-          { key: 'name', label: 'Название' },
+          { key: 'name', label: t.automation.nazvanie },
           {
             key: 'kind',
-            label: 'Вид',
+            label: t.automation.vid,
             render: (r) => RULE_KINDS.find((k) => k.value === r.kind)?.label ?? '',
           },
           {
             key: 'channels',
-            label: 'Каналы',
+            label: t.automation.kanaly,
             render: (r) =>
               [
                 ...((r.channelIds as string[]) ?? []).map((id) =>
@@ -465,11 +487,11 @@ export function AutoRepliesPage() {
                 ...((r.channelKinds as string[]) ?? []).map(
                   (k) => TEXT_CHANNELS.find((x) => x.value === k)?.label ?? k,
                 ),
-              ].join(', ') || 'все',
+              ].join(', ') || t.automation.vse,
           },
           {
             key: 'text',
-            label: 'Текст',
+            label: t.automation.tekst,
             render: (r) => (
               <Text size="sm" lineClamp={2} maw={380}>
                 {String(r.text ?? '')}
@@ -499,65 +521,72 @@ export function AutoRepliesPage() {
         }}
         createDefaults={{ kind: 'greeting', warnAfterSec: 300, closeAfterSec: 300 }}
         fields={[
-          { key: 'name', label: 'Название', required: true },
-          { key: 'kind', label: 'Вид', type: 'select', required: true, options: RULE_KINDS },
+          { key: 'name', label: t.automation.nazvanie, required: true },
+          { key: 'kind', label: t.automation.vid, type: 'select', required: true, options: RULE_KINDS },
           {
             key: 'channelIds',
-            label: 'Каналы (экземпляры)',
+            label: t.automation.kanalyEkzemplyary,
             type: 'multiselect',
             options: options(textChannels),
-            description: 'Пусто — все каналы (с учётом типов ниже)',
+            description: t.automation.pustoVseKanalyS,
           },
-          { key: 'channelKinds', label: 'Типы каналов', type: 'multiselect', options: TEXT_CHANNELS },
+          {
+            key: 'channelKinds',
+            label: t.automation.tipyKanalov,
+            type: 'multiselect',
+            options: TEXT_CHANNELS,
+          },
           {
             key: 'scheduleId',
-            label: 'Расписание',
+            label: t.automation.raspisanie,
             type: 'select',
             options: options(schedules.data),
             show: (v) => v.kind === 'after_hours',
-            description: 'Сообщение отправляется, если обращение пришло вне рабочего времени',
+            description: t.automation.soobshchenieOtpravlyaetsyaEsliObrash,
           },
           {
             key: 'matchType',
-            label: 'Сравнение',
+            label: t.automation.sravnenie,
             type: 'select',
             options: [
-              { value: 'keyword', label: 'Слова (через запятую)' },
-              { value: 'regex', label: 'Регулярное выражение' },
+              { value: 'keyword', label: t.automation.slovaCherezZapyatuyu },
+              { value: 'regex', label: t.automation.regulyarnoeVyrazhenie },
             ],
             show: (v) => v.kind === 'keyword',
           },
-          { key: 'pattern', label: 'Ключевые слова / выражение', show: (v) => v.kind === 'keyword' },
+          {
+            key: 'pattern',
+            label: t.automation.klyuchevyeSlovaVyrazhenie,
+            show: (v) => v.kind === 'keyword',
+          },
           {
             key: 'text',
-            label: 'Текст автоответа',
+            label: t.automation.tekstAvtootveta,
             type: 'textarea',
-            description: 'Переменные: {{client.name}}. Для автозакрытия — текст предупреждения клиенту.',
+            description: t.automation.peremennyeClientNameDlya,
           },
           {
             key: 'warnAfterSec',
-            label: 'Предупредить после молчания клиента, с',
+            label: t.automation.predupreditPosleMolchaniyaKlienta,
             type: 'number',
             show: (v) => v.kind === 'inactivity',
           },
           {
             key: 'closeAfterSec',
-            label: 'Закрыть после предупреждения, с',
+            label: t.automation.zakrytPoslePreduprezhdeniyaS,
             type: 'number',
             show: (v) => v.kind === 'inactivity',
           },
           {
             key: 'closeText',
-            label: 'Сообщение при закрытии',
+            label: t.automation.soobshcheniePriZakrytii,
             show: (v) => v.kind === 'inactivity',
           },
-          { key: 'sortOrder', label: 'Порядок', type: 'number' },
+          { key: 'sortOrder', label: t.automation.poryadok, type: 'number' },
         ]}
       />
       <Text size="sm" c="dimmed" mt="md">
-        Правила действуют сразу после сохранения. Приветствие, «нерабочее время» и «в очереди» отправляются
-        один раз за обращение; ответ на ключевые слова — пока обращение ждёт оператора; автозакрытие — если
-        последним писал оператор или бот, а клиент молчит.
+        {t.automation.pravilaDeystvuyutSrazuPosle}
       </Text>
     </>
   );
@@ -566,9 +595,9 @@ export function AutoRepliesPage() {
 // ------------------------------------------------------------------ провайдеры подсказок (M-AI-01)
 
 const PROVIDER_KINDS = [
-  { value: 'builtin', label: 'Встроенный (шаблоны и БЗ)' },
-  { value: 'openai', label: 'LLM: OpenAI-совместимый API' },
-  { value: 'http', label: 'Внешний провайдер (Assist API)' },
+  { value: 'builtin', label: t.automation.vstroennyyShablonyIBz },
+  { value: 'openai', label: t.automation.llmOpenaiSovmestimyyApi },
+  { value: 'http', label: t.automation.vneshniyProvayderAssistApi },
 ];
 const MASK = '********';
 
@@ -585,36 +614,36 @@ export function AssistProvidersPage() {
       `/assist/providers/${r.id}/test`,
     );
     setResult({ name: String(r.name), ...res });
-  }, 'Проверка выполнена');
+  }, t.automation.proverkaVypolnena);
   const cfg = (r: Row) => (r.config as Record<string, unknown>) ?? {};
   return (
     <>
       <DictPage
         kind="assist-providers"
-        title="Подсказки: провайдеры"
+        title={t.automation.podskazkiProvaydery}
         columns={[
-          { key: 'name', label: 'Название' },
+          { key: 'name', label: t.automation.nazvanie },
           {
             key: 'kind',
-            label: 'Вид',
+            label: t.automation.vid,
             render: (r) => PROVIDER_KINDS.find((k) => k.value === r.kind)?.label ?? '',
           },
           {
             key: 'functions',
-            label: 'Функции',
+            label: t.automation.funktsii,
             render: (r) =>
               ((r.functions as string[]) ?? [])
-                .map((f) => (f === 'draft' ? 'черновик' : 'подсказки'))
+                .map((f) => (f === 'draft' ? t.automation.chernovik : t.automation.podskazki))
                 .join(', '),
           },
-          { key: 'timeoutMs', label: 'Таймаут, мс' },
+          { key: 'timeoutMs', label: t.automation.taymautMs },
           {
             key: 'check',
-            label: 'Проверка связи',
+            label: t.automation.proverkaSvyazi,
             render: (r) =>
               r.lastCheckAt ? (
                 <Badge color={r.lastCheckOk ? 'green' : 'red'} title={String(r.lastCheckError ?? '')}>
-                  {r.lastCheckOk ? 'связь есть' : 'ошибка'}
+                  {r.lastCheckOk ? t.automation.svyazEst : t.automation.oshibka}
                 </Badge>
               ) : (
                 '—'
@@ -623,7 +652,7 @@ export function AssistProvidersPage() {
         ]}
         rowActions={(r) => (
           <Button size="xs" variant="subtle" onClick={() => test.mutate(r)} data-testid="provider-test">
-            Проверить связь
+            {t.automation.proveritSvyaz}
           </Button>
         )}
         toForm={(r) => ({
@@ -654,10 +683,10 @@ export function AssistProvidersPage() {
         }}
         createDefaults={{ kind: 'openai', functions: ['suggest', 'draft'], timeoutMs: 5000 }}
         fields={[
-          { key: 'name', label: 'Название', required: true },
+          { key: 'name', label: t.automation.nazvanie, required: true },
           {
             key: 'kind',
-            label: 'Вид',
+            label: t.automation.vid,
             type: 'select',
             required: true,
             createOnly: true,
@@ -665,54 +694,51 @@ export function AssistProvidersPage() {
           },
           {
             key: 'functions',
-            label: 'Функции',
+            label: t.automation.funktsii,
             type: 'multiselect',
             options: [
-              { value: 'suggest', label: 'Подсказки в панели оператора' },
-              { value: 'draft', label: 'Черновик ответа (кнопка «Черновик»)' },
+              { value: 'suggest', label: t.automation.podskazkiVPaneliOperatora },
+              { value: 'draft', label: t.automation.chernovikOtvetaKnopkaChernovik },
             ],
           },
           {
             key: 'baseUrl',
-            label: 'Адрес',
+            label: t.automation.adres,
             placeholder: 'http://ollama:11434/v1',
-            description:
-              'LLM — базовый адрес OpenAI-совместимого API (…/v1); внешний провайдер — URL POST-запроса',
+            description: t.automation.llmBazovyyAdresOpenai,
             show: (v) => v.kind !== 'builtin',
           },
-          { key: 'model', label: 'Модель', show: (v) => v.kind === 'openai' },
+          { key: 'model', label: t.automation.model, show: (v) => v.kind === 'openai' },
           {
             key: 'apiKey',
-            label: 'Ключ / токен',
+            label: t.automation.klyuchToken,
             type: 'password',
-            description: 'Хранится зашифрованным; пусто — без ключа',
+            description: t.automation.khranitsyaZashifrovannymPustoBez,
             show: (v) => v.kind !== 'builtin',
           },
           {
             key: 'systemPrompt',
-            label: 'Системная инструкция модели',
+            label: t.automation.sistemnayaInstruktsiyaModeli,
             type: 'textarea',
             show: (v) => v.kind === 'openai',
           },
           {
             key: 'allowExternal',
-            label: 'Разрешить адрес вне контура (облачная LLM — только по согласованию, В-05)',
+            label: t.automation.razreshitAdresVneKontura,
             type: 'switch',
             show: (v) => v.kind !== 'builtin',
           },
-          { key: 'timeoutMs', label: 'Таймаут ответа, мс', type: 'number' },
-          { key: 'sortOrder', label: 'Порядок', type: 'number' },
+          { key: 'timeoutMs', label: t.automation.taymautOtvetaMs, type: 'number' },
+          { key: 'sortOrder', label: t.automation.poryadok, type: 'number' },
         ]}
       />
       <Text size="sm" c="dimmed" mt="md">
-        Провайдеры опрашиваются параллельно, каждый со своим таймаутом; отключённый, упавший или медленный
-        провайдер не мешает оператору — подсказки встроенного провайдера показываются всегда. Включение и
-        выключение действует сразу, без перезапуска.
+        {t.automation.provayderyOprashivayutsyaParallelnoK}
       </Text>
       {result && (
-        <Modal opened onClose={() => setResult(null)} title={`Проверка связи: ${result.name}`}>
+        <Modal opened onClose={() => setResult(null)} title={t.automation.proverkaSvyazi2(result.name)}>
           <Alert color={result.ok ? 'green' : 'red'} data-testid="provider-test-result">
-            {result.ok ? `Связь есть (${result.ms} мс)` : `Ошибка: ${result.error}`}
+            {result.ok ? t.automation.svyazEstMs(result.ms) : t.automation.oshibka2(result.error)}
           </Alert>
           {result.sample && (
             <Text size="sm" mt="sm" style={{ whiteSpace: 'pre-wrap' }}>

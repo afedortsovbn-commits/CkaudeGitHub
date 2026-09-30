@@ -858,9 +858,14 @@ async function secondLineReport(ctx: ReportCtx, period: Period, group: ReportGro
     group === 'assignee' || ctx.filter.assigneeId
       ? []
       : (
-          await ctx.db.query<{ enterprise_id: string | null; department_id: string | null; n: string }>(
+          await ctx.db.query<{
+            enterprise_id: string | null;
+            department_id: string | null;
+            n: string;
+            nc: string;
+          }>(
             `SELECT e.data ->> 'directEnterpriseId' AS enterprise_id, e.data ->> 'directDepartmentId' AS department_id,
-                    count(*) AS n
+                    count(*) AS n, count(*) FILTER (WHERE (e.data ->> 'consult')::boolean) AS nc
                FROM event e
               WHERE e.type = 'conversation.updated' AND e.data ->> 'action' = 'transferred'
                 AND e.data ->> 'transferKind' = 'direct'
@@ -892,6 +897,7 @@ async function secondLineReport(ctx: ReportCtx, period: Period, group: ReportGro
     wait_n: number;
     methods: Map<string, number>;
     direct: number;
+    direct_consult: number;
   }
   const accs = new Map<string, Acc>();
   const acc = (key: string): Acc => {
@@ -913,6 +919,7 @@ async function secondLineReport(ctx: ReportCtx, period: Period, group: ReportGro
         wait_n: 0,
         methods: new Map(),
         direct: 0,
+        direct_consult: 0,
       };
       accs.set(key, a);
     }
@@ -950,7 +957,9 @@ async function secondLineReport(ctx: ReportCtx, period: Period, group: ReportGro
   }
   for (const d of direct) {
     acc(keyOf(d.enterprise_id, d.department_id)).direct += Number(d.n);
+    acc(keyOf(d.enterprise_id, d.department_id)).direct_consult += Number(d.nc);
     total.direct += Number(d.n);
+    total.direct_consult += Number(d.nc);
   }
   accs.delete('__total');
 
@@ -993,6 +1002,7 @@ async function secondLineReport(ctx: ReportCtx, period: Period, group: ReportGro
       .sort()
       .join('; '),
     direct_transfers: group === 'assignee' ? null : a.direct,
+    direct_consult: group === 'assignee' ? null : a.direct_consult,
   });
   const rows = [...accs.values()]
     .map((a) => shape(a, label(a.key)))
@@ -1012,13 +1022,15 @@ async function secondLineReport(ctx: ReportCtx, period: Period, group: ReportGro
       col('approval_wait_h', 'Среднее ожидание согласования, ч', 'num'),
       col('answer_methods', 'Способы ответа', 'text'),
       col('direct_transfers', 'Прямые переводы звонков'),
+      col('direct_consult', 'в т.ч. с консультацией'),
     ],
     rows,
     totals: group === 'assignee' ? null : shape(total, 'Итого'),
     notes: [
       '«Просрочено (открытые)» и «Ожидают согласования» — на конец периода; ожидание согласования в просрочку ' +
         'ответственного не засчитывается.',
-      'Прямые переводы — звонки, переведённые оператором на подразделение предприятия (очередь или внешний номер).',
+      'Прямые переводы — звонки, переведённые оператором на подразделение предприятия (очередь или внешний номер); ' +
+        '«с консультацией» — оператор сначала поговорил с подразделением, затем соединил клиента.',
       ...(group === 'assignee'
         ? ['Тикет с несколькими назначенными учитывается в строке каждого; итог не выводится.']
         : []),

@@ -1,4 +1,4 @@
-/**
+import { t } from './i18n'; /**
  * Клиент API: access-токен в памяти, refresh — в httpOnly cookie (недоступен скриптам).
  * При 401 один раз пытаемся обновить сессию и повторить запрос.
  */
@@ -53,7 +53,7 @@ export async function openAttachment(id: string): Promise<void> {
   const r = await fetch(`/api/v1/attachments/${id}`, {
     headers: accessToken ? { authorization: `Bearer ${accessToken}` } : {},
   });
-  if (!r.ok) throw new ApiError(r.status, 'download', 'Файл недоступен');
+  if (!r.ok) throw new ApiError(r.status, 'download', t.apiLib.faylNedostupen);
   const url = URL.createObjectURL(await r.blob());
   window.open(url, '_blank', 'noopener');
   setTimeout(() => URL.revokeObjectURL(url), 60_000);
@@ -65,7 +65,7 @@ export async function authBlobUrl(path: string): Promise<string> {
     fetch(`/api/v1${path}`, { headers: accessToken ? { authorization: `Bearer ${accessToken}` } : {} });
   let r = await doIt();
   if (r.status === 401 && (await refreshSession())) r = await doIt();
-  if (!r.ok) throw new ApiError(r.status, 'file', 'Файл недоступен');
+  if (!r.ok) throw new ApiError(r.status, 'file', t.apiLib.faylNedostupen);
   return URL.createObjectURL(await r.blob());
 }
 

@@ -16,6 +16,8 @@ export const PERMISSIONS = [
   'supervisor.monitor',
   'supervisor.approvals',
   'reports.view',
+  /** Ручное слияние дублей клиентов (M-CARD-01, Ф12b). */
+  'contacts.merge',
 ] as const;
 export type Permission = (typeof PERMISSIONS)[number];
 

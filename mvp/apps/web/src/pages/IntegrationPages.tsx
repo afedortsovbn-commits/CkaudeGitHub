@@ -26,6 +26,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { ApiError, authBlobUrl, errorText, get, patch, post, upload } from '../lib/api';
 import { options, type Row, useAction, useList } from '../lib/data';
+import { t } from '../lib/i18n';
 
 /**
  * Интеграции (Ф9): ключи публичного API, подписки webhooks, внешние боты (Bot Gateway), экспорт и импорт
@@ -64,11 +65,11 @@ function SecretOnce({
           <CopyButton value={value ?? ''}>
             {({ copied, copy }) => (
               <Button variant="light" onClick={copy}>
-                {copied ? 'Скопировано' : 'Скопировать'}
+                {copied ? t.integrations.skopirovano : t.integrations.skopirovat}
               </Button>
             )}
           </CopyButton>
-          <Button onClick={onClose}>Готово</Button>
+          <Button onClick={onClose}>{t.integrations.gotovo}</Button>
         </Group>
       </Stack>
     </Modal>
@@ -117,29 +118,30 @@ export function ApiKeysPage() {
     } else if (edit) await patch(`/api-keys/${edit.id}`, body());
     setEdit(null);
   });
-  const revoke = useAction((r: Row) => post(`/api-keys/${r.id}/revoke`), 'Ключ отозван');
+  const revoke = useAction((r: Row) => post(`/api-keys/${r.id}/revoke`), t.integrations.klyuchOtozvan);
   const permTitle = (c: string) => cat.data?.permissions.find((p) => p.code === c)?.title ?? c;
   return (
     <>
       <Group justify="space-between" mb="md">
-        <Title order={3}>Ключи API</Title>
+        <Title order={3}>{t.integrations.klyuchiApi}</Title>
         <Button onClick={() => open('new')} data-testid="key-create">
-          Выпустить ключ
+          {t.integrations.vypustitKlyuch}
         </Button>
       </Group>
       <Text size="sm" c="dimmed" mb="md">
-        Ключ даёт внешней системе доступ к публичному API (<a href="/api-docs">документация</a>) с выбранными
-        правами и областью видимости. Ключ показывается один раз; в системе хранится только его отпечаток.
+        {t.integrations.klyuchDaetVneshneySisteme}
+        <a href="/api-docs">{t.integrations.dokumentatsiya}</a>
+        {t.integrations.sVybrannymiPravamiI}
       </Text>
       <Table striped data-testid="keys">
         <Table.Thead>
           <Table.Tr>
-            <Table.Th>Название</Table.Th>
-            <Table.Th>Ключ</Table.Th>
-            <Table.Th>Права</Table.Th>
-            <Table.Th>Канал</Table.Th>
-            <Table.Th>Область</Table.Th>
-            <Table.Th>Использован</Table.Th>
+            <Table.Th>{t.integrations.nazvanie}</Table.Th>
+            <Table.Th>{t.integrations.klyuch}</Table.Th>
+            <Table.Th>{t.integrations.prava}</Table.Th>
+            <Table.Th>{t.integrations.kanal}</Table.Th>
+            <Table.Th>{t.integrations.oblast}</Table.Th>
+            <Table.Th>{t.integrations.ispolzovan}</Table.Th>
             <Table.Th />
           </Table.Tr>
         </Table.Thead>
@@ -160,25 +162,28 @@ export function ApiKeysPage() {
                 </Group>
               </Table.Td>
               <Table.Td>{String(r.channelName ?? '—')}</Table.Td>
-              <Table.Td>{r.scopeRules ? 'ограничена' : 'все обращения'}</Table.Td>
+              <Table.Td>
+                {r.scopeRules ? t.integrations.ogranichena : t.integrations.vseObrashcheniya}
+              </Table.Td>
               <Table.Td>{dt(r.lastUsedAt)}</Table.Td>
               <Table.Td>
                 {r.revokedAt ? (
-                  <Badge color="gray">Отозван</Badge>
+                  <Badge color="gray">{t.integrations.otozvan}</Badge>
                 ) : (
                   <Group gap={4} wrap="nowrap">
                     <Button size="xs" variant="subtle" onClick={() => open(r)}>
-                      Изменить
+                      {t.edit}
                     </Button>
                     <Button
                       size="xs"
                       variant="subtle"
                       color="red"
                       onClick={() => {
-                        if (confirm(`Отозвать ключ «${String(r.name)}»? Это необратимо.`)) revoke.mutate(r);
+                        if (confirm(t.integrations.otozvatKlyuchEtoNeobratimo(String(r.name))))
+                          revoke.mutate(r);
                       }}
                     >
-                      Отозвать
+                      {t.integrations.otozvat}
                     </Button>
                   </Group>
                 )}
@@ -190,17 +195,17 @@ export function ApiKeysPage() {
       <Modal
         opened={!!edit}
         onClose={() => setEdit(null)}
-        title={edit === 'new' ? 'Новый ключ API' : 'Ключ API'}
+        title={edit === 'new' ? t.integrations.novyyKlyuchApi : t.integrations.klyuchApi}
       >
         <Stack>
           <TextInput
-            label="Название (кто пользуется ключом)"
+            label={t.integrations.nazvanieKtoPolzuetsyaKlyuchom}
             required
             value={String(v.name ?? '')}
             onChange={(e) => setV({ ...v, name: e.currentTarget.value })}
           />
           <Checkbox.Group
-            label="Права"
+            label={t.integrations.prava}
             value={(v.permissions as string[]) ?? []}
             onChange={(x) => setV({ ...v, permissions: x })}
           >
@@ -211,31 +216,31 @@ export function ApiKeysPage() {
             </Stack>
           </Checkbox.Group>
           <Select
-            label="Внешний канал"
-            description="Для права «Внешний канал»: сообщения по ключу становятся обращениями этого канала"
+            label={t.integrations.vneshniyKanal}
+            description={t.integrations.dlyaPravaVneshniyKanal}
             data={options(apiChannels)}
             value={(v.channelId as string) ?? null}
             onChange={(x) => setV({ ...v, channelId: x })}
             clearable
           />
           <MultiSelect
-            label="Область видимости: предприятия"
-            description="Пусто — все обращения"
+            label={t.integrations.oblastVidimostiPredpriyatiya}
+            description={t.integrations.pustoVseObrashcheniya}
             data={options(enterprises.data)}
             value={(v.enterpriseIds as string[]) ?? []}
             onChange={(x) => setV({ ...v, enterpriseIds: x })}
           />
           <Group justify="flex-end">
             <Button onClick={() => save.mutate(undefined)} loading={save.isPending} data-testid="key-save">
-              {edit === 'new' ? 'Выпустить' : 'Сохранить'}
+              {edit === 'new' ? t.integrations.vypustit : t.save}
             </Button>
           </Group>
         </Stack>
       </Modal>
       <SecretOnce
-        title="Ключ API выпущен"
+        title={t.integrations.klyuchApiVypushchen}
         value={shown}
-        hint="Скопируйте ключ сейчас — больше он показан не будет. Передайте его внешней системе по защищённому каналу."
+        hint={t.integrations.skopiruyteKlyuchSeychasBolshe}
         onClose={() => setShown(null)}
       />
     </>
@@ -246,22 +251,25 @@ export function ApiKeysPage() {
 
 const STATUS_COLOR: Record<string, string> = { sent: 'green', pending: 'yellow', failed: 'red' };
 const STATUS_LABEL: Record<string, string> = {
-  sent: 'доставлено',
-  pending: 'в очереди',
-  failed: 'не доставлено',
+  sent: t.integrations.dostavleno,
+  pending: t.integrations.vOcheredi,
+  failed: t.integrations.neDostavleno,
 };
 
 function SubState({ r }: { r: Row }) {
-  if (!r.isActive) return <Badge color="gray">Отключена</Badge>;
+  if (!r.isActive) return <Badge color="gray">{t.integrations.otklyuchena}</Badge>;
   if (Number(r.failures) > 0)
     return (
       <Badge color="red" title={String(r.lastError ?? '')} data-testid="sub-state">
-        Сбой ({String(r.lastError ?? '')}), повтор {dt(r.nextProbeAt)}
+        {t.integrations.sboy}
+        {String(r.lastError ?? '')}
+        {t.integrations.povtor}
+        {dt(r.nextProbeAt)}
       </Badge>
     );
   return (
     <Badge color="green" data-testid="sub-state">
-      Работает
+      {t.integrations.rabotaet}
     </Badge>
   );
 }
@@ -277,18 +285,18 @@ function Deliveries({ sub, onClose }: { sub: Row | null; onClose(): void }) {
   });
   const retry = useAction(
     (deliveryId?: string) => post(`/webhooks/${sub!.id}/retry`, deliveryId ? { deliveryId } : {}),
-    'Поставлено на повтор',
+    t.integrations.postavlenoNaPovtor,
   );
   return (
     <Modal
       opened={!!sub}
       onClose={onClose}
-      title={`Журнал доставки: ${String(sub?.name ?? '')}`}
+      title={t.integrations.zhurnalDostavki(String(sub?.name ?? ''))}
       size="80rem"
     >
       <Group mb="sm">
         <Select
-          placeholder="Все статусы"
+          placeholder={t.integrations.vseStatusy}
           data={Object.entries(STATUS_LABEL).map(([value, label]) => ({ value, label }))}
           value={status}
           onChange={setStatus}
@@ -296,22 +304,22 @@ function Deliveries({ sub, onClose }: { sub: Row | null; onClose(): void }) {
           w={200}
         />
         <Button variant="light" onClick={() => retry.mutate(undefined)} data-testid="retry-all">
-          Повторить сейчас
+          {t.integrations.povtoritSeychas}
         </Button>
         <Text size="xs" c="dimmed">
-          Недоставленное повторяется автоматически с растущей задержкой; «Повторить сейчас» — не ждать.
+          {t.integrations.nedostavlennoePovtoryaetsyaAvtomatic}
         </Text>
       </Group>
       <ScrollArea h={480}>
         <Table striped data-testid="deliveries">
           <Table.Thead>
             <Table.Tr>
-              <Table.Th>Когда</Table.Th>
-              <Table.Th>Событие</Table.Th>
-              <Table.Th>Статус</Table.Th>
-              <Table.Th>Попыток</Table.Th>
-              <Table.Th>Ответ</Table.Th>
-              <Table.Th>Ошибка</Table.Th>
+              <Table.Th>{t.integrations.kogda}</Table.Th>
+              <Table.Th>{t.integrations.sobytie}</Table.Th>
+              <Table.Th>{t.integrations.status}</Table.Th>
+              <Table.Th>{t.integrations.popytok}</Table.Th>
+              <Table.Th>{t.integrations.otvet}</Table.Th>
+              <Table.Th>{t.error}</Table.Th>
               <Table.Th />
             </Table.Tr>
           </Table.Thead>
@@ -321,7 +329,7 @@ function Deliveries({ sub, onClose }: { sub: Row | null; onClose(): void }) {
                 <Table.Td>{dt(d.createdAt)}</Table.Td>
                 <Table.Td>
                   {String(d.eventType)}
-                  {d.isTest ? ' (тест)' : ''}
+                  {d.isTest ? t.integrations.test : ''}
                 </Table.Td>
                 <Table.Td>
                   <Badge color={STATUS_COLOR[String(d.status)]} variant="light">
@@ -331,7 +339,7 @@ function Deliveries({ sub, onClose }: { sub: Row | null; onClose(): void }) {
                 <Table.Td>{String(d.attempts)}</Table.Td>
                 <Table.Td>
                   {d.lastStatus ? String(d.lastStatus) : '—'}
-                  {d.durationMs != null ? ` · ${String(d.durationMs)} мс` : ''}
+                  {d.durationMs != null ? t.integrations.ms(String(d.durationMs)) : ''}
                 </Table.Td>
                 <Table.Td style={{ maxWidth: 260 }}>{String(d.lastError ?? '')}</Table.Td>
                 <Table.Td>
@@ -345,11 +353,11 @@ function Deliveries({ sub, onClose }: { sub: Row | null; onClose(): void }) {
                         )
                       }
                     >
-                      Данные
+                      {t.integrations.dannye}
                     </Button>
                     {d.status !== 'sent' && !d.isTest && (
                       <Button size="xs" variant="subtle" onClick={() => retry.mutate(d.id)}>
-                        Повторить
+                        {t.integrations.povtorit}
                       </Button>
                     )}
                   </Group>
@@ -359,7 +367,12 @@ function Deliveries({ sub, onClose }: { sub: Row | null; onClose(): void }) {
           </Table.Tbody>
         </Table>
       </ScrollArea>
-      <Modal opened={payload !== null} onClose={() => setPayload(null)} title="Тело запроса" size="xl">
+      <Modal
+        opened={payload !== null}
+        onClose={() => setPayload(null)}
+        title={t.integrations.teloZaprosa}
+        size="xl"
+      >
         <Code block>{JSON.stringify(payload, null, 2)}</Code>
       </Modal>
     </Modal>
@@ -424,7 +437,7 @@ function SubscriptionsPage({ kind }: { kind: 'events' | 'bot' }) {
   const rotate = useAction(async (r: Row) => {
     const x = await post<{ secret: string }>(`/webhooks/${r.id}/rotate-secret`);
     setSecret(x.secret);
-  }, 'Секрет заменён');
+  }, t.integrations.sekretZamenen);
   const test = async (r: Row) => {
     try {
       const x = await post<{ ok: boolean; status: number | null; error: string | null; durationMs: number }>(
@@ -432,8 +445,8 @@ function SubscriptionsPage({ kind }: { kind: 'events' | 'bot' }) {
       );
       notifications.show({
         color: x.ok ? 'green' : 'red',
-        title: x.ok ? 'Проверка прошла' : 'Проверка не прошла',
-        message: x.ok ? `Ответ ${x.status} за ${x.durationMs} мс` : String(x.error),
+        title: x.ok ? t.integrations.proverkaProshla : t.integrations.proverkaNeProshla,
+        message: x.ok ? t.integrations.otvetZaMs(x.status, x.durationMs) : String(x.error),
       });
     } catch (e) {
       notifications.show({ color: 'red', message: errorText(e) });
@@ -446,25 +459,24 @@ function SubscriptionsPage({ kind }: { kind: 'events' | 'bot' }) {
   return (
     <>
       <Group justify="space-between" mb="md">
-        <Title order={3}>{bot ? 'Внешние боты' : 'Webhooks'}</Title>
+        <Title order={3}>{bot ? t.integrations.vneshnieBoty : 'Webhooks'}</Title>
         <Button onClick={() => open('new')} data-testid="sub-create">
-          {bot ? 'Подключить бота' : 'Добавить подписку'}
+          {bot ? t.integrations.podklyuchitBota : t.integrations.dobavitPodpisku}
         </Button>
       </Group>
       <Text size="sm" c="dimmed" mb="md">
-        {bot
-          ? 'Внешний бот получает ход (conversation.bot_turn) на каждое сообщение клиента и отвечает через публичный API ключом с правом «bot.reply». Бота назначают каналу в «Каналах». Не ответил за отведённое время — диалог уходит оператору.'
-          : 'Система отправляет события на адрес получателя (POST JSON с подписью HMAC-SHA256). Сбой получателя не влияет на работу операторов: события копятся и доставляются с повторами после восстановления.'}{' '}
-        Формат и проверка подписи — в <a href="/api-docs">документации API</a>.
+        {bot ? t.integrations.vneshniyBotPoluchaetKhod : t.integrations.sistemaOtpravlyaetSobytiyaNa}{' '}
+        {t.integrations.formatIProverkaPodpisi}
+        <a href="/api-docs">{t.integrations.dokumentatsiiApi}</a>.
       </Text>
       <Table striped data-testid="subs">
         <Table.Thead>
           <Table.Tr>
-            <Table.Th>Название</Table.Th>
-            <Table.Th>Адрес</Table.Th>
-            <Table.Th>{bot ? 'Каналы' : 'События'}</Table.Th>
-            <Table.Th>Состояние</Table.Th>
-            <Table.Th>В очереди / не доставлено</Table.Th>
+            <Table.Th>{t.integrations.nazvanie}</Table.Th>
+            <Table.Th>{t.integrations.adres}</Table.Th>
+            <Table.Th>{bot ? t.integrations.kanaly : t.integrations.sobytiya}</Table.Th>
+            <Table.Th>{t.integrations.sostoyanie}</Table.Th>
+            <Table.Th>{t.integrations.vOcherediNeDostavleno}</Table.Th>
             <Table.Th />
           </Table.Tr>
         </Table.Thead>
@@ -478,7 +490,7 @@ function SubscriptionsPage({ kind }: { kind: 'events' | 'bot' }) {
               <Table.Td>
                 {bot
                   ? ((r.botChannels as string[]) ?? []).join(', ') || '—'
-                  : ((r.eventTypes as string[]) ?? []).join(', ') || 'все'}
+                  : ((r.eventTypes as string[]) ?? []).join(', ') || t.integrations.vse}
               </Table.Td>
               <Table.Td>
                 <SubState r={r} />
@@ -489,21 +501,21 @@ function SubscriptionsPage({ kind }: { kind: 'events' | 'bot' }) {
               <Table.Td>
                 <Group gap={4} wrap="nowrap">
                   <Button size="xs" variant="subtle" onClick={() => setLog(r)} data-testid="sub-log">
-                    Журнал
+                    {t.integrations.zhurnal}
                   </Button>
                   <Button size="xs" variant="subtle" onClick={() => void test(r)} data-testid="sub-test">
-                    Тест
+                    {t.integrations.test2}
                   </Button>
                   <Button size="xs" variant="subtle" onClick={() => open(r)}>
-                    Изменить
+                    {t.edit}
                   </Button>
                   <Button size="xs" variant="subtle" onClick={() => rotate.mutate(r)}>
-                    Новый секрет
+                    {t.integrations.novyySekret}
                   </Button>
                   <Switch
                     checked={!!r.isActive}
                     onChange={() => toggle.mutate(r)}
-                    label={r.isActive ? 'Вкл.' : 'Выкл.'}
+                    label={r.isActive ? t.integrations.vkl : t.integrations.vykl}
                     data-testid="sub-toggle"
                   />
                 </Group>
@@ -515,18 +527,20 @@ function SubscriptionsPage({ kind }: { kind: 'events' | 'bot' }) {
       <Modal
         opened={!!edit}
         onClose={() => setEdit(null)}
-        title={edit === 'new' ? (bot ? 'Новый внешний бот' : 'Новая подписка') : 'Изменить'}
+        title={
+          edit === 'new' ? (bot ? t.integrations.novyyVneshniyBot : t.integrations.novayaPodpiska) : t.edit
+        }
         size="lg"
       >
         <Stack>
           <TextInput
-            label="Название"
+            label={t.integrations.nazvanie}
             required
             value={String(v.name ?? '')}
             onChange={(e) => setV({ ...v, name: e.currentTarget.value })}
           />
           <TextInput
-            label="Адрес получателя (URL)"
+            label={t.integrations.adresPoluchatelyaUrl}
             required
             placeholder="https://crm.example/cc-events"
             value={String(v.url ?? '')}
@@ -535,16 +549,16 @@ function SubscriptionsPage({ kind }: { kind: 'events' | 'bot' }) {
           {!bot && (
             <>
               <MultiSelect
-                label="События"
-                description="Пусто — все события"
+                label={t.integrations.sobytiya}
+                description={t.integrations.pustoVseSobytiya}
                 data={eventOptions}
                 value={(v.eventTypes as string[]) ?? []}
                 onChange={(x) => setV({ ...v, eventTypes: x })}
                 searchable
               />
               <MultiSelect
-                label="Только каналы"
-                description="Пусто — все каналы"
+                label={t.integrations.tolkoKanaly}
+                description={t.integrations.pustoVseKanaly}
                 data={options(channels.data)}
                 value={(v.channelIds as string[]) ?? []}
                 onChange={(x) => setV({ ...v, channelIds: x })}
@@ -553,8 +567,8 @@ function SubscriptionsPage({ kind }: { kind: 'events' | 'bot' }) {
           )}
           {bot && (
             <NumberInput
-              label="Ждать ответа бота, с"
-              description="Не ответил — диалог уходит оператору"
+              label={t.integrations.zhdatOtvetaBotaS}
+              description={t.integrations.neOtvetilDialogUkhodit}
               min={5}
               max={3600}
               value={Number(v.botTimeoutS ?? 30)}
@@ -562,15 +576,15 @@ function SubscriptionsPage({ kind }: { kind: 'events' | 'bot' }) {
             />
           )}
           <NumberInput
-            label="Таймаут запроса, мс"
+            label={t.integrations.taymautZaprosaMs}
             min={500}
             max={30000}
             value={Number(v.timeoutMs ?? 5000)}
             onChange={(x) => setV({ ...v, timeoutMs: Number(x) })}
           />
           <Textarea
-            label="Дополнительные заголовки"
-            description="По одному на строку: Имя: значение"
+            label={t.integrations.dopolnitelnyeZagolovki}
+            description={t.integrations.poOdnomuNaStroku}
             autosize
             minRows={2}
             value={String(v.headers ?? '')}
@@ -578,15 +592,15 @@ function SubscriptionsPage({ kind }: { kind: 'events' | 'bot' }) {
           />
           <Group justify="flex-end">
             <Button onClick={() => save.mutate(undefined)} loading={save.isPending} data-testid="sub-save">
-              Сохранить
+              {t.save}
             </Button>
           </Group>
         </Stack>
       </Modal>
       <SecretOnce
-        title="Секрет подписи"
+        title={t.integrations.sekretPodpisi}
         value={secret}
-        hint="Секрет нужен получателю для проверки подписи X-CC-Signature. Скопируйте его сейчас — больше он показан не будет."
+        hint={t.integrations.sekretNuzhenPoluchatelyuDlya}
         onClose={() => setSecret(null)}
       />
       <Deliveries sub={log} onClose={() => setLog(null)} />
@@ -635,14 +649,14 @@ export function ConfigTransferPage() {
       );
       setReport(r);
       if (!dryRun) {
-        notifications.show({ color: 'green', message: 'Конфигурация импортирована' });
+        notifications.show({ color: 'green', message: t.integrations.konfiguratsiyaImportirovana });
         setFile(null);
       }
     } catch (e) {
       setReport(null);
       notifications.show({
         color: 'red',
-        title: 'Импорт невозможен',
+        title: t.integrations.importNevozmozhen,
         message: e instanceof ApiError ? errorText(e) : String(e),
         autoClose: 10000,
       });
@@ -652,35 +666,30 @@ export function ConfigTransferPage() {
   };
   return (
     <Stack maw={900}>
-      <Title order={3}>Экспорт и импорт конфигурации</Title>
+      <Title order={3}>{t.integrations.eksportIImportKonfiguratsii}</Title>
       <Paper withBorder p="md">
         <Stack>
-          <Text fw={600}>Экспорт</Text>
+          <Text fw={600}>{t.integrations.eksport}</Text>
           <Text size="sm" c="dimmed">
-            Файл JSON с настройками: темы и поля, очереди, навыки, расписания, справочники результатов, тегов
-            и причин перерывов, правила маршрутизации и автоответов, сценарии IVR и боты (с версиями),
-            аудиофразы, объявления, интеграционные операции (без секретов), общие шаблоны, база знаний,
-            системные настройки. Сотрудники, оргструктура, каналы, ключи API и webhooks не переносятся.
+            {t.integrations.faylJsonSNastroykami}
           </Text>
           <Switch
             checked={audio}
             onChange={(e) => setAudio(e.currentTarget.checked)}
-            label="Включить аудиофайлы IVR"
+            label={t.integrations.vklyuchitAudiofaylyIvr}
           />
           <Group>
             <Button onClick={() => void download()} loading={busy} data-testid="export">
-              Скачать конфигурацию
+              {t.integrations.skachatKonfiguratsiyu}
             </Button>
           </Group>
         </Stack>
       </Paper>
       <Paper withBorder p="md">
         <Stack>
-          <Text fw={600}>Импорт</Text>
+          <Text fw={600}>{t.integrations.import}</Text>
           <Text size="sm" c="dimmed">
-            Сначала проверка: система покажет, что будет создано и изменено. Записи сопоставляются по
-            идентификатору, справочники — ещё и по коду или названию; ничего не удаляется. Изменения
-            применяются без перезапуска.
+            {t.integrations.snachalaProverkaSistemaPokazhet}
           </Text>
           <Group>
             <FileButton
@@ -693,22 +702,22 @@ export function ConfigTransferPage() {
             >
               {(props) => (
                 <Button variant="light" {...props} data-testid="import-file">
-                  Выбрать файл…
+                  {t.integrations.vybratFayl}
                 </Button>
               )}
             </FileButton>
             {file && <Text size="sm">{file.name}</Text>}
             {file && report?.dryRun && (
               <Button onClick={() => void run(file, false)} loading={busy} data-testid="import-run">
-                Импортировать
+                {t.integrations.importirovat}
               </Button>
             )}
           </Group>
           {report && (
             <>
               <Alert color={report.dryRun ? 'blue' : 'green'} data-testid="import-report-title">
-                {report.dryRun ? 'Проверка файла: изменений пока нет' : 'Импорт выполнен'}
-                {report.remapped ? ` · сопоставлено по названию: ${report.remapped}` : ''}
+                {report.dryRun ? t.integrations.proverkaFaylaIzmeneniyPoka : t.integrations.importVypolnen}
+                {report.remapped ? t.integrations.sopostavlenoPoNazvaniyu(report.remapped) : ''}
               </Alert>
               {report.warnings.map((w) => (
                 <Alert key={w} color="yellow">
@@ -718,10 +727,10 @@ export function ConfigTransferPage() {
               <Table striped data-testid="import-report">
                 <Table.Thead>
                   <Table.Tr>
-                    <Table.Th>Раздел</Table.Th>
-                    <Table.Th>Новых</Table.Th>
-                    <Table.Th>Изменится</Table.Th>
-                    <Table.Th>Без изменений</Table.Th>
+                    <Table.Th>{t.integrations.razdel}</Table.Th>
+                    <Table.Th>{t.integrations.novykh}</Table.Th>
+                    <Table.Th>{t.integrations.izmenitsya}</Table.Th>
+                    <Table.Th>{t.integrations.bezIzmeneniy}</Table.Th>
                   </Table.Tr>
                 </Table.Thead>
                 <Table.Tbody>
@@ -805,7 +814,7 @@ const METHOD_COLOR: Record<string, string> = { get: 'blue', post: 'green', patch
 export function ApiDocsPage() {
   const spec = useQuery({ queryKey: ['/openapi.json'], queryFn: () => get<Obj>('/openapi.json') });
   const [schema, setSchema] = useState<string | null>(null);
-  if (!spec.data) return <Text>Загрузка…</Text>;
+  if (!spec.data) return <Text>{t.integrations.zagruzka}</Text>;
   const info = spec.data.info as { title: string; version: string; description: string };
   const paths = spec.data.paths as Record<string, Record<string, Obj>>;
   const schemas = (spec.data.components as { schemas: Record<string, Obj> }).schemas;
@@ -843,7 +852,7 @@ export function ApiDocsPage() {
       <Paper withBorder p="md">
         <Doc text={info.description} />
       </Paper>
-      <Title order={3}>Методы</Title>
+      <Title order={3}>{t.integrations.metody}</Title>
       {Object.entries(paths).flatMap(([path, ops]) =>
         Object.entries(ops).map(([method, o]) => {
           const body = (o.requestBody as { content?: Record<string, { schema: unknown }> } | undefined)
@@ -864,7 +873,7 @@ export function ApiDocsPage() {
               {o.description ? <Doc text={String(o.description)} /> : null}
               {((o.parameters as Obj[]) ?? []).length > 0 && (
                 <Text size="sm" mt={4}>
-                  Параметры:{' '}
+                  {t.integrations.parametry}{' '}
                   {(o.parameters as Obj[]).map((p) => (
                     <Code key={String(p.name)} mr={4}>
                       {String(p.name)} ({String(p.in)})
@@ -874,12 +883,12 @@ export function ApiDocsPage() {
               )}
               {body ? (
                 <Group gap={4} mt={4}>
-                  <Text size="sm">Тело запроса:</Text>
+                  <Text size="sm">{t.integrations.teloZaprosa2}</Text>
                   <SchemaLink s={body} />
                 </Group>
               ) : null}
               <Group gap={4} mt={4}>
-                <Text size="sm">Ответы:</Text>
+                <Text size="sm">{t.integrations.otvety}</Text>
                 {Object.entries(responses).map(([code, r]) => {
                   const sch = (r.content as Record<string, { schema: unknown }> | undefined)?.[
                     'application/json'
@@ -902,7 +911,7 @@ export function ApiDocsPage() {
           );
         }),
       )}
-      <Title order={3}>Схемы</Title>
+      <Title order={3}>{t.integrations.skhemy}</Title>
       <Group gap={6}>
         {Object.keys(schemas).map((n) => (
           <Button key={n} size="xs" variant="default" onClick={() => setSchema(n)}>

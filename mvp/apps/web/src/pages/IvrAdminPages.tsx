@@ -22,6 +22,7 @@ import { authBlobUrl, errorText, get, patch, post, upload } from '../lib/api';
 import { toIvrWav } from '../lib/audio-convert';
 import { useAuth } from '../lib/auth';
 import { options, type Row, useAction, useList } from '../lib/data';
+import { t } from '../lib/i18n';
 
 // ------------------------------------------------------------------ прослушивание файла
 
@@ -33,7 +34,7 @@ export function AudioPreview({ id }: { id: string }) {
   return (
     <ActionIcon
       variant="light"
-      title="Прослушать"
+      title={t.ivr.proslushat}
       onClick={() =>
         void authBlobUrl(`/ivr/audio/${id}/file`)
           .then(setUrl)
@@ -72,11 +73,11 @@ export function AudioLibraryPage() {
     setBusy(true);
     try {
       await uploadAudio(file, query);
-      notifications.show({ color: 'green', message: 'Файл загружен' });
+      notifications.show({ color: 'green', message: t.ivr.faylZagruzhen });
       void list.refetch();
       void fragments.refetch();
     } catch (e) {
-      notifications.show({ color: 'red', title: 'Не удалось загрузить', message: errorText(e) });
+      notifications.show({ color: 'red', title: t.ivr.neUdalosZagruzit, message: errorText(e) });
     } finally {
       setBusy(false);
     }
@@ -84,18 +85,14 @@ export function AudioLibraryPage() {
   return (
     <>
       <Group justify="space-between" mb="md">
-        <Title order={3}>Аудиобиблиотека IVR</Title>
+        <Title order={3}>{t.ivr.audiobibliotekaIvr}</Title>
         <Group>
-          <Switch
-            label="Показывать отключённые"
-            checked={all}
-            onChange={(e) => setAll(e.currentTarget.checked)}
-          />
+          <Switch label={t.showInactive} checked={all} onChange={(e) => setAll(e.currentTarget.checked)} />
           {writable && (
             <FileButton onChange={(f) => void doUpload(f)} accept="audio/*">
               {(props) => (
                 <Button {...props} loading={busy} data-testid="audio-upload">
-                  Загрузить фразу
+                  {t.ivr.zagruzitFrazu}
                 </Button>
               )}
             </FileButton>
@@ -103,21 +100,20 @@ export function AudioLibraryPage() {
         </Group>
       </Group>
       <Text size="sm" c="dimmed" mb="sm">
-        Любой аудиофайл (mp3, wav, ogg…) приводится в браузере к формату телефонии (WAV, 8 кГц, моно). Синтеза
-        речи нет — фразы записывает диктор (В-15).
+        {t.ivr.lyuboyAudiofaylMp3Wav}
       </Text>
       <Tabs defaultValue="prompts">
         <Tabs.List mb="sm">
-          <Tabs.Tab value="prompts">Фразы</Tabs.Tab>
-          <Tabs.Tab value="fragments">Фрагменты чисел</Tabs.Tab>
+          <Tabs.Tab value="prompts">{t.ivr.frazy}</Tabs.Tab>
+          <Tabs.Tab value="fragments">{t.ivr.fragmentyChisel}</Tabs.Tab>
         </Tabs.List>
         <Tabs.Panel value="prompts">
           <Table striped data-testid="audio-list">
             <Table.Thead>
               <Table.Tr>
-                <Table.Th>Название</Table.Th>
-                <Table.Th>Длительность</Table.Th>
-                <Table.Th>Статус</Table.Th>
+                <Table.Th>{t.ivr.nazvanie}</Table.Th>
+                <Table.Th>{t.release.duration}</Table.Th>
+                <Table.Th>{t.ivr.status}</Table.Th>
                 <Table.Th />
               </Table.Tr>
             </Table.Thead>
@@ -127,10 +123,13 @@ export function AudioLibraryPage() {
                 .map((r) => (
                   <Table.Tr key={r.id}>
                     <Table.Td>{String(r.name)}</Table.Td>
-                    <Table.Td>{(Number(r.durationMs) / 1000).toFixed(1)} с</Table.Td>
+                    <Table.Td>
+                      {(Number(r.durationMs) / 1000).toFixed(1)}
+                      {t.ivr.s}
+                    </Table.Td>
                     <Table.Td>
                       <Badge color={r.isActive ? 'green' : 'gray'}>
-                        {r.isActive ? 'Активен' : 'Отключён'}
+                        {r.isActive ? t.ivr.aktiven : t.ivr.otklyuchen}
                       </Badge>
                     </Table.Td>
                     <Table.Td>
@@ -146,7 +145,7 @@ export function AudioLibraryPage() {
                                 setName(String(r.name));
                               }}
                             >
-                              Переименовать
+                              {t.ivr.pereimenovat}
                             </Button>
                             <Button
                               size="xs"
@@ -154,7 +153,7 @@ export function AudioLibraryPage() {
                               color={r.isActive ? 'red' : 'green'}
                               onClick={() => toggle.mutate(r)}
                             >
-                              {r.isActive ? 'Отключить' : 'Включить'}
+                              {r.isActive ? t.deactivate : t.activate}
                             </Button>
                           </>
                         )}
@@ -167,8 +166,7 @@ export function AudioLibraryPage() {
         </Tabs.Panel>
         <Tabs.Panel value="fragments">
           <Text size="sm" c="dimmed" mb="sm">
-            Из фрагментов собираются числа и суммы в узле «Проиграть значение переменной» («две тысячи триста
-            сорок пять бонусов»). Новая загрузка фрагмента заменяет прежний.
+            {t.ivr.izFragmentovSobirayutsyaChisla}
           </Text>
           <Table striped>
             <Table.Tbody>
@@ -179,7 +177,11 @@ export function AudioLibraryPage() {
                     <Code>{f.key}</Code>
                   </Table.Td>
                   <Table.Td>
-                    {f.audioId ? <Badge color="green">загружен</Badge> : <Badge color="orange">нет</Badge>}
+                    {f.audioId ? (
+                      <Badge color="green">{t.ivr.zagruzhen}</Badge>
+                    ) : (
+                      <Badge color="orange">{t.ivr.net}</Badge>
+                    )}
                   </Table.Td>
                   <Table.Td>
                     <Group gap="xs" justify="flex-end">
@@ -193,7 +195,7 @@ export function AudioLibraryPage() {
                         >
                           {(props) => (
                             <Button {...props} size="xs" variant="light" loading={busy}>
-                              Загрузить
+                              {t.ivr.zagruzit}
                             </Button>
                           )}
                         </FileButton>
@@ -206,11 +208,11 @@ export function AudioLibraryPage() {
           </Table>
         </Tabs.Panel>
       </Tabs>
-      <Modal opened={!!rename} onClose={() => setRename(null)} title="Название фразы">
+      <Modal opened={!!rename} onClose={() => setRename(null)} title={t.ivr.nazvanieFrazy}>
         <Stack>
           <TextInput value={name} onChange={(e) => setName(e.currentTarget.value)} />
           <Button onClick={() => rename && saveName.mutate(rename, { onSuccess: () => setRename(null) })}>
-            Сохранить
+            {t.save}
           </Button>
         </Stack>
       </Modal>
@@ -245,13 +247,13 @@ export function AnnouncementsPage() {
   return (
     <DictPage
       kind="announcements"
-      title="Объявления о сбоях"
+      title={t.ivr.obyavleniyaOSboyakh}
       writePerm={['admin.directories', 'supervisor.monitor']}
       columns={[
-        { key: 'name', label: 'Название' },
+        { key: 'name', label: t.ivr.nazvanie },
         {
           key: 'audioId',
-          label: 'Фраза',
+          label: t.ivr.fraza,
           render: (r) => (
             <Group gap="xs">
               <AudioPreview id={String(r.audioId)} />
@@ -261,7 +263,7 @@ export function AnnouncementsPage() {
         },
         {
           key: 'period',
-          label: 'Период',
+          label: t.ivr.period,
           render: (r) => {
             const live =
               r.isActive &&
@@ -272,40 +274,40 @@ export function AnnouncementsPage() {
                 <Text size="sm">
                   {localDt(r.startsAt)} — {localDt(r.endsAt)}
                 </Text>
-                {live && <Badge color="red">звучит сейчас</Badge>}
+                {live && <Badge color="red">{t.ivr.zvuchitSeychas}</Badge>}
               </Group>
             );
           },
         },
         {
           key: 'flowIds',
-          label: 'Сценарии',
+          label: t.ivr.stsenarii,
           render: (r) =>
             (r.flowIds as string[] | undefined)?.length
               ? (r.flowIds as string[])
                   .map((id) => flows.data?.find((f) => f.id === id)?.name ?? id)
                   .join(', ')
-              : 'все',
+              : t.ivr.vse,
         },
       ]}
       fields={[
-        { key: 'name', label: 'Название', required: true },
+        { key: 'name', label: t.ivr.nazvanie, required: true },
         {
           key: 'audioId',
-          label: 'Фраза из аудиобиблиотеки',
+          label: t.ivr.frazaIzAudiobiblioteki,
           type: 'select',
           required: true,
           options: options(audio.data),
         },
-        { key: 'startsAt', label: 'Начало (пусто — сразу)', placeholder: 'ГГГГ-ММ-ДДTчч:мм' },
-        { key: 'endsAt', label: 'Окончание (пусто — пока не выключат)', placeholder: 'ГГГГ-ММ-ДДTчч:мм' },
+        { key: 'startsAt', label: t.ivr.nachaloPustoSrazu, placeholder: t.ivr.ggggMmDdtchchMm },
+        { key: 'endsAt', label: t.ivr.okonchaniePustoPokaNe, placeholder: t.ivr.ggggMmDdtchchMm },
         {
           key: 'flowIds',
-          label: 'Только в сценариях (пусто — во всех)',
+          label: t.ivr.tolkoVStsenariyakhPusto,
           type: 'multiselect',
           options: options(flows.data),
         },
-        { key: 'sortOrder', label: 'Порядок', type: 'number' },
+        { key: 'sortOrder', label: t.ivr.poryadok, type: 'number' },
       ]}
       toForm={(r) => ({ ...r, startsAt: toInput(r.startsAt), endsAt: toInput(r.endsAt) })}
       fromForm={(v) => ({ ...v, startsAt: toIso(v.startsAt), endsAt: toIso(v.endsAt) })}
@@ -322,7 +324,7 @@ function parseJson(label: string, v: unknown, fallback: unknown) {
   try {
     return JSON.parse(s) as unknown;
   } catch {
-    throw new Error(`${label}: некорректный JSON`);
+    throw new Error(t.ivr.nekorrektnyyJson(label));
   }
 }
 
@@ -334,10 +336,10 @@ function TestOperation({ op, onClose }: { op: Row; onClose(): void }) {
   const [res, setRes] = useState<Record<string, unknown> | null>(null);
   const run = useAction(
     async () => setRes(await post<Record<string, unknown>>(`/integrations/${op.id}/test`, { input: v })),
-    'Запрос выполнен',
+    t.ivr.zaprosVypolnen,
   );
   return (
-    <Modal opened onClose={onClose} title={`Проверка: ${String(op.name)}`} size="lg">
+    <Modal opened onClose={onClose} title={t.ivr.proverka(String(op.name))} size="lg">
       <Stack>
         {inputs.map((i) => (
           <TextInput
@@ -349,21 +351,23 @@ function TestOperation({ op, onClose }: { op: Row; onClose(): void }) {
           />
         ))}
         <Button onClick={() => run.mutate(undefined)} loading={run.isPending} data-testid="op-run">
-          Выполнить
+          {t.ivr.vypolnit}
         </Button>
         {res && (
           <>
             <Group>
               <Badge color={res.ok ? 'green' : 'red'} data-testid="op-result">
-                {res.ok ? 'успех' : 'ошибка'}
+                {res.ok ? t.ivr.uspekh : t.ivr.oshibka}
               </Badge>
               <Text size="sm">
                 {res.httpStatus ? `HTTP ${String(res.httpStatus)} · ` : ''}
-                {String(res.durationMs)} мс {res.error ? `· ${String(res.error)}` : ''}
+                {String(res.durationMs)}
+                {t.ivr.ms}
+                {res.error ? `· ${String(res.error)}` : ''}
               </Text>
             </Group>
             <Text size="sm" fw={600}>
-              Переменные сценария
+              {t.ivr.peremennyeStsenariya}
             </Text>
             <Code block data-testid="op-outputs">
               {json(res.outputs)}
@@ -371,7 +375,7 @@ function TestOperation({ op, onClose }: { op: Row; onClose(): void }) {
             {res.response !== undefined && (
               <>
                 <Text size="sm" fw={600}>
-                  Ответ системы (для настройки путей)
+                  {t.ivr.otvetSistemyDlyaNastroyki}
                 </Text>
                 <Code block>{json(res.response).slice(0, 4000)}</Code>
               </>
@@ -386,20 +390,24 @@ function TestOperation({ op, onClose }: { op: Row; onClose(): void }) {
 function OperationLog({ op, onClose }: { op: Row; onClose(): void }) {
   const log = useList(`/integrations/${op.id}/log`);
   return (
-    <Modal opened onClose={onClose} title={`Журнал: ${String(op.name)}`} size="lg">
+    <Modal opened onClose={onClose} title={t.ivr.zhurnal(String(op.name))} size="lg">
       <Table striped>
         <Table.Tbody>
           {(log.data ?? []).map((r, i) => (
             <Table.Tr key={i}>
               <Table.Td>{new Date(String(r.at)).toLocaleString('ru-RU')}</Table.Td>
               <Table.Td>
-                {{ ivr: 'IVR', bot: 'бот', card: 'карточка', test: 'проверка' }[String(r.source)] ??
-                  String(r.source)}
+                {{ ivr: 'IVR', bot: t.ivr.bot, card: t.ivr.kartochka, test: t.ivr.proverka2 }[
+                  String(r.source)
+                ] ?? String(r.source)}
               </Table.Td>
               <Table.Td>
-                <Badge color={r.ok ? 'green' : 'red'}>{r.ok ? 'успех' : 'ошибка'}</Badge>
+                <Badge color={r.ok ? 'green' : 'red'}>{r.ok ? t.ivr.uspekh : t.ivr.oshibka}</Badge>
               </Table.Td>
-              <Table.Td>{String(r.durationMs)} мс</Table.Td>
+              <Table.Td>
+                {String(r.durationMs)}
+                {t.ivr.ms2}
+              </Table.Td>
               <Table.Td>{String(r.error ?? '')}</Table.Td>
             </Table.Tr>
           ))}
@@ -417,88 +425,88 @@ export function IntegrationsPage() {
     <>
       <DictPage
         kind="integrations"
-        title="Интеграционные операции"
+        title={t.ivr.integratsionnyeOperatsii}
         columns={[
-          { key: 'code', label: 'Код' },
-          { key: 'name', label: 'Название' },
-          { key: 'url', label: 'Запрос', render: (r) => `${String(r.method)} ${String(r.url)}` },
-          { key: 'showInCard', label: 'В карточке', render: (r) => (r.showInCard ? 'да' : '') },
+          { key: 'code', label: t.ivr.kod },
+          { key: 'name', label: t.ivr.nazvanie },
+          { key: 'url', label: t.ivr.zapros, render: (r) => `${String(r.method)} ${String(r.url)}` },
+          { key: 'showInCard', label: t.ivr.vKartochke, render: (r) => (r.showInCard ? t.ivr.da : '') },
         ]}
         rowActions={(r) => (
           <>
             <Button size="xs" variant="light" color="teal" onClick={() => setTest(r)} data-testid="op-test">
-              Проверить
+              {t.ivr.proverit}
             </Button>
             <Button size="xs" variant="subtle" onClick={() => setLog(r)}>
-              Журнал
+              {t.ivr.zhurnal2}
             </Button>
           </>
         )}
         fields={[
-          { key: 'code', label: 'Код', required: true, placeholder: 'selfservice.balance' },
-          { key: 'name', label: 'Название', required: true },
+          { key: 'code', label: t.ivr.kod, required: true, placeholder: 'selfservice.balance' },
+          { key: 'name', label: t.ivr.nazvanie, required: true },
           {
             key: 'method',
-            label: 'Метод',
+            label: t.ivr.metod,
             type: 'select',
             options: ['GET', 'POST', 'PUT'].map((m) => ({ value: m, label: m })),
           },
           {
             key: 'url',
-            label: 'URL (шаблон)',
+            label: t.ivr.urlShablon,
             required: true,
-            description: 'Входные параметры — {{имя}}, например http://crm.local/balance?phone={{phone}}',
+            description: t.ivr.vkhodnyeParametryImyaNaprimer,
           },
           {
             key: 'inputsJson',
-            label: 'Входные параметры (JSON)',
+            label: t.ivr.vkhodnyeParametryJson,
             type: 'textarea',
-            description: '[{"name":"phone","label":"Телефон","sample":"+375291234567"}]',
+            description: t.ivr.namePhoneLabelTelefon,
           },
           {
             key: 'outputsJson',
-            label: 'Результат → переменные (JSON)',
+            label: t.ivr.rezultatPeremennyeJson,
             type: 'textarea',
-            description: 'Путь в ответе: [{"name":"balance","label":"Баланс","path":"$.data.balance"}]',
+            description: t.ivr.putVOtveteName,
           },
           {
             key: 'headersJson',
-            label: 'Заголовки (JSON)',
+            label: t.ivr.zagolovkiJson,
             type: 'textarea',
             description: '{"X-Client": "cc"}',
           },
-          { key: 'body', label: 'Тело запроса (для POST/PUT)', type: 'textarea' },
+          { key: 'body', label: t.ivr.teloZaprosaDlyaPost, type: 'textarea' },
           {
             key: 'authType',
-            label: 'Авторизация',
+            label: t.ivr.avtorizatsiya,
             type: 'select',
             options: [
-              { value: 'none', label: 'Нет' },
-              { value: 'bearer', label: 'Bearer-токен' },
-              { value: 'basic', label: 'Логин и пароль (Basic)' },
-              { value: 'header', label: 'Ключ в заголовке' },
+              { value: 'none', label: t.no },
+              { value: 'bearer', label: t.ivr.bearerToken },
+              { value: 'basic', label: t.ivr.loginIParolBasic },
+              { value: 'header', label: t.ivr.klyuchVZagolovke },
             ],
           },
-          { key: 'authUsername', label: 'Логин', show: (v) => v.authType === 'basic' },
-          { key: 'authHeader', label: 'Имя заголовка', show: (v) => v.authType === 'header' },
+          { key: 'authUsername', label: t.ivr.login, show: (v) => v.authType === 'basic' },
+          { key: 'authHeader', label: t.ivr.imyaZagolovka, show: (v) => v.authType === 'header' },
           {
             key: 'authSecret',
-            label: 'Секрет (токен/пароль/ключ)',
+            label: t.ivr.sekretTokenParolKlyuch,
             type: 'password',
             show: (v) => !!v.authType && v.authType !== 'none',
-            description: 'Хранится зашифрованным; пустое поле при изменении — оставить прежний',
+            description: t.ivr.khranitsyaZashifrovannymPustoePole,
           },
-          { key: 'timeoutMs', label: 'Таймаут, мс', type: 'number' },
+          { key: 'timeoutMs', label: t.ivr.taymautMs, type: 'number' },
           {
             key: 'fallbackJson',
-            label: 'Значения при ошибке (JSON)',
+            label: t.ivr.znacheniyaPriOshibkeJson,
             type: 'textarea',
-            description: 'Переменные при сбое/таймауте; сценарий всё равно идёт по выходу «ошибка»',
+            description: t.ivr.peremennyePriSboeTaymaute,
           },
-          { key: 'showInCard', label: 'Показывать в карточке клиента', type: 'switch' },
+          { key: 'showInCard', label: t.ivr.pokazyvatVKartochkeKlienta, type: 'switch' },
           {
             key: 'cardInput',
-            label: 'Параметр, в который подставить телефон клиента',
+            label: t.ivr.parametrVKotoryyPodstavit,
             show: (v) => !!v.showInCard,
           },
         ]}
@@ -543,10 +551,10 @@ export function IntegrationsPage() {
             auth.secret = authSecret ? String(authSecret) : editing ? '********' : undefined;
           return {
             ...rest,
-            inputs: parseJson('Входные параметры', inputsJson, []),
-            outputs: parseJson('Результат', outputsJson, []),
-            headers: parseJson('Заголовки', headersJson, {}),
-            fallback: parseJson('Значения при ошибке', fallbackJson, {}),
+            inputs: parseJson(t.ivr.vkhodnyeParametry, inputsJson, []),
+            outputs: parseJson(t.ivr.rezultat, outputsJson, []),
+            headers: parseJson(t.ivr.zagolovki, headersJson, {}),
+            fallback: parseJson(t.ivr.znacheniyaPriOshibke, fallbackJson, {}),
             auth,
           };
         }}
@@ -587,9 +595,9 @@ export function ExternalDataPanel({
   return (
     <Stack gap={6} data-testid="external-data">
       <Group justify="space-between">
-        <Title order={6}>Данные из внешних систем</Title>
+        <Title order={6}>{t.ivr.dannyeIzVneshnikhSistem}</Title>
         <Button size="compact-xs" variant="subtle" onClick={() => void q.refetch()} loading={q.isFetching}>
-          Обновить
+          {t.update.reload}
         </Button>
       </Group>
       {blocks.map((b) => (
@@ -605,7 +613,8 @@ export function ExternalDataPanel({
             ))
           ) : (
             <Text size="xs" c="red">
-              Недоступно: {b.error}
+              {t.ivr.nedostupno}
+              {b.error}
             </Text>
           )}
         </Stack>

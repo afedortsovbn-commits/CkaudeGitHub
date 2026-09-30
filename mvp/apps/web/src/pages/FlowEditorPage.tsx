@@ -65,6 +65,7 @@ import { ApiError, errorText, get, patch, post } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { options, type Row, useAction, useList } from '../lib/data';
 import { AudioPreview } from './IvrAdminPages';
+import { t } from '../lib/i18n';
 
 // ------------------------------------------------------------------ список сценариев
 
@@ -80,26 +81,26 @@ export function FlowListPage({ kind = 'voice' }: { kind?: FlowKind }) {
   const [dids, setDids] = useState<string[]>([]);
   const create = useAction(
     () => post<Row>('/flows', { name, kind, dids: text ? [] : dids }).then((f) => nav(`${base}/${f.id}`)),
-    'Сценарий создан',
+    t.flowEditor.stsenariySozdan,
   );
   const toggle = useAction((r: Row) => post(`/flows/${r.id}/${r.isActive ? 'deactivate' : 'activate'}`));
   return (
     <>
       <Group justify="space-between" mb="md">
-        <Title order={3}>{text ? 'Боты текстовых каналов' : 'Сценарии IVR'}</Title>
+        <Title order={3}>{text ? t.flowEditor.botyTekstovykhKanalov : t.flowEditor.stsenariiIvr}</Title>
         {can('admin.directories') && (
           <Button onClick={() => setOpen(true)} data-testid="flow-new">
-            Новый сценарий
+            {t.flowEditor.novyyStsenariy}
           </Button>
         )}
       </Group>
       <Table striped highlightOnHover data-testid="flow-list">
         <Table.Thead>
           <Table.Tr>
-            <Table.Th>Название</Table.Th>
-            <Table.Th>{text ? 'Каналы' : 'Номера (DID)'}</Table.Th>
-            <Table.Th>Опубликована</Table.Th>
-            <Table.Th>Статус</Table.Th>
+            <Table.Th>{t.flowEditor.nazvanie}</Table.Th>
+            <Table.Th>{text ? t.flowEditor.kanaly : t.flowEditor.nomeraDid}</Table.Th>
+            <Table.Th>{t.flowEditor.opublikovana}</Table.Th>
+            <Table.Th>{t.flowEditor.status}</Table.Th>
             <Table.Th />
           </Table.Tr>
         </Table.Thead>
@@ -114,19 +115,23 @@ export function FlowListPage({ kind = 'voice' }: { kind?: FlowKind }) {
                   ? (channels.data ?? [])
                       .filter((c) => c.botFlowId === f.id)
                       .map((c) => String(c.name))
-                      .join(', ') || '— (назначается в «Каналах»)'
+                      .join(', ') || t.flowEditor.naznachaetsyaVKanalakh
                   : ((f.dids as string[]) ?? []).join(', ') || '—'}
               </Table.Td>
               <Table.Td>
                 {f.publishedVersion ? (
-                  `версия ${String(f.publishedVersion)}`
+                  t.flowEditor.versiya(String(f.publishedVersion))
                 ) : (
-                  <Badge color="gray">не опубликован</Badge>
+                  <Badge color="gray">{t.flowEditor.neOpublikovan}</Badge>
                 )}{' '}
-                {f.hasUnpublished && f.publishedVersion ? <Badge color="orange">есть изменения</Badge> : null}
+                {f.hasUnpublished && f.publishedVersion ? (
+                  <Badge color="orange">{t.flowEditor.estIzmeneniya}</Badge>
+                ) : null}
               </Table.Td>
               <Table.Td>
-                <Badge color={f.isActive ? 'green' : 'gray'}>{f.isActive ? 'Активен' : 'Отключён'}</Badge>
+                <Badge color={f.isActive ? 'green' : 'gray'}>
+                  {f.isActive ? t.flowEditor.aktiven : t.flowEditor.otklyuchen}
+                </Badge>
               </Table.Td>
               <Table.Td>
                 {can('admin.directories') && (
@@ -136,7 +141,7 @@ export function FlowListPage({ kind = 'voice' }: { kind?: FlowKind }) {
                     color={f.isActive ? 'red' : 'green'}
                     onClick={() => toggle.mutate(f)}
                   >
-                    {f.isActive ? 'Отключить' : 'Включить'}
+                    {f.isActive ? t.deactivate : t.activate}
                   </Button>
                 )}
               </Table.Td>
@@ -144,18 +149,22 @@ export function FlowListPage({ kind = 'voice' }: { kind?: FlowKind }) {
           ))}
         </Table.Tbody>
       </Table>
-      <Modal opened={open} onClose={() => setOpen(false)} title={text ? 'Новый бот' : 'Новый сценарий IVR'}>
+      <Modal
+        opened={open}
+        onClose={() => setOpen(false)}
+        title={text ? t.flowEditor.novyyBot : t.flowEditor.novyyStsenariyIvr}
+      >
         <Stack>
           <TextInput
-            label="Название"
+            label={t.flowEditor.nazvanie}
             value={name}
             onChange={(e) => setName(e.currentTarget.value)}
             data-testid="flow-name"
           />
           {!text && (
             <TagsInput
-              label="Номера (DID), на которые отвечает сценарий"
-              description="Можно назначить позже; номер должен быть у голосового канала"
+              label={t.flowEditor.nomeraDidNaKotorye}
+              description={t.flowEditor.mozhnoNaznachitPozzheNomer}
               value={dids}
               onChange={setDids}
             />
@@ -166,7 +175,7 @@ export function FlowListPage({ kind = 'voice' }: { kind?: FlowKind }) {
             loading={create.isPending}
             data-testid="flow-create"
           >
-            Создать
+            {t.create}
           </Button>
         </Stack>
       </Modal>
@@ -204,7 +213,7 @@ function useRefs(): Refs {
 }
 
 const audioName = (refs: Refs, id: string) =>
-  String(refs.audio.find((a) => a.id === id)?.name ?? '(файл удалён)');
+  String(refs.audio.find((a) => a.id === id)?.name ?? t.flowEditor.faylUdalen);
 
 // ------------------------------------------------------------------ узел на холсте
 
@@ -255,7 +264,7 @@ const NodeView = memo(function NodeView({ data, selected }: NodeProps<CcNode>) {
       <Box p={6} pb={exits.length ? 18 : 6}>
         {(data.name || data.type === 'start') && (
           <Text size="xs" fw={600} truncate>
-            {data.name || 'Начало'}
+            {data.name || t.flowEditor.nachalo}
           </Text>
         )}
         {data.summary && (
@@ -310,7 +319,7 @@ function summary(n: { type: NodeType; params: Record<string, unknown> }, refs: R
     case 'buttons':
       return String(p.text ?? '');
     case 'handoff':
-      return String(refs.queues.find((q) => q.id === p.queueId)?.name ?? 'очередь канала');
+      return String(refs.queues.find((q) => q.id === p.queueId)?.name ?? t.flowEditor.ocheredKanala);
     case 'menu':
       return `${names(p.audio)} · ${((p.digits as string[]) ?? []).join(' ')}`;
     case 'queue':
@@ -328,7 +337,7 @@ function summary(n: { type: NodeType; params: Record<string, unknown> }, refs: R
     case 'transfer':
       return String(p.number ?? '');
     case 'voicemail':
-      return p.mode === 'callback' ? 'заказ перезвона' : 'голосовое сообщение';
+      return p.mode === 'callback' ? t.flowEditor.zakazPerezvona : t.flowEditor.golosovoeSoobshchenie;
     default:
       return '';
   }
@@ -356,7 +365,7 @@ function NodeParams({
     <Stack gap={2}>
       <MultiSelect
         label={label}
-        description={description ?? 'Файлы звучат в порядке выбора'}
+        description={description ?? t.flowEditor.faylyZvuchatVPoryadke}
         data={prompts}
         value={(p[key] as string[]) ?? []}
         onChange={(v) => set(key, v)}
@@ -389,168 +398,171 @@ function NodeParams({
       onChange={(v) => set(key, v === '' ? undefined : Number(v))}
     />
   );
-  const t = node.data.type;
+  const nodeType = node.data.type;
   return (
     <Stack gap="xs">
-      {t !== 'start' && (
+      {nodeType !== 'start' && (
         <TextInput
-          label="Подпись узла"
+          label={t.flowEditor.podpisUzla}
           value={node.data.name ?? ''}
           onChange={(e) => onChange({ name: e.currentTarget.value })}
           data-testid="param-name"
         />
       )}
-      {(t === 'play' || (t === 'hangup' && kind === 'voice')) &&
-        audioMulti('audio', t === 'hangup' ? 'Прощальная фраза' : 'Фразы')}
-      {kind === 'text' && <TextNodeParams t={t} p={p} refs={refs} set={set} />}
-      {t === 'announcements' && (
+      {(nodeType === 'play' || (nodeType === 'hangup' && kind === 'voice')) &&
+        audioMulti('audio', nodeType === 'hangup' ? t.flowEditor.proshchalnayaFraza : t.flowEditor.frazy)}
+      {kind === 'text' && <TextNodeParams t={nodeType} p={p} refs={refs} set={set} />}
+      {nodeType === 'announcements' && (
         <Text size="xs" c="dimmed">
-          Звучат действующие объявления из раздела «Объявления о сбоях». Если их нет — сценарий сразу идёт
-          дальше.
+          {t.flowEditor.zvuchatDeystvuyushchieObyavleniyaIz}
         </Text>
       )}
-      {t === 'menu' && (
+      {nodeType === 'menu' && (
         <>
-          {audioMulti('audio', 'Фраза меню')}
+          {audioMulti('audio', t.flowEditor.frazaMenyu)}
           <MultiSelect
-            label="Пункты (цифры)"
+            label={t.flowEditor.punktyTsifry}
             data={MENU_DIGITS}
             value={(p.digits as string[]) ?? []}
             onChange={(v) => set('digits', v)}
             data-testid="param-digits"
           />
           <Select
-            label="Цифра «вернуться в предыдущее меню»"
+            label={t.flowEditor.tsifraVernutsyaVPredydushchee}
             data={MENU_DIGITS}
             value={(p.backDigit as string) || null}
             onChange={(v) => set('backDigit', v ?? undefined)}
             clearable
           />
-          {num('timeoutSec', 'Ожидание ввода, с', 1, 60)}
-          {num('retries', 'Повторов при ошибке или тишине', 0, 10)}
-          {audioMulti('invalidAudio', 'Фраза при неверном вводе', ' ')}
+          {num('timeoutSec', t.flowEditor.ozhidanieVvodaS, 1, 60)}
+          {num('retries', t.flowEditor.povtorovPriOshibkeIli, 0, 10)}
+          {audioMulti('invalidAudio', t.flowEditor.frazaPriNevernomVvode, ' ')}
         </>
       )}
-      {t === 'schedule' && (
+      {nodeType === 'schedule' && (
         <Select
-          label="Расписание"
+          label={t.flowEditor.raspisanie}
           data={options(refs.schedules)}
           value={(p.scheduleId as string) || null}
           onChange={(v) => set('scheduleId', v ?? '')}
         />
       )}
-      {t === 'condition' && (
+      {nodeType === 'condition' && (
         <>
           <TextInput
-            label="Переменная"
+            label={t.flowEditor.peremennaya}
             value={String(p.variable ?? '')}
             onChange={(e) => set('variable', e.currentTarget.value)}
           />
           <Select
-            label="Условие"
+            label={t.flowEditor.uslovie}
             data={[
-              { value: 'eq', label: 'равно' },
-              { value: 'ne', label: 'не равно' },
-              { value: 'gt', label: 'больше' },
-              { value: 'ge', label: 'больше или равно' },
-              { value: 'lt', label: 'меньше' },
-              { value: 'le', label: 'меньше или равно' },
-              { value: 'contains', label: 'содержит' },
-              { value: 'empty', label: 'пусто' },
-              { value: 'notEmpty', label: 'не пусто' },
+              { value: 'eq', label: t.flowEditor.ravno },
+              { value: 'ne', label: t.flowEditor.neRavno },
+              { value: 'gt', label: t.flowEditor.bolshe },
+              { value: 'ge', label: t.flowEditor.bolsheIliRavno },
+              { value: 'lt', label: t.flowEditor.menshe },
+              { value: 'le', label: t.flowEditor.mensheIliRavno },
+              { value: 'contains', label: t.flowEditor.soderzhit },
+              { value: 'empty', label: t.flowEditor.pusto },
+              { value: 'notEmpty', label: t.flowEditor.nePusto },
             ]}
             value={String(p.op ?? 'eq')}
             onChange={(v) => set('op', v)}
           />
           {!['empty', 'notEmpty'].includes(String(p.op)) && (
             <TextInput
-              label="Значение"
+              label={t.flowEditor.znachenie}
               value={String(p.value ?? '')}
               onChange={(e) => set('value', e.currentTarget.value)}
             />
           )}
         </>
       )}
-      {t === 'setVariable' && (
+      {nodeType === 'setVariable' && (
         <>
           <TextInput
-            label="Переменная"
+            label={t.flowEditor.peremennaya}
             value={String(p.variable ?? '')}
             onChange={(e) => set('variable', e.currentTarget.value)}
           />
           <TextInput
-            label="Значение ({{переменная}})"
+            label={t.flowEditor.znacheniePeremennaya}
             value={String(p.value ?? '')}
             onChange={(e) => set('value', e.currentTarget.value)}
           />
         </>
       )}
-      {t === 'queue' && (
+      {nodeType === 'queue' && (
         <>
           <Select
-            label="Очередь"
+            label={t.flowEditor.ochered}
             data={options(refs.queues)}
             value={(p.queueId as string) || null}
             onChange={(v) => set('queueId', v ?? '')}
             data-testid="param-queue"
           />
           <Select
-            label="Тема (навык)"
+            label={t.flowEditor.temaNavyk}
             data={refs.topics.map((x) => ({ value: x.id, label: String(x.pathName ?? x.name) }))}
             value={(p.topicId as string) || null}
             onChange={(v) => set('topicId', v)}
             clearable
             searchable
           />
-          {num('priority', 'Надбавка приоритета', 0, 10000)}
-          {audioMulti('announceAudio', 'Сообщение в очереди', 'Звучит периодически вместо музыки')}
-          {num('announceEverySec', 'Периодичность сообщения, с', 10, 600)}
-          {num('maxWaitSec', 'Максимальное ожидание, с (выход «долгое ожидание»)', 10, 7200)}
+          {num('priority', t.flowEditor.nadbavkaPrioriteta, 0, 10000)}
+          {audioMulti(
+            'announceAudio',
+            t.flowEditor.soobshchenieVOcheredi,
+            t.flowEditor.zvuchitPeriodicheskiVmestoMuzyki,
+          )}
+          {num('announceEverySec', t.flowEditor.periodichnostSoobshcheniyaS, 10, 600)}
+          {num('maxWaitSec', t.flowEditor.maksimalnoeOzhidanieSVykhod, 10, 7200)}
           <Switch
-            label="Проверять операторов на смене (выход «нет операторов»)"
+            label={t.flowEditor.proveryatOperatorovNaSmene}
             checked={!!p.checkAgents}
             onChange={(e) => set('checkAgents', e.currentTarget.checked)}
           />
           <Text size="xs" c="dimmed">
-            Выход «после разговора» — продолжение, когда оператор завершил разговор (автосообщение, оценка).
+            {t.flowEditor.vykhodPosleRazgovoraProdolzhenie}
           </Text>
         </>
       )}
-      {t === 'voicemail' && (
+      {nodeType === 'voicemail' && (
         <>
           <Select
-            label="Режим"
+            label={t.flowEditor.rezhim}
             data={[
-              { value: 'voicemail', label: 'Голосовое сообщение' },
-              { value: 'callback', label: 'Только заказ перезвона' },
+              { value: 'voicemail', label: t.flowEditor.golosovoeSoobshchenie2 },
+              { value: 'callback', label: t.flowEditor.tolkoZakazPerezvona },
             ]}
             value={String(p.mode ?? 'voicemail')}
             onChange={(v) => set('mode', v)}
           />
-          {audioMulti('audio', 'Приглашение')}
-          {p.mode !== 'callback' && num('maxSec', 'Длительность сообщения до, с', 5, 600)}
+          {audioMulti('audio', t.flowEditor.priglashenie)}
+          {p.mode !== 'callback' && num('maxSec', t.flowEditor.dlitelnostSoobshcheniyaDoS, 5, 600)}
           <Select
-            label="Очередь задачи «перезвонить»"
+            label={t.flowEditor.ocheredZadachiPerezvonit}
             data={options(refs.queues)}
             value={(p.queueId as string) || null}
             onChange={(v) => set('queueId', v ?? '')}
           />
         </>
       )}
-      {t === 'http' && <HttpParamsEditor p={p} refs={refs} set={set} kind={kind} />}
-      {t === 'sayNumber' && (
+      {nodeType === 'http' && <HttpParamsEditor p={p} refs={refs} set={set} kind={kind} />}
+      {nodeType === 'sayNumber' && (
         <>
           <TextInput
-            label="Переменная с числом"
+            label={t.flowEditor.peremennayaSChislom}
             value={String(p.variable ?? '')}
             onChange={(e) => set('variable', e.currentTarget.value)}
           />
-          {audioMulti('before', 'Фраза перед числом', ' ')}
+          {audioMulti('before', t.flowEditor.frazaPeredChislom, ' ')}
           <Select
-            label="Род единицы"
+            label={t.flowEditor.rodEdinitsy}
             data={[
-              { value: 'm', label: 'мужской (один бонус)' },
-              { value: 'f', label: 'женский (одна копейка)' },
+              { value: 'm', label: t.flowEditor.muzhskoyOdinBonus },
+              { value: 'f', label: t.flowEditor.zhenskiyOdnaKopeyka },
             ]}
             value={String(p.gender ?? 'm')}
             onChange={(v) => set('gender', v)}
@@ -558,30 +570,36 @@ function NodeParams({
           {(['one', 'few', 'many'] as const).map((k) =>
             audioOne(
               (p.unit as Record<string, string> | undefined)?.[k],
-              { one: 'Единица: 1 (бонус)', few: 'Единица: 2 (бонуса)', many: 'Единица: 5 (бонусов)' }[k],
+              {
+                one: t.flowEditor.edinitsa1Bonus,
+                few: t.flowEditor.edinitsa2Bonusa,
+                many: t.flowEditor.edinitsa5Bonusov,
+              }[k],
               (v) => set('unit', { ...((p.unit as object) ?? {}), [k]: v }),
             ),
           )}
-          {audioMulti('after', 'Фраза после числа', ' ')}
+          {audioMulti('after', t.flowEditor.frazaPosleChisla, ' ')}
           <Text size="xs" c="dimmed">
-            Цифры собираются из фрагментов аудиобиблиотеки ({NUMBER_FRAGMENTS.length} шт.).
+            {t.flowEditor.tsifrySobirayutsyaIzFragmentov}
+            {NUMBER_FRAGMENTS.length}
+            {t.flowEditor.sht}
           </Text>
         </>
       )}
-      {t === 'transfer' && (
+      {nodeType === 'transfer' && (
         <TextInput
-          label="Номер"
+          label={t.flowEditor.nomer}
           value={String(p.number ?? '')}
           onChange={(e) => set('number', e.currentTarget.value)}
           placeholder="+375 17 000-00-00"
         />
       )}
-      {t === 'csat' && (
+      {nodeType === 'csat' && (
         <>
-          {audioMulti('audio', 'Вопрос («оцените от 1 до 5»)')}
-          {num('timeoutSec', 'Ожидание ответа, с', 1, 60)}
-          {num('retries', 'Повторов', 0, 5)}
-          {audioMulti('thanksAudio', 'Благодарность', ' ')}
+          {audioMulti('audio', t.flowEditor.voprosOtseniteOt1)}
+          {num('timeoutSec', t.flowEditor.ozhidanieOtvetaS, 1, 60)}
+          {num('retries', t.flowEditor.povtorov, 0, 5)}
+          {audioMulti('thanksAudio', t.flowEditor.blagodarnost, ' ')}
         </>
       )}
     </Stack>
@@ -590,7 +608,7 @@ function NodeParams({
 
 /** Свойства текстовых узлов бота (Ф7): сообщение, кнопки, сбор поля, перевод на оператора, завершение. */
 function TextNodeParams({
-  t,
+  t: nodeType,
   p,
   refs,
   set,
@@ -603,7 +621,7 @@ function TextNodeParams({
   const textArea = (key: string, label: string, description?: string) => (
     <Textarea
       label={label}
-      description={description ?? 'Можно вставлять переменные: {{name}}, {{phone}}, {{переменная}}'}
+      description={description ?? t.flowEditor.mozhnoVstavlyatPeremennyeName}
       autosize
       minRows={2}
       value={String(p[key] ?? '')}
@@ -621,17 +639,21 @@ function TextNodeParams({
     />
   );
   const buttons = (p.buttons as { id: string; label: string }[] | undefined) ?? [];
-  switch (t) {
+  switch (nodeType) {
     case 'message':
-      return textArea('text', 'Текст сообщения');
+      return textArea('text', t.flowEditor.tekstSoobshcheniya);
     case 'hangup':
-      return textArea('text', 'Прощальное сообщение (необязательно)', 'Диалог закрывается после него');
+      return textArea(
+        'text',
+        t.flowEditor.proshchalnoeSoobshchenieNeobyazateln,
+        t.flowEditor.dialogZakryvaetsyaPosleNego,
+      );
     case 'buttons':
       return (
         <>
-          {textArea('text', 'Вопрос')}
+          {textArea('text', t.flowEditor.vopros)}
           <Text size="sm" fw={500}>
-            Кнопки
+            {t.flowEditor.knopki}
           </Text>
           {buttons.map((b, i) => (
             <Group key={b.id} gap={4} wrap="nowrap">
@@ -668,65 +690,68 @@ function TextNodeParams({
             onClick={() =>
               set('buttons', [
                 ...buttons,
-                { id: `b${Math.random().toString(36).slice(2, 7)}`, label: `Вариант ${buttons.length + 1}` },
+                {
+                  id: `b${Math.random().toString(36).slice(2, 7)}`,
+                  label: t.flowEditor.variant(buttons.length + 1),
+                },
               ])
             }
             data-testid="param-button-add"
           >
-            + кнопка
+            {t.flowEditor.knopka}
           </Button>
           <TextInput
-            label="Сохранить выбор в переменную"
+            label={t.flowEditor.sokhranitVyborVPeremennuyu}
             value={String(p.variable ?? '')}
             onChange={(e) => set('variable', e.currentTarget.value)}
           />
-          {textArea('retryText', 'Если ответ не совпал с кнопкой', ' ')}
-          {num('retries', 'Повторов вопроса (затем выход «другое»)', 0, 10)}
+          {textArea('retryText', t.flowEditor.esliOtvetNeSovpal, ' ')}
+          {num('retries', t.flowEditor.povtorovVoprosaZatemVykhod, 0, 10)}
         </>
       );
     case 'ask':
       return (
         <>
-          {textArea('text', 'Вопрос')}
+          {textArea('text', t.flowEditor.vopros)}
           <TextInput
-            label="Переменная для ответа"
+            label={t.flowEditor.peremennayaDlyaOtveta}
             value={String(p.variable ?? '')}
             onChange={(e) => set('variable', e.currentTarget.value)}
             data-testid="param-variable"
           />
           <Select
-            label="Формат ответа"
+            label={t.flowEditor.formatOtveta}
             data={[
-              { value: 'text', label: 'Любой текст' },
-              { value: 'phone', label: 'Телефон' },
+              { value: 'text', label: t.flowEditor.lyuboyTekst },
+              { value: 'phone', label: t.flowEditor.telefon },
               { value: 'email', label: 'Email' },
-              { value: 'number', label: 'Число' },
+              { value: 'number', label: t.flowEditor.chislo },
             ]}
             value={String(p.validation ?? 'text')}
             onChange={(v) => set('validation', v ?? 'text')}
           />
           <Select
-            label="Сохранить в карточку клиента"
+            label={t.flowEditor.sokhranitVKartochkuKlienta}
             data={[
-              { value: 'phone', label: 'Телефон (и узнавать клиента по нему)' },
-              { value: 'email', label: 'Email (и узнавать клиента по нему)' },
-              { value: 'name', label: 'Имя' },
+              { value: 'phone', label: t.flowEditor.telefonIUznavatKlienta },
+              { value: 'email', label: t.flowEditor.emailIUznavatKlienta },
+              { value: 'name', label: t.flowEditor.imya },
             ]}
             value={(p.saveTo as string) || null}
             onChange={(v) => set('saveTo', v)}
             clearable
           />
-          {textArea('retryText', 'Если формат не подошёл', ' ')}
-          {num('retries', 'Повторов (затем выход «не получено»)', 0, 10)}
+          {textArea('retryText', t.flowEditor.esliFormatNePodoshel, ' ')}
+          {num('retries', t.flowEditor.povtorovZatemVykhodNe, 0, 10)}
         </>
       );
     case 'handoff':
       return (
         <>
-          {textArea('text', 'Сообщение клиенту при переводе')}
+          {textArea('text', t.flowEditor.soobshchenieKlientuPriPerevode)}
           <Select
-            label="Очередь"
-            description="Пусто — очередь канала по умолчанию"
+            label={t.flowEditor.ochered}
+            description={t.flowEditor.pustoOcheredKanalaPo}
             data={options(refs.queues)}
             value={(p.queueId as string) || null}
             onChange={(v) => set('queueId', v ?? '')}
@@ -734,16 +759,16 @@ function TextNodeParams({
             data-testid="param-queue"
           />
           <Select
-            label="Тема (навык)"
+            label={t.flowEditor.temaNavyk}
             data={refs.topics.map((x) => ({ value: x.id, label: String(x.pathName ?? x.name) }))}
             value={(p.topicId as string) || null}
             onChange={(v) => set('topicId', v)}
             clearable
             searchable
           />
-          {num('priority', 'Надбавка приоритета', 0, 10000)}
+          {num('priority', t.flowEditor.nadbavkaPrioriteta, 0, 10000)}
           <Text size="xs" c="dimmed">
-            Оператор увидит всю переписку с ботом и заметку с собранными данными.
+            {t.flowEditor.operatorUviditVsyuPerepisku}
           </Text>
         </>
       );
@@ -772,7 +797,7 @@ function HttpParamsEditor({
   return (
     <>
       <Select
-        label="Интеграционная операция"
+        label={t.flowEditor.integratsionnayaOperatsiya}
         data={options(refs.operations)}
         value={(p.operationId as string) || null}
         onChange={(v) => {
@@ -794,8 +819,8 @@ function HttpParamsEditor({
           label={`${i.label || i.name} (${i.name})`}
           description={
             kind === 'text'
-              ? 'Шаблон: {{phone}} — телефон клиента, {{переменная}} — например, ответ «Сбора поля»'
-              : 'Шаблон: {{caller}} — номер звонящего, {{переменная}}'
+              ? t.flowEditor.shablonPhoneTelefonKlienta
+              : t.flowEditor.shablonCallerNomerZvonyashchego
           }
           value={input[i.name] ?? ''}
           onChange={(e) => set('input', { ...input, [i.name]: e.currentTarget.value })}
@@ -803,7 +828,8 @@ function HttpParamsEditor({
       ))}
       {outputs.length > 0 && (
         <Text size="xs" c="dimmed">
-          Результат — в переменных: {outputs.map((o) => `${o.name} (${o.label || o.name})`).join(', ')}
+          {t.flowEditor.rezultatVPeremennykh}
+          {outputs.map((o) => `${o.name} (${o.label || o.name})`).join(', ')}
         </Text>
       )}
     </>
@@ -850,26 +876,26 @@ function TestRun({ graph, refs, onClose }: { graph: FlowGraph; refs: Refs; onClo
             ? `«${audioName(refs, x.id)}»`
             : x.kind === 'fragment'
               ? (NUMBER_FRAGMENTS.find((f) => f.key === x.key)?.label ?? x.key)
-              : '[объявления о сбоях]',
+              : t.flowEditor.obyavleniyaOSboyakh,
         )
         .join(' ');
     switch (a.type) {
       case 'play':
-        return `Звучит: ${media(a.media)}`;
+        return t.flowEditor.zvuchit(media(a.media));
       case 'collect':
-        return `Звучит: ${media(a.media)} — ждём цифру (${a.digits.join(', ')}), ${a.timeoutSec} с`;
+        return t.flowEditor.zvuchitZhdemTsifruS(media(a.media), a.digits.join(', '), a.timeoutSec);
       case 'http':
-        return `Запрос во внешнюю систему: ${JSON.stringify(a.input)}`;
+        return t.flowEditor.zaprosVoVneshnyuyuSistemu(JSON.stringify(a.input));
       case 'queue':
-        return `Клиент в очереди «${String(refs.queues.find((q) => q.id === a.queueId)?.name ?? '')}»`;
+        return t.flowEditor.klientVOcheredi(String(refs.queues.find((q) => q.id === a.queueId)?.name ?? ''));
       case 'voicemail':
         return a.mode === 'voicemail'
-          ? `Звучит: ${media(a.media)} — запись сообщения`
-          : 'Заказ обратного звонка';
+          ? t.flowEditor.zvuchitZapisSoobshcheniya(media(a.media))
+          : t.flowEditor.zakazObratnogoZvonka;
       case 'transfer':
-        return `Перевод на номер ${a.number}`;
+        return t.flowEditor.perevodNaNomer(a.number);
       case 'hangup':
-        return a.media.length ? `Звучит: ${media(a.media)} — отбой` : 'Отбой';
+        return a.media.length ? t.flowEditor.zvuchitOtboy(media(a.media)) : t.flowEditor.otboy;
       default:
         return a.type;
     }
@@ -880,7 +906,7 @@ function TestRun({ graph, refs, onClose }: { graph: FlowGraph; refs: Refs; onClo
     if (input) lines.push({ kind: 'input', text: input });
     for (const p of r.path) if (!p.exit) lines.push({ kind: 'node', text: `→ ${nodeName(p.nodeId)}` });
     for (const e of r.effects)
-      if (e.type === 'csat') lines.push({ kind: 'system', text: `Оценка сохранена: ${e.score}` });
+      if (e.type === 'csat') lines.push({ kind: 'system', text: t.flowEditor.otsenkaSokhranena(e.score) });
     lines.push({ kind: r.action.type === 'hangup' ? 'system' : 'say', text: describe(r.action) });
     setLog((l) => [...l, ...lines]);
     setStep(r);
@@ -898,32 +924,32 @@ function TestRun({ graph, refs, onClose }: { graph: FlowGraph; refs: Refs; onClo
       );
       await send(
         { type: 'http', ok: r.ok, outputs: r.outputs },
-        r.ok ? `Ответ: ${JSON.stringify(r.outputs)}` : `Ошибка: ${r.error}`,
+        r.ok ? t.flowEditor.otvet(JSON.stringify(r.outputs)) : t.flowEditor.oshibka(r.error),
       );
     } catch (e) {
-      await send({ type: 'http', ok: false, outputs: {} }, `Ошибка: ${errorText(e)}`);
+      await send({ type: 'http', ok: false, outputs: {} }, t.flowEditor.oshibka(errorText(e)));
     } finally {
       setBusy(false);
     }
   };
   const a = step?.action;
   return (
-    <Drawer opened onClose={onClose} title="Тестовый прогон" position="right" size="lg">
+    <Drawer opened onClose={onClose} title={t.flowEditor.testovyyProgon} position="right" size="lg">
       <Stack>
         <Group align="end">
           <TextInput
-            label="Номер звонящего ({{caller}})"
+            label={t.flowEditor.nomerZvonyashchegoCaller}
             value={caller}
             onChange={(e) => setCaller(e.currentTarget.value)}
           />
           <Button
             onClick={() => {
-              setLog([{ kind: 'system', text: `Звонок с номера ${caller}` }]);
-              apply(startFlow(graph, { caller, did: 'тест' }, ctx()));
+              setLog([{ kind: 'system', text: t.flowEditor.zvonokSNomera(caller) }]);
+              apply(startFlow(graph, { caller, did: t.flowEditor.test }, ctx()));
             }}
             data-testid="test-start"
           >
-            {step ? 'Начать заново' : 'Начать'}
+            {step ? t.flowEditor.nachatZanovo : t.flowEditor.nachat}
           </Button>
         </Group>
         <ScrollArea h={360} type="auto">
@@ -951,11 +977,11 @@ function TestRun({ graph, refs, onClose }: { graph: FlowGraph; refs: Refs; onClo
           <Card withBorder>
             {(a.type === 'play' || (a.type === 'voicemail' && a.mode === 'voicemail')) && (
               <Button onClick={() => void send({ type: 'done' })} data-testid="test-done">
-                {a.type === 'play' ? 'Фраза прозвучала' : 'Сообщение записано'}
+                {a.type === 'play' ? t.flowEditor.frazaProzvuchala : t.flowEditor.soobshchenieZapisano}
               </Button>
             )}
             {a.type === 'voicemail' && a.mode === 'callback' && (
-              <Button onClick={() => void send({ type: 'done' })}>Далее</Button>
+              <Button onClick={() => void send({ type: 'done' })}>{t.flowEditor.dalee}</Button>
             )}
             {a.type === 'collect' && (
               <Stack gap="xs">
@@ -964,29 +990,34 @@ function TestRun({ graph, refs, onClose }: { graph: FlowGraph; refs: Refs; onClo
                     <Button
                       key={d}
                       variant={a.digits.includes(d) ? 'filled' : 'default'}
-                      onClick={() => void send({ type: 'digit', digit: d }, `Нажато: ${d}`)}
+                      onClick={() => void send({ type: 'digit', digit: d }, t.flowEditor.nazhato(d))}
                       data-testid={`test-digit-${d}`}
                     >
                       {d}
                     </Button>
                   ))}
                 </SimpleGrid>
-                <Button variant="light" onClick={() => void send({ type: 'timeout' }, 'Тишина (таймаут)')}>
-                  Тишина
+                <Button
+                  variant="light"
+                  onClick={() => void send({ type: 'timeout' }, t.flowEditor.tishinaTaymaut)}
+                >
+                  {t.flowEditor.tishina}
                 </Button>
               </Stack>
             )}
             {a.type === 'http' && (
               <Group>
                 <Button onClick={() => void runHttp(a)} loading={busy} data-testid="test-http">
-                  Выполнить запрос
+                  {t.flowEditor.vypolnitZapros}
                 </Button>
                 <Button
                   variant="light"
                   color="red"
-                  onClick={() => void send({ type: 'http', ok: false, outputs: {} }, 'Ошибка (имитация)')}
+                  onClick={() =>
+                    void send({ type: 'http', ok: false, outputs: {} }, t.flowEditor.oshibkaImitatsiya)
+                  }
                 >
-                  Имитировать ошибку
+                  {t.flowEditor.imitirovatOshibku}
                 </Button>
               </Group>
             )}
@@ -994,36 +1025,39 @@ function TestRun({ graph, refs, onClose }: { graph: FlowGraph; refs: Refs; onClo
               <Group>
                 <Button
                   onClick={() =>
-                    void send({ type: 'queue', result: 'after' }, 'Оператор ответил и завершил разговор')
+                    void send({ type: 'queue', result: 'after' }, t.flowEditor.operatorOtvetilIZavershil)
                   }
                   data-testid="test-after"
                 >
-                  Разговор с оператором завершён
+                  {t.flowEditor.razgovorSOperatoromZavershen}
                 </Button>
                 <Button
                   variant="light"
-                  onClick={() => void send({ type: 'queue', result: 'timeout' }, 'Долгое ожидание')}
+                  onClick={() =>
+                    void send({ type: 'queue', result: 'timeout' }, t.flowEditor.dolgoeOzhidanie)
+                  }
                 >
-                  Долгое ожидание
+                  {t.flowEditor.dolgoeOzhidanie}
                 </Button>
                 <Button
                   variant="light"
-                  onClick={() => void send({ type: 'queue', result: 'noAgents' }, 'Нет операторов')}
+                  onClick={() => void send({ type: 'queue', result: 'noAgents' }, t.flowEditor.netOperatorov)}
                 >
-                  Нет операторов
+                  {t.flowEditor.netOperatorov}
                 </Button>
               </Group>
             )}
             {a.type === 'transfer' && (
-              <Button onClick={() => void send({ type: 'transfer', ok: false }, 'Номер не ответил')}>
-                Номер не ответил
+              <Button onClick={() => void send({ type: 'transfer', ok: false }, t.flowEditor.nomerNeOtvetil)}>
+                {t.flowEditor.nomerNeOtvetil}
               </Button>
             )}
           </Card>
         )}
         {step && (
           <Text size="xs" c="dimmed">
-            Переменные: {JSON.stringify(step.state.vars)}
+            {t.flowEditor.peremennye}
+            {JSON.stringify(step.state.vars)}
           </Text>
         )}
       </Stack>
@@ -1042,7 +1076,7 @@ interface ChatLine {
  * идут подряд до вопроса; запрос во внешнюю систему — настоящий, через api.
  */
 function ChatTestRun({ graph, refs, onClose }: { graph: FlowGraph; refs: Refs; onClose(): void }) {
-  const [name, setName] = useState('Анна');
+  const [name, setName] = useState(t.flowEditor.anna);
   const [lines, setLines] = useState<ChatLine[]>([]);
   const [step, setStep] = useState<StepResult | null>(null);
   const [input, setInput] = useState('');
@@ -1068,7 +1102,7 @@ function ChatTestRun({ graph, refs, onClose }: { graph: FlowGraph; refs: Refs; o
     for (let i = 0; r && i < 100; i++) {
       for (const e of r.effects)
         if (e.type === 'contact')
-          out.push({ from: 'system', text: `В карточку клиента: ${e.field} = ${e.value}` });
+          out.push({ from: 'system', text: t.flowEditor.vKartochkuKlienta(e.field, e.value) });
       const a = r.action;
       if (a.type === 'say') {
         out.push({ from: 'bot', text: a.text });
@@ -1077,19 +1111,19 @@ function ChatTestRun({ graph, refs, onClose }: { graph: FlowGraph; refs: Refs; o
       }
       if (a.type === 'prompt') out.push({ from: 'bot', text: a.text, buttons: a.buttons });
       else if (a.type === 'http')
-        out.push({ from: 'system', text: `Запрос во внешнюю систему: ${JSON.stringify(a.input)}` });
+        out.push({ from: 'system', text: t.flowEditor.zaprosVoVneshnyuyuSistemu(JSON.stringify(a.input)) });
       else if (a.type === 'handoff') {
         if (a.text) out.push({ from: 'bot', text: a.text });
         const q = a.queueId
           ? String(refs.queues.find((x) => x.id === a.queueId)?.name ?? '')
-          : 'очередь канала';
+          : t.flowEditor.ocheredKanala;
         out.push({
           from: 'system',
-          text: `Перевод на оператора: ${q}. Переменные: ${JSON.stringify(r.state.vars)}`,
+          text: t.flowEditor.perevodNaOperatoraPeremennye(q, JSON.stringify(r.state.vars)),
         });
       } else if (a.type === 'hangup') {
         if (a.text) out.push({ from: 'bot', text: a.text });
-        out.push({ from: 'system', text: 'Бот закрыл диалог' });
+        out.push({ from: 'system', text: t.flowEditor.botZakrylDialog });
       }
       break;
     }
@@ -1106,7 +1140,7 @@ function ChatTestRun({ graph, refs, onClose }: { graph: FlowGraph; refs: Refs; o
     if (!step) return;
     setBusy(true);
     let ev: FlowEvent = { type: 'http', ok: false, outputs: {} };
-    let note = 'Ошибка (имитация)';
+    let note = t.flowEditor.oshibkaImitatsiya;
     if (!fail)
       try {
         const r = await post<{ ok: boolean; outputs: Record<string, string>; error?: string }>(
@@ -1114,20 +1148,20 @@ function ChatTestRun({ graph, refs, onClose }: { graph: FlowGraph; refs: Refs; o
           { input: a.input },
         );
         ev = { type: 'http', ok: r.ok, outputs: r.outputs };
-        note = r.ok ? `Ответ: ${JSON.stringify(r.outputs)}` : `Ошибка: ${r.error}`;
+        note = r.ok ? t.flowEditor.otvet(JSON.stringify(r.outputs)) : t.flowEditor.oshibka(r.error);
       } catch (e) {
-        note = `Ошибка: ${errorText(e)}`;
+        note = t.flowEditor.oshibka(errorText(e));
       }
     setBusy(false);
     drive(resumeFlow(graph, step.state, ev, ctx()), [{ from: 'system', text: note }]);
   };
   const a = step?.action;
   return (
-    <Drawer opened onClose={onClose} title="Тестовый прогон бота" position="right" size="lg">
+    <Drawer opened onClose={onClose} title={t.flowEditor.testovyyProgonBota} position="right" size="lg">
       <Stack>
         <Group align="end">
           <TextInput
-            label="Имя клиента ({{name}})"
+            label={t.flowEditor.imyaKlientaName}
             value={name}
             onChange={(e) => setName(e.currentTarget.value)}
           />
@@ -1135,12 +1169,12 @@ function ChatTestRun({ graph, refs, onClose }: { graph: FlowGraph; refs: Refs; o
             onClick={() => {
               setLines([]);
               drive(startFlow(graph, { name, 'client.name': name, channel: 'webchat' }, ctx()), [
-                { from: 'system', text: 'Клиент написал в чат' },
+                { from: 'system', text: t.flowEditor.klientNapisalVChat },
               ]);
             }}
             data-testid="test-start"
           >
-            {step ? 'Начать заново' : 'Начать'}
+            {step ? t.flowEditor.nachatZanovo : t.flowEditor.nachat}
           </Button>
         </Group>
         <ScrollArea h={380} type="auto">
@@ -1187,30 +1221,31 @@ function ChatTestRun({ graph, refs, onClose }: { graph: FlowGraph; refs: Refs; o
           <Group gap="xs">
             <TextInput
               style={{ flex: 1 }}
-              placeholder="Ответ клиента…"
+              placeholder={t.flowEditor.otvetKlienta}
               value={input}
               onChange={(e) => setInput(e.currentTarget.value)}
               onKeyDown={(e) => e.key === 'Enter' && answer(input)}
               data-testid="test-input"
             />
             <Button onClick={() => answer(input)} data-testid="test-send">
-              Отправить
+              {t.flowEditor.otpravit}
             </Button>
           </Group>
         )}
         {a?.type === 'http' && (
           <Group>
             <Button onClick={() => void runHttp(a)} loading={busy} data-testid="test-http">
-              Выполнить запрос
+              {t.flowEditor.vypolnitZapros}
             </Button>
             <Button variant="light" color="red" onClick={() => void runHttp(a, true)}>
-              Имитировать ошибку
+              {t.flowEditor.imitirovatOshibku}
             </Button>
           </Group>
         )}
         {step && (
           <Text size="xs" c="dimmed">
-            Переменные: {JSON.stringify(step.state.vars)}
+            {t.flowEditor.peremennye}
+            {JSON.stringify(step.state.vars)}
           </Text>
         )}
       </Stack>
@@ -1397,11 +1432,11 @@ function Editor({ flow }: { flow: FlowRow }) {
     setDirty(false);
     void qc.invalidateQueries({ queryKey: ['/flows'] });
   };
-  const saveAction = useAction(save, 'Черновик сохранён');
+  const saveAction = useAction(save, t.flowEditor.chernovikSokhranen);
   const check = useAction(async () => {
     await save();
     setServerIssues(await post(`/flows/${flow.id}/validate`));
-  }, 'Проверка выполнена');
+  }, t.flowEditor.proverkaVypolnena);
   const publish = useMutationWithDetails(async () => {
     await save();
     const r = await post<{ version: number; warnings: unknown[] }>(`/flows/${flow.id}/publish`, {
@@ -1411,14 +1446,17 @@ function Editor({ flow }: { flow: FlowRow }) {
     setServerIssues(null);
     notifications.show({
       color: 'green',
-      message: `Опубликована версия ${r.version} — новые ${flow.kind === 'text' ? 'диалоги' : 'звонки'} идут по ней`,
+      message: t.flowEditor.opublikovanaVersiyaNovyeIdut(
+        r.version,
+        flow.kind === 'text' ? t.flowEditor.dialogi : t.flowEditor.zvonki,
+      ),
     });
     void qc.invalidateQueries({ queryKey: [`/flows/${flow.id}`] });
   }, setServerIssues);
 
   const sel = shown.find((n) => n.id === selected);
   const kindNodes = (Object.keys(NODE_SPECS) as NodeType[]).filter(
-    (t) => t !== 'start' && NODE_SPECS[t].kinds.includes(flow.kind),
+    (nodeType) => nodeType !== 'start' && NODE_SPECS[nodeType].kinds.includes(flow.kind),
   );
 
   return (
@@ -1435,23 +1473,25 @@ function Editor({ flow }: { flow: FlowRow }) {
             <TagsInput
               value={dids}
               onChange={(v) => (setDids(v), setDirty(true))}
-              placeholder="Номера (DID)"
+              placeholder={t.flowEditor.nomeraDid}
               w={220}
               readOnly={!writable}
               data-testid="flow-dids"
             />
           )}
           <Badge variant="light" data-testid="flow-published">
-            {flow.publishedVersion ? `опубликована версия ${flow.publishedVersion}` : 'не опубликован'}
+            {flow.publishedVersion
+              ? t.flowEditor.opublikovanaVersiya(flow.publishedVersion)
+              : t.flowEditor.neOpublikovan}
           </Badge>
-          {dirty && <Badge color="orange">не сохранено</Badge>}
+          {dirty && <Badge color="orange">{t.flowEditor.neSokhraneno}</Badge>}
         </Group>
         <Group gap="xs">
           <Button variant="default" onClick={() => setTesting(true)} data-testid="flow-test">
-            Тестовый прогон
+            {t.flowEditor.testovyyProgon}
           </Button>
           <Button variant="default" onClick={() => setVersions(true)}>
-            Версии
+            {t.flowEditor.versii}
           </Button>
           {writable && (
             <>
@@ -1461,7 +1501,7 @@ function Editor({ flow }: { flow: FlowRow }) {
                 loading={saveAction.isPending}
                 data-testid="flow-save"
               >
-                Сохранить черновик
+                {t.flowEditor.sokhranitChernovik}
               </Button>
               <Button
                 variant="light"
@@ -1469,10 +1509,10 @@ function Editor({ flow }: { flow: FlowRow }) {
                 onClick={() => check.mutate(undefined)}
                 loading={check.isPending}
               >
-                Проверить
+                {t.flowEditor.proverit}
               </Button>
               <TextInput
-                placeholder="Комментарий к версии"
+                placeholder={t.flowEditor.kommentariyKVersii}
                 value={comment}
                 onChange={(e) => setComment(e.currentTarget.value)}
                 w={180}
@@ -1483,7 +1523,7 @@ function Editor({ flow }: { flow: FlowRow }) {
                 loading={publish.pending}
                 data-testid="flow-publish"
               >
-                Опубликовать
+                {t.flowEditor.opublikovat}
               </Button>
             </>
           )}
@@ -1493,25 +1533,24 @@ function Editor({ flow }: { flow: FlowRow }) {
         {writable && (
           <Stack gap={4} w={150} style={{ flexShrink: 0 }} data-testid="palette">
             <Text size="xs" c="dimmed">
-              Добавить узел
+              {t.flowEditor.dobavitUzel}
             </Text>
-            {kindNodes.map((t) => (
+            {kindNodes.map((nodeType) => (
               <Button
-                key={t}
+                key={nodeType}
                 size="compact-xs"
                 variant="light"
                 color="gray"
-                onClick={() => add(t)}
-                title={NODE_SPECS[t].description}
-                data-testid={`palette-${t}`}
+                onClick={() => add(nodeType)}
+                title={NODE_SPECS[nodeType].description}
+                data-testid={`palette-${nodeType}`}
                 styles={{ inner: { justifyContent: 'flex-start' } }}
               >
-                {NODE_SPECS[t].label}
+                {NODE_SPECS[nodeType].label}
               </Button>
             ))}
             <Text size="10px" c="dimmed" mt="xs">
-              Связь — перетащить точку выхода узла на другой узел. Удалить узел или связь — выделить и нажать
-              Delete.
+              {t.flowEditor.svyazPeretashchitTochkuVykhoda}
             </Text>
           </Stack>
         )}
@@ -1568,15 +1607,15 @@ function Editor({ flow }: { flow: FlowRow }) {
               </>
             ) : (
               <Text size="sm" c="dimmed">
-                Выберите узел, чтобы изменить его свойства.
+                {t.flowEditor.vyberiteUzelChtobyIzmenit}
               </Text>
             )}
             <Title order={6} mt="md">
-              Проверка
+              {t.flowEditor.proverka}
             </Title>
             {local.errors.length === 0 && local.warnings.length === 0 && (
               <Text size="xs" c="green" data-testid="flow-valid">
-                Ошибок нет
+                {t.flowEditor.oshibokNet}
               </Text>
             )}
             {[
@@ -1596,11 +1635,11 @@ function Editor({ flow }: { flow: FlowRow }) {
             {serverIssues && (
               <>
                 <Text size="xs" fw={600}>
-                  Проверка на сервере (ссылки на файлы, очереди, операции)
+                  {t.flowEditor.proverkaNaServereSsylki}
                 </Text>
                 {serverIssues.errors.length + serverIssues.warnings.length === 0 && (
                   <Text size="xs" c="green">
-                    Замечаний нет
+                    {t.flowEditor.zamechaniyNet}
                   </Text>
                 )}
                 {[
@@ -1655,7 +1694,7 @@ function useMutationWithDetails(
             onDetails(e.details as never);
           notifications.show({
             color: 'red',
-            title: 'Не опубликовано',
+            title: t.flowEditor.neOpublikovano,
             message: e instanceof ApiError ? e.message : errorText(e),
           });
         })
@@ -1668,20 +1707,23 @@ function Versions({ flow, onLoad, onClose }: { flow: FlowRow; onLoad(g: FlowGrap
   const { can } = useAuth();
   const rollback = useAction(
     (versionId: string) => post(`/flows/${flow.id}/rollback`, { versionId }),
-    'Опубликована выбранная версия',
+    t.flowEditor.opublikovanaVybrannayaVersiya,
   );
   return (
-    <Modal opened onClose={onClose} title="Версии сценария" size="lg">
+    <Modal opened onClose={onClose} title={t.flowEditor.versiiStsenariya} size="lg">
       <Text size="sm" c="dimmed" mb="sm">
-        Публикация атомарна: новые звонки идут по опубликованной версии, начавшиеся — доигрывают свою.
+        {t.flowEditor.publikatsiyaAtomarnaNovyeZvonki}
       </Text>
       <Table striped data-testid="flow-versions">
         <Table.Tbody>
           {flow.versions.map((v) => (
             <Table.Tr key={v.id}>
               <Table.Td>
-                версия {v.version}{' '}
-                {v.id === flow.publishedVersionId && <Badge color="green">опубликована</Badge>}
+                {t.flowEditor.versiya2}
+                {v.version}{' '}
+                {v.id === flow.publishedVersionId && (
+                  <Badge color="green">{t.flowEditor.opublikovana2}</Badge>
+                )}
               </Table.Td>
               <Table.Td>{new Date(v.createdAt).toLocaleString('ru-RU')}</Table.Td>
               <Table.Td>{v.createdByName ?? ''}</Table.Td>
@@ -1697,7 +1739,7 @@ function Versions({ flow, onLoad, onClose }: { flow: FlowRow; onLoad(g: FlowGrap
                       )
                     }
                   >
-                    В черновик
+                    {t.flowEditor.vChernovik}
                   </Button>
                   {can('admin.directories') && v.id !== flow.publishedVersionId && (
                     <Button
@@ -1707,7 +1749,7 @@ function Versions({ flow, onLoad, onClose }: { flow: FlowRow; onLoad(g: FlowGrap
                       onClick={() => rollback.mutate(v.id, { onSuccess: onClose })}
                       data-testid={`rollback-${v.version}`}
                     >
-                      Откатить на неё
+                      {t.flowEditor.otkatitNaNee}
                     </Button>
                   )}
                 </Group>
@@ -1723,7 +1765,7 @@ function Versions({ flow, onLoad, onClose }: { flow: FlowRow; onLoad(g: FlowGrap
 export function FlowEditorPage() {
   const { id } = useParams();
   const flow = useQuery({ queryKey: [`/flows/${id}`], queryFn: () => get<FlowRow>(`/flows/${id}`) });
-  if (!flow.data) return <Text c="dimmed">Загрузка…</Text>;
+  if (!flow.data) return <Text c="dimmed">{t.flowEditor.zagruzka}</Text>;
   return (
     <ReactFlowProvider>
       {/* key — после публикации/отката граф перечитывается с сервера */}

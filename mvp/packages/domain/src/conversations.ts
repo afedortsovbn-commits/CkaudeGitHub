@@ -241,6 +241,14 @@ export async function ingestInbound(
   if (dup.rows[0]) return { conversationId: dup.rows[0].conversation_id, created: false, duplicate: true };
 
   let contactId = m.contactId;
+  if (contactId) {
+    // Сессия виджета выдана клиенту, которого позже присоединили к другому (слияние дублей, M-CARD-01).
+    const merged = await tx.query<{ merged_into_id: string | null }>(
+      'SELECT merged_into_id FROM contact WHERE id = $1',
+      [contactId],
+    );
+    contactId = merged.rows[0]?.merged_into_id ?? contactId;
+  }
   if (!contactId) {
     const ident = await tx.query<{ contact_id: string }>(
       'SELECT contact_id FROM contact_identity WHERE kind = $1 AND value = $2',

@@ -6,17 +6,18 @@ import type { FormField } from '../components/FormModal';
 import { get } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { type Row, options, useList } from '../lib/data';
+import { t } from '../lib/i18n';
 
 /** Маска секрета от api: «не менять». */
 const MASK = '********';
 
 const KINDS = [
-  { value: 'webchat', label: 'Чат на сайте' },
-  { value: 'app', label: 'Чат в приложении' },
-  { value: 'telegram', label: 'Telegram-бот' },
-  { value: 'email', label: 'Электронная почта' },
-  { value: 'voice', label: 'Телефон' },
-  { value: 'api', label: 'Внешняя система (API)' },
+  { value: 'webchat', label: t.channels.chatNaSayte },
+  { value: 'app', label: t.channels.chatVPrilozhenii },
+  { value: 'telegram', label: t.channels.telegramBot },
+  { value: 'email', label: t.channels.elektronnayaPochta },
+  { value: 'voice', label: t.channels.telefon },
+  { value: 'api', label: t.channels.vneshnyayaSistemaApi },
 ];
 const kindLabel = (k: unknown) => KINDS.find((x) => x.value === k)?.label ?? String(k ?? '');
 
@@ -26,20 +27,20 @@ const isMail = (v: Record<string, unknown>) => v.kind === 'email';
 const isVoice = (v: Record<string, unknown>) => v.kind === 'voice';
 
 const STATUS: Record<string, { color: string; label: string }> = {
-  connected: { color: 'green', label: 'Подключён' },
-  error: { color: 'red', label: 'Ошибка' },
-  disabled: { color: 'gray', label: 'Выключен' },
+  connected: { color: 'green', label: t.channels.podklyuchen },
+  error: { color: 'red', label: t.error },
+  disabled: { color: 'gray', label: t.channels.vyklyuchen },
 };
 
 const cfg = (r: Row) => (r.config ?? {}) as Record<string, unknown>;
 const str = (v: unknown) => (v === undefined || v === null ? '' : String(v));
 /** Пустое поле секрета при изменении — оставить прежнее значение. */
 const secret = (v: unknown, isCreate: boolean) => (v ? String(v) : isCreate ? undefined : MASK);
-const secretHint = 'При изменении оставьте пустым, чтобы не менять';
+const secretHint = t.channels.priIzmeneniiOstavtePustym;
 
 function ChannelStatus({ row }: { row: Row }) {
   if (row.kind !== 'telegram' && row.kind !== 'email') return null;
-  const s = STATUS[str(row.status)] ?? { color: 'gray', label: 'Нет данных' };
+  const s = STATUS[str(row.status)] ?? { color: 'gray', label: t.channels.netDannykh };
   return (
     <Tooltip label={str(row.statusDetail) || s.label} multiline maw={400} disabled={!row.statusDetail}>
       <Badge color={s.color} variant="light" data-testid="channel-status">
@@ -67,20 +68,26 @@ function ChannelLog({ channel, onClose }: { channel: Row | null; onClose(): void
     enabled: !!channel,
     refetchInterval: 5000,
   });
-  const dir = { in: 'Приём', out: 'Отправка', system: 'Система' };
+  const dir = { in: t.channels.priem, out: t.channels.otpravka, system: t.channels.sistema };
   return (
-    <Modal opened={!!channel} onClose={onClose} title={`Журнал канала «${str(channel?.name)}»`} size="xl">
+    <Modal
+      opened={!!channel}
+      onClose={onClose}
+      title={t.channels.zhurnalKanala(str(channel?.name))}
+      size="xl"
+    >
       {log.data?.statusDetail && (
         <Text size="sm" mb="sm">
-          Состояние: {log.data.statusDetail}
+          {t.channels.sostoyanie}
+          {log.data.statusDetail}
         </Text>
       )}
       <Table striped data-testid="channel-log">
         <Table.Thead>
           <Table.Tr>
-            <Table.Th>Время</Table.Th>
-            <Table.Th>Событие</Table.Th>
-            <Table.Th>Описание</Table.Th>
+            <Table.Th>{t.channels.vremya}</Table.Th>
+            <Table.Th>{t.channels.sobytie}</Table.Th>
+            <Table.Th>{t.channels.opisanie}</Table.Th>
           </Table.Tr>
         </Table.Thead>
         <Table.Tbody>
@@ -97,82 +104,94 @@ function ChannelLog({ channel, onClose }: { channel: Row | null; onClose(): void
           ))}
         </Table.Tbody>
       </Table>
-      {log.data && !log.data.entries.length && <Text c="dimmed">Записей пока нет</Text>}
+      {log.data && !log.data.entries.length && <Text c="dimmed">{t.channels.zapiseyPokaNet}</Text>}
     </Modal>
   );
 }
 
 const FIELDS: FormField[] = [
-  { key: 'kind', label: 'Тип', type: 'select', required: true, createOnly: true, options: KINDS },
-  { key: 'name', label: 'Название', required: true },
+  { key: 'kind', label: t.channels.tip, type: 'select', required: true, createOnly: true, options: KINDS },
+  { key: 'name', label: t.channels.nazvanie, required: true },
   // Чат на сайте и в приложении
-  { key: 'publicKey', label: 'Ключ виджета (латиница, от 8 символов)', required: true, show: isChat },
+  { key: 'publicKey', label: t.channels.klyuchVidzhetaLatinitsaOt, required: true, show: isChat },
   {
     key: 'allowedOrigins',
-    label: 'Разрешённые сайты через запятую (https://site.by) или *',
+    label: t.channels.razreshennyeSaytyCherezZapyatuyu,
     show: isChat,
   },
-  { key: 'greeting', label: 'Приветствие', type: 'textarea', show: isChat },
-  { key: 'consentText', label: 'Текст согласия на обработку ПДн', type: 'textarea', show: isChat },
+  { key: 'greeting', label: t.channels.privetstvie, type: 'textarea', show: isChat },
+  { key: 'consentText', label: t.channels.tekstSoglasiyaNaObrabotku, type: 'textarea', show: isChat },
   {
     key: 'consentVersion',
-    label: 'Версия текста согласия',
-    description: 'Измените при изменении текста — клиенты дадут согласие заново',
+    label: t.channels.versiyaTekstaSoglasiya,
+    description: t.channels.izmenitePriIzmeneniiTeksta,
     show: isChat,
   },
-  { key: 'maxFileMb', label: 'Макс. размер файла, МБ', type: 'number', show: isChat },
+  { key: 'maxFileMb', label: t.channels.maksRazmerFaylaMb, type: 'number', show: isChat },
   // Telegram
   {
     key: 'botToken',
-    label: 'Токен бота (от @BotFather)',
+    label: t.channels.tokenBotaOtBotfather,
     type: 'password',
-    description: `Хранится в зашифрованном виде. ${secretHint}`,
+    description: t.channels.khranitsyaVZashifrovannomVide(secretHint),
     show: isTg,
   },
   {
     key: 'tgMode',
-    label: 'Режим получения сообщений',
+    label: t.channels.rezhimPolucheniyaSoobshcheniy,
     type: 'select',
     required: true,
     options: [
-      { value: 'polling', label: 'Опрос (long polling) — не требует входящего доступа из интернета' },
-      { value: 'webhook', label: 'Webhook — Telegram присылает сообщения на адрес КЦ' },
+      { value: 'polling', label: t.channels.oprosLongPollingNe },
+      { value: 'webhook', label: t.channels.webhookTelegramPrisylaetSoobshcheniy },
     ],
     show: isTg,
   },
   {
     key: 'apiRoot',
-    label: 'Адрес Bot API',
-    description: 'Пусто — api.telegram.org; иначе — адрес локального Bot API-сервера',
+    label: t.channels.adresBotApi,
+    description: t.channels.pustoApiTelegramOrg,
     placeholder: 'https://api.telegram.org',
     show: isTg,
   },
   // Телефон (Ф5)
   {
     key: 'dids',
-    label: 'Номера, на которые звонят клиенты (через запятую)',
-    description: 'Как их передаёт SIP-транк, например +375171234567; для демо-страницы и SIPp — 1000',
+    label: t.channels.nomeraNaKotoryeZvonyat,
+    description: t.channels.kakIkhPeredaetSip,
     required: true,
     show: isVoice,
   },
-  { key: 'record', label: 'Записывать разговоры', type: 'switch', show: isVoice },
+  { key: 'record', label: t.channels.zapisyvatRazgovory, type: 'switch', show: isVoice },
   // Email
-  { key: 'address', label: 'Адрес ящика', required: true, show: isMail },
-  { key: 'displayName', label: 'Имя отправителя в ответах', show: isMail },
-  { key: 'imapHost', label: 'IMAP: сервер', required: true, show: isMail },
-  { key: 'imapPort', label: 'IMAP: порт', type: 'number', required: true, show: isMail },
+  { key: 'address', label: t.channels.adresYashchika, required: true, show: isMail },
+  { key: 'displayName', label: t.channels.imyaOtpravitelyaVOtvetakh, show: isMail },
+  { key: 'imapHost', label: t.channels.imapServer, required: true, show: isMail },
+  { key: 'imapPort', label: t.channels.imapPort, type: 'number', required: true, show: isMail },
   { key: 'imapSecure', label: 'IMAP: TLS (IMAPS)', type: 'switch', show: isMail },
-  { key: 'imapUser', label: 'IMAP: пользователь', required: true, show: isMail },
-  { key: 'imapPassword', label: 'IMAP: пароль', type: 'password', description: secretHint, show: isMail },
-  { key: 'mailbox', label: 'Папка входящих', show: isMail },
-  { key: 'smtpHost', label: 'SMTP: сервер', required: true, show: isMail },
-  { key: 'smtpPort', label: 'SMTP: порт', type: 'number', required: true, show: isMail },
-  { key: 'smtpSecure', label: 'SMTP: TLS (SMTPS, порт 465)', type: 'switch', show: isMail },
-  { key: 'smtpUser', label: 'SMTP: пользователь (пусто — без авторизации)', show: isMail },
-  { key: 'smtpPassword', label: 'SMTP: пароль', type: 'password', description: secretHint, show: isMail },
+  { key: 'imapUser', label: t.channels.imapPolzovatel, required: true, show: isMail },
+  {
+    key: 'imapPassword',
+    label: t.channels.imapParol,
+    type: 'password',
+    description: secretHint,
+    show: isMail,
+  },
+  { key: 'mailbox', label: t.channels.papkaVkhodyashchikh, show: isMail },
+  { key: 'smtpHost', label: t.channels.smtpServer, required: true, show: isMail },
+  { key: 'smtpPort', label: t.channels.smtpPort, type: 'number', required: true, show: isMail },
+  { key: 'smtpSecure', label: t.channels.smtpTlsSmtpsPort, type: 'switch', show: isMail },
+  { key: 'smtpUser', label: t.channels.smtpPolzovatelPustoBez, show: isMail },
+  {
+    key: 'smtpPassword',
+    label: t.channels.smtpParol,
+    type: 'password',
+    description: secretHint,
+    show: isMail,
+  },
   {
     key: 'tlsInsecure',
-    label: 'Не проверять TLS-сертификат почтового сервера (самоподписанный в закрытом контуре)',
+    label: t.channels.neProveryatTlsSertifikat,
     type: 'switch',
     show: isMail,
   },
@@ -310,25 +329,25 @@ export function ChannelsPage() {
     <>
       <DictPage
         kind="channels"
-        title="Каналы"
+        title={t.channels.kanaly}
         columns={[
-          { key: 'name', label: 'Название' },
-          { key: 'kind', label: 'Тип', render: (r) => kindLabel(r.kind) },
+          { key: 'name', label: t.channels.nazvanie },
+          { key: 'kind', label: t.channels.tip, render: (r) => kindLabel(r.kind) },
           {
             key: 'address',
-            label: 'Адрес / ключ',
+            label: t.channels.adresKlyuch,
             render: (r) => {
               const c = cfg(r);
               if (r.kind === 'email') return str(c.address);
               if (r.kind === 'voice') return ((c.dids as string[]) ?? []).join(', ');
-              if (r.kind === 'telegram') return c.mode === 'webhook' ? 'webhook' : 'опрос';
-              if (r.kind === 'api') return 'по ключу API';
+              if (r.kind === 'telegram') return c.mode === 'webhook' ? 'webhook' : t.channels.opros;
+              if (r.kind === 'api') return t.channels.poKlyuchuApi;
               return <Code>{str(c.public_key)}</Code>;
             },
           },
           {
             key: 'bot',
-            label: 'Бот',
+            label: t.channels.bot,
             render: (r) =>
               String(
                 bots.data?.find((b) => b.id === r.botFlowId)?.name ??
@@ -336,12 +355,12 @@ export function ChannelsPage() {
                   '—',
               ),
           },
-          { key: 'conn', label: 'Подключение', render: (r) => <ChannelStatus row={r} /> },
+          { key: 'conn', label: t.channels.podklyuchenie, render: (r) => <ChannelStatus row={r} /> },
         ]}
         rowActions={(r) =>
           r.kind === 'telegram' || r.kind === 'email' ? (
             <Button size="xs" variant="subtle" onClick={() => setLogOf(r)}>
-              Журнал
+              {t.channels.zhurnal}
             </Button>
           ) : null
         }
@@ -350,21 +369,26 @@ export function ChannelsPage() {
         createDefaults={CREATE_DEFAULTS}
         fields={[
           ...FIELDS.slice(0, 2),
-          { key: 'queueId', label: 'Очередь по умолчанию', type: 'select', options: options(queues.data) },
+          {
+            key: 'queueId',
+            label: t.channels.ocheredPoUmolchaniyu,
+            type: 'select',
+            options: options(queues.data),
+          },
           {
             key: 'botFlowId',
-            label: 'Бот',
+            label: t.channels.bot,
             type: 'select',
             options: options(bots.data),
-            description: 'Новые обращения сначала ведёт бот (опубликованная версия), затем — оператор',
+            description: t.channels.novyeObrashcheniyaSnachalaVedet,
             show: (v) => v.kind !== 'voice',
           },
           {
             key: 'botWebhookId',
-            label: 'Внешний бот',
+            label: t.channels.vneshniyBot,
             type: 'select',
             options: options(extBots.data),
-            description: 'Бот внешней системы (Bot Gateway); действует, если сценарный бот не выбран',
+            description: t.channels.botVneshneySistemyBot,
             show: (v) => v.kind !== 'voice' && !v.botFlowId,
           },
           ...FIELDS.slice(2),
@@ -372,15 +396,14 @@ export function ChannelsPage() {
       />
       <ChannelLog channel={logOf} onClose={() => setLogOf(null)} />
       <Text size="sm" mt="md">
-        Код для сайта:{' '}
-        <Code>{'<script src="https://<адрес-кц>/widget/widget.js" data-key="<ключ>" async></script>'}</Code>.
-        Демо-страница:{' '}
+        {t.channels.kodDlyaSayta} <Code>{t.channels.scriptSrcHttpsAdres}</Code>
+        {t.channels.demoStranitsa}{' '}
         <a href="/widget/demo.html" target="_blank" rel="noreferrer">
           /widget/demo.html
         </a>
-        , для WebView приложения — <Code>/widget/mobile.html?key=&lt;ключ&gt;</Code>. Telegram-бот и почтовый
-        ящик начинают работать без перезапуска через несколько секунд после сохранения; состояние подключения
-        и журнал — в колонке «Подключение» и по кнопке «Журнал».
+        {t.channels.dlyaWebviewPrilozheniya}
+        <Code>{t.channels.widgetMobileHtmlKey}</Code>
+        {t.channels.telegramBotIPochtovyy}
       </Text>
     </>
   );

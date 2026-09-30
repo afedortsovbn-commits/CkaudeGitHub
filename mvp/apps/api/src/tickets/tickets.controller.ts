@@ -26,6 +26,7 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { Pool, PoolClient } from 'pg';
 import { z } from 'zod';
 import { CurrentUser, hasPerm, RequirePerm } from '../auth/guard';
+import { ensureRequiredTag } from '../chat/required-tag';
 import { APP_CONTEXT, type AppContext } from '../context';
 import { audit } from '../lib/audit';
 import { saveUpload, sendAttachment } from '../lib/attachments';
@@ -140,6 +141,7 @@ export class TicketsController {
           'Обращение ведёт другой оператор — возьмите его или попросите передать',
         );
       }
+      await ensureRequiredTag(tx, id);
       const t = await createTicket(tx, { conversationId: id, actorId: p.id, ...b });
       // Постобработка оператора после передачи — как после закрытия (M-RT-06).
       if (c.assignee_id === p.id) {

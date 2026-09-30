@@ -2,6 +2,7 @@ import { Badge, Button, Group, Stack, Table, Tabs, Text, Textarea, TextInput, Ti
 import { useState } from 'react';
 import { post } from '../lib/api';
 import { type Row, useAction, useList } from '../lib/data';
+import { t } from '../lib/i18n';
 
 const dt = (v: unknown) =>
   v ? new Date(String(v)).toLocaleString('ru-RU', { timeZone: 'Europe/Minsk' }) : '—';
@@ -13,12 +14,12 @@ const dt = (v: unknown) =>
 export function PrivacyPage() {
   return (
     <Stack>
-      <Title order={3}>Персональные данные</Title>
+      <Title order={3}>{t.privacy.personalnyeDannye}</Title>
       <Tabs defaultValue="consents">
         <Tabs.List mb="md">
-          <Tabs.Tab value="consents">Реестр согласий</Tabs.Tab>
-          <Tabs.Tab value="texts">Тексты согласий</Tabs.Tab>
-          <Tabs.Tab value="erase">Обезличивание клиента</Tabs.Tab>
+          <Tabs.Tab value="consents">{t.privacy.reestrSoglasiy}</Tabs.Tab>
+          <Tabs.Tab value="texts">{t.privacy.tekstySoglasiy}</Tabs.Tab>
+          <Tabs.Tab value="erase">{t.privacy.obezlichivanieKlienta}</Tabs.Tab>
         </Tabs.List>
         <Tabs.Panel value="consents">
           <ConsentRegistry />
@@ -41,17 +42,17 @@ function ConsentRegistry() {
     <Stack>
       <TextInput
         maw={320}
-        placeholder="Клиент: имя, телефон, email"
+        placeholder={t.privacy.klientImyaTelefonEmail}
         value={q}
         onChange={(e) => setQ(e.currentTarget.value)}
       />
       <Table striped data-testid="consent-registry">
         <Table.Thead>
           <Table.Tr>
-            <Table.Th>Дата</Table.Th>
-            <Table.Th>Клиент</Table.Th>
-            <Table.Th>Канал</Table.Th>
-            <Table.Th>Версия текста</Table.Th>
+            <Table.Th>{t.privacy.data}</Table.Th>
+            <Table.Th>{t.privacy.klient}</Table.Th>
+            <Table.Th>{t.privacy.kanal}</Table.Th>
+            <Table.Th>{t.privacy.versiyaTeksta}</Table.Th>
             <Table.Th>IP</Table.Th>
           </Table.Tr>
         </Table.Thead>
@@ -61,7 +62,7 @@ function ConsentRegistry() {
               <Table.Td>{dt(r.acceptedAt)}</Table.Td>
               <Table.Td>
                 {String(r.contactName ?? '—')}{' '}
-                {r.contactAnonymized ? <Badge color="gray">обезличен</Badge> : null}
+                {r.contactAnonymized ? <Badge color="gray">{t.privacy.obezlichen}</Badge> : null}
               </Table.Td>
               <Table.Td>{String(r.channelName)}</Table.Td>
               <Table.Td>{String(r.textVersion)}</Table.Td>
@@ -79,17 +80,16 @@ function ConsentTexts() {
   return (
     <Stack>
       <Text size="sm" c="dimmed">
-        Текст согласия задаётся в настройках канала (веб-чат, чат в приложении). Изменённый текст сохраняется
-        только с новой версией — прежние версии хранятся, чтобы было видно, с каким текстом согласился клиент.
+        {t.privacy.tekstSoglasiyaZadaetsyaV}
       </Text>
       <Table data-testid="consent-texts">
         <Table.Thead>
           <Table.Tr>
-            <Table.Th>Канал</Table.Th>
-            <Table.Th>Версия</Table.Th>
-            <Table.Th>Текст</Table.Th>
-            <Table.Th>С</Table.Th>
-            <Table.Th>Согласий</Table.Th>
+            <Table.Th>{t.privacy.kanal}</Table.Th>
+            <Table.Th>{t.release.tag}</Table.Th>
+            <Table.Th>{t.privacy.tekst}</Table.Th>
+            <Table.Th>{t.privacy.s}</Table.Th>
+            <Table.Th>{t.privacy.soglasiy}</Table.Th>
           </Table.Tr>
         </Table.Thead>
         <Table.Tbody>
@@ -114,25 +114,23 @@ function EraseContact() {
   const list = useList<Row>(`/admin/contacts?q=${encodeURIComponent(q)}`);
   const erase = useAction(
     (id: string) => post(`/contacts/${id}/anonymize`, { confirm: true, reason }),
-    'Клиент обезличен',
+    t.privacy.klientObezlichen,
   );
   return (
     <Stack>
       <Text size="sm" c="dimmed">
-        По запросу клиента стираются его имя, телефон, email, идентификаторы в каналах, тексты его сообщений,
-        вложения и записи разговоров (в том числе в журнале событий). Обращения, их темы и результаты остаются
-        для отчётов. Действие необратимо и записывается в журнал аудита с основанием.
+        {t.privacy.poZaprosuKlientaStirayutsya}
       </Text>
       <TextInput
         maw={320}
-        placeholder="Имя, телефон, email (от 2 символов)"
+        placeholder={t.privacy.imyaTelefonEmailOt}
         value={q}
         onChange={(e) => setQ(e.currentTarget.value)}
         data-testid="erase-search"
       />
       <Textarea
         maw={520}
-        label="Основание (например, номер и дата заявления)"
+        label={t.privacy.osnovanieNaprimerNomerI}
         value={reason}
         onChange={(e) => setReason(e.currentTarget.value)}
         data-testid="erase-reason"
@@ -144,10 +142,13 @@ function EraseContact() {
               <Table.Td>{String(r.displayName ?? '—')}</Table.Td>
               <Table.Td>{String(r.phone ?? '')}</Table.Td>
               <Table.Td>{String(r.email ?? '')}</Table.Td>
-              <Table.Td>обращений: {String(r.conversations)}</Table.Td>
+              <Table.Td>
+                {t.privacy.obrashcheniy}
+                {String(r.conversations)}
+              </Table.Td>
               <Table.Td>
                 {r.anonymizedAt ? (
-                  <Badge color="gray">обезличен</Badge>
+                  <Badge color="gray">{t.privacy.obezlichen}</Badge>
                 ) : (
                   <Group>
                     <Button
@@ -156,10 +157,10 @@ function EraseContact() {
                       variant="outline"
                       disabled={reason.trim().length < 3}
                       onClick={() => {
-                        if (window.confirm('Обезличить клиента? Действие необратимо.')) erase.mutate(r.id);
+                        if (window.confirm(t.privacy.obezlichitKlientaDeystvieNeobratimo)) erase.mutate(r.id);
                       }}
                     >
-                      Обезличить
+                      {t.privacy.obezlichit}
                     </Button>
                   </Group>
                 )}

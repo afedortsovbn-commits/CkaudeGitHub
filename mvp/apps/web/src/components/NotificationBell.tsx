@@ -6,19 +6,20 @@ import { useNavigate } from 'react-router';
 import { get, post } from '../lib/api';
 import type { Row } from '../lib/data';
 import { notify, onRealtime } from '../lib/realtime';
+import { t } from '../lib/i18n';
 
 const EVENT_TEXT: Record<string, string> = {
-  'ticket.assigned': 'назначен вам',
-  'ticket.redirected': 'переадресован',
-  'ticket.client_message': 'новое сообщение клиента',
-  'ticket.needs_reassign': 'требует переназначения',
-  'ticket.commented': 'новый комментарий',
+  'ticket.assigned': t.notificationBellUi.naznachenVam,
+  'ticket.redirected': t.notificationBellUi.pereadresovan,
+  'ticket.client_message': t.notificationBellUi.novoeSoobshchenieKlienta,
+  'ticket.needs_reassign': t.notificationBellUi.trebuetPerenaznacheniya,
+  'ticket.commented': t.notificationBellUi.novyyKommentariy,
 };
 const STATUS_TEXT: Record<string, string> = {
-  approval: 'ожидает согласования',
-  rework: 'возвращён на доработку',
-  closed: 'принят и закрыт',
-  in_work: 'взят в работу',
+  approval: t.notificationBellUi.ozhidaetSoglasovaniya,
+  rework: t.notificationBellUi.vozvrashchenNaDorabotku,
+  closed: t.notificationBellUi.prinyatIZakryt,
+  in_work: t.notificationBellUi.vzyatVRabotu,
 };
 
 const when = (s: unknown) =>
@@ -48,10 +49,14 @@ export function NotificationBell() {
         const d = (e.data ?? {}) as { number?: number; status?: string };
         const text =
           e.event === 'ticket.status_changed'
-            ? (STATUS_TEXT[String(d.status)] ?? 'изменён')
-            : (EVENT_TEXT[String(e.event)] ?? 'обновлён');
-        notifications.show({ color: 'blue', title: `Тикет №${String(d.number ?? '')}`, message: text });
-        notify(`Тикет №${String(d.number ?? '')}`, text);
+            ? (STATUS_TEXT[String(d.status)] ?? t.notificationBellUi.izmenen)
+            : (EVENT_TEXT[String(e.event)] ?? t.notificationBellUi.obnovlen);
+        notifications.show({
+          color: 'blue',
+          title: t.notificationBellUi.tiket(String(d.number ?? '')),
+          message: text,
+        });
+        notify(t.notificationBellUi.tiket(String(d.number ?? '')), text);
       }),
     [qc],
   );
@@ -66,7 +71,7 @@ export function NotificationBell() {
             variant="subtle"
             size="lg"
             onClick={() => setOpened((o) => !o)}
-            aria-label="Уведомления"
+            aria-label={t.notificationBellUi.uvedomleniya}
             data-testid="bell"
           >
             🔔
@@ -76,17 +81,17 @@ export function NotificationBell() {
       <Popover.Dropdown>
         <Group justify="space-between" mb="xs">
           <Text fw={600} size="sm">
-            Уведомления
+            {t.notificationBellUi.uvedomleniya}
           </Text>
           <Button size="compact-xs" variant="subtle" disabled={!unread} onClick={readAll}>
-            Прочитать все
+            {t.notificationBellUi.prochitatVse}
           </Button>
         </Group>
         <ScrollArea.Autosize mah={380}>
           <Stack gap={6} data-testid="bell-list">
             {(q.data?.items ?? []).length === 0 && (
               <Text size="sm" c="dimmed">
-                Пока ничего нового
+                {t.notificationBellUi.pokaNichegoNovogo}
               </Text>
             )}
             {(q.data?.items ?? []).map((n) => (

@@ -16,6 +16,7 @@ import { notifications } from '@mantine/notifications';
 import { useQuery } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import { authBlobUrl, errorText, get } from '../lib/api';
+import { t } from '../lib/i18n';
 
 interface CatalogItem {
   kind: string;
@@ -51,17 +52,17 @@ interface Options {
 }
 
 const GROUP_LABELS: Record<string, string> = {
-  channel: 'по каналам',
-  queue: 'по очередям',
-  operator: 'по операторам',
-  topic: 'по темам',
-  subtopic: 'по темам и подтемам',
-  result: 'по результатам обработки',
-  enterprise: 'по предприятиям',
-  department: 'по предприятиям и подразделениям',
-  object: 'по объектам',
-  day: 'по дням',
-  assignee: 'по ответственным и кураторам',
+  channel: t.reports.poKanalam,
+  queue: t.reports.poOcheredyam,
+  operator: t.reports.poOperatoram,
+  topic: t.reports.poTemam,
+  subtopic: t.reports.poTemamIPodtemam,
+  result: t.reports.poRezultatamObrabotki,
+  enterprise: t.reports.poPredpriyatiyam,
+  department: t.reports.poPredpriyatiyamIPodrazdeleniyam,
+  object: t.reports.poObektam,
+  day: t.reports.poDnyam,
+  assignee: t.reports.poOtvetstvennymIKuratoram,
 };
 
 /** Сегодняшняя дата по Минску (единый часовой пояс отчётов, M-REP-03). */
@@ -161,10 +162,10 @@ export function ReportsPage() {
   const r = report.data;
   return (
     <Stack>
-      <Title order={3}>Отчёты</Title>
+      <Title order={3}>{t.reports.otchety}</Title>
       <Group align="flex-end">
         <Select
-          label="Отчёт"
+          label={t.reports.otchet}
           w={380}
           data={(catalog.data ?? []).map((c) => ({ value: c.kind, label: c.title }))}
           value={kind}
@@ -174,7 +175,7 @@ export function ReportsPage() {
         />
         {item && item.groups.length > 1 && (
           <Select
-            label="Разрез"
+            label={t.reports.razrez}
             w={280}
             data={item.groups.map((g) => ({ value: g, label: GROUP_LABELS[g] ?? g }))}
             value={group}
@@ -186,14 +187,14 @@ export function ReportsPage() {
         {kind !== 'overdue' && (
           <>
             <TextInput
-              label="С"
+              label={t.reports.s}
               type="date"
               value={f.from}
               onChange={(e) => set('from')(e.currentTarget.value)}
               data-testid="report-from"
             />
             <TextInput
-              label="По"
+              label={t.reports.po}
               type="date"
               value={f.to}
               onChange={(e) => set('to')(e.currentTarget.value)}
@@ -202,21 +203,21 @@ export function ReportsPage() {
           </>
         )}
         <Chip checked={important} onChange={setImportant} color="red" data-testid="report-important">
-          Особо важные
+          {t.reports.osoboVazhnye}
         </Chip>
         <Button variant="light" onClick={() => void csv()} loading={busy} data-testid="report-csv">
-          Скачать CSV
+          {t.reports.skachatCsv}
         </Button>
       </Group>
       <SimpleGrid cols={{ base: 2, md: 4, lg: 8 }} spacing="xs">
-        {sel('channels', 'channel', 'Канал')}
-        {sel('queues', 'queueId', 'Очередь')}
-        {sel('enterprises', 'enterpriseId', 'Предприятие')}
-        {sel('departments', 'departmentId', 'Подразделение')}
-        {sel('topics', 'topicId', 'Тема / подтема')}
-        {sel('objects', 'objectId', 'Объект')}
-        {sel('operators', 'operatorId', 'Оператор')}
-        {sel('assignees', 'assigneeId', 'Ответственный / куратор')}
+        {sel('channels', 'channel', t.reports.kanal)}
+        {sel('queues', 'queueId', t.reports.ochered)}
+        {sel('enterprises', 'enterpriseId', t.reports.predpriyatie)}
+        {sel('departments', 'departmentId', t.reports.podrazdelenie)}
+        {sel('topics', 'topicId', t.reports.temaPodtema)}
+        {sel('objects', 'objectId', t.reports.obekt)}
+        {sel('operators', 'operatorId', t.reports.operator)}
+        {sel('assignees', 'assigneeId', t.reports.otvetstvennyyKurator)}
       </SimpleGrid>
       {report.isError && <Alert color="red">{errorText(report.error)}</Alert>}
       {report.isLoading && <Loader size="sm" />}
@@ -244,7 +245,7 @@ export function ReportsPage() {
                 {r.rows.length === 0 && (
                   <Table.Tr>
                     <Table.Td colSpan={r.columns.length}>
-                      <Text c="dimmed">Нет данных за период</Text>
+                      <Text c="dimmed">{t.reports.netDannykhZaPeriod}</Text>
                     </Table.Td>
                   </Table.Tr>
                 )}

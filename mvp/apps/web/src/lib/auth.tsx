@@ -1,5 +1,6 @@
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useState } from 'react';
 import { api, get, onSessionLost, refreshSession, setAccessToken } from './api';
+import { t } from './i18n';
 
 export interface Me {
   id: string;
@@ -84,6 +85,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
 export function useAuth(): AuthState {
   const v = useContext(Ctx);
-  if (!v) throw new Error('AuthProvider не подключён');
+  if (!v) throw new Error(t.authLib.authproviderNePodklyuchen);
   return v;
 }

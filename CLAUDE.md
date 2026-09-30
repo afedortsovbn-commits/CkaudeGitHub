@@ -16,7 +16,7 @@
 
 ## Текущее состояние (30.09.2026)
 
-- **Выполнены Ф0–Ф12** (PR #1–#3, #5–#13, #15, #16, см. `mvp/docs/PROGRESS.md`). Код — в `mvp/`, как запустить —
+- **Выполнены Ф0–Ф12 и Ф12b** (PR #1–#3, #5–#13, #15, #16 и PR Ф12b, см. `mvp/docs/PROGRESS.md`). Код — в `mvp/`, как запустить —
   `mvp/README.md`.
 - **Ф5a** добавила телефонию: `infra/asterisk` (2 узла, образ на `andrius/asterisk:22`), `infra/kamailio` (Kamailio 6
   из RPM на AlmaLinux 9, WSS 8443, auth_ephemeral, dispatcher), coturn ×2, сервис `call-control` (ARI, активный/
@@ -72,11 +72,15 @@
   событий), версии текстов согласий (`consent_text` + триггер), срок хранения записей (pg-boss в api), обезличивание
   клиента и сотрудника (`apps/api/src/privacy/`), `ops/backup.sh` / `ops/restore.sh [--verify]`, `ops/demo.sh`,
   сертификат домена Traefik (`TRAEFIK_TLS`), `TRUNK_ALLOW` в Kamailio, руководства и отчёт о соответствии в `mvp/docs/`.
-- **Следующая — Ф12b** (закрытие шести пробелов «частично» из `mvp/docs/соответствие-требованиям.md`: вкладки
-  «Удержание»/«Постобработка», несколько транков, слияние дублей клиентов, обязательный тег, консультативный перевод,
-  строки в i18n) — от заказчика ничего не требует; задание и DoD — в 03. **Ф13** (Rocket Data, синхронизация объектов) —
-  после получения описаний API от заказчика (В-32, В-42), задание — в 03.
-- Ждём от заказчика: параметры SIP-транка МТС (подключается переменной `TRUNK_HOST`), описание API Rocket Data и
+- **Ф12b** закрыла пробелы «частично»: вкладки «Удержание»/«Постобработка» (`?tab=hold|wrapup`, по признакам звонка
+  и молчания клиента — `operator.wrapup_chat_idle_s`), несколько транков (`TRUNKS="хост:порт;приоритет,…"`, перебор в
+  `failure_route` Kamailio), слияние дублей клиентов (`POST /contacts/:id/merge`, право `contacts.merge`,
+  `merged_into_id` подставляется в api/worker/realtime), обязательный тег (`queue.require_tag`), консультативный
+  перевод (call-control: `consult`/`consult_complete`/`consult_cancel`, состояние — `call.consult_*`), все строки web
+  и виджета — в `src/lib/i18n` (`pnpm i18n:check`). Отчёт о соответствии: «частично» — 0.
+- **Следующая — Ф13** (Rocket Data, синхронизация объектов) — после получения описаний API от заказчика (В-32, В-42),
+  задание — в 03.
+- Ждём от заказчика: параметры SIP-транка МТС (подключается переменной `TRUNKS`, основной и резервный), описание API Rocket Data и
   источника справочника объектов (к Ф13). Их отсутствие работу не блокирует — см. соответствующие фазы в плане.
 
 ## Порядок работы по фазе
@@ -84,7 +88,7 @@
 - Одна фаза = ветка `phase-NN-<кратко>` от `main` → черновой PR в `main` → CI зелёный → слияние (merge-коммит).
 - В конце фазы: раздел в `mvp/docs/PROGRESS.md`, статус в таблице раздела 2 плана, правки 02 при изменении решений,
   обновление таблицы «Состав» в `mvp/README.md`.
-- Перед пушем: `pnpm format:check lint typecheck test`, `pnpm licenses:check`, `pnpm migrations:lint --base origin/main`,
+- Перед пушем: `pnpm format:check lint typecheck test`, `pnpm licenses:check`, `pnpm i18n:check`, `pnpm migrations:lint --base origin/main`,
   `pnpm test:ops`, `pnpm compat:check --base origin/main`;
   интеграционные тесты api — с `TEST_DATABASE_URL`; e2e (Playwright, `mvp/e2e`) против поднятого стека.
 - Каждый новый сервис: ≥2 экземпляра в compose, добавить в `ops/build-images.sh` (APPS) и в CI, проверить
@@ -165,6 +169,12 @@
   в тестах логов учитывать (`maskPii: false` или `LOG_PII=1`). Бэкап — `umask 077`, утилита S3 запускается
   `--user $(id -u)`. e2e: в статусе «Готов» router предлагает оператору чаты, оставшиеся от прошлых тестов (лимит
   чатов) — брать из очереди до перехода в «Готов».
+- Ф12b: **строки интерфейса — только в `apps/web/src/lib/i18n/<раздел>.ts`** (виджет — `apps/widget/src/lib/i18n.ts`),
+  в коде `t.<раздел>.<ключ>`; кириллица в строках/JSX вне ресурсов ломает `pnpm i18n:check` (комментарии можно). Не
+  называйте локальные переменные `t` — затеняют ресурсы. Ресурсы без `as const` (литеральные типы мешали `useState`).
+  Kamailio: `dispatcher` — только узлы Asterisk (`flags=2` — без него `ds_next_dst` не работал); транки — список
+  `__TRUNK_LIST__` из entrypoint. Встроенный `-sn uas` SIPp не возвращает Record-Route — для транка в тестах свой
+  сценарий. MultiSelect Mantine в e2e — `getByRole('textbox', { name }).click({ force: true })`.
 - JetStream при старте кластера отвечает не сразу: сервисы подключаются через `connectNats` (ждёт готовности), новые
   потоки/потребители/KV создавать через `ensureStream` или обёртку `retryJs` из `service-kit`.
 - Стек для e2e Ф4/Ф5 и проверок: `COMPOSE_PROFILES=test MOCK_TELEGRAM_TAG=<тег> PUBLIC_BASE_URL=https://traefik TRUNK_HOST=trunk-sim:5060`,
