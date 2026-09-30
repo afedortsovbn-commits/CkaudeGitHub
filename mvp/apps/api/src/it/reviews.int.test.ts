@@ -84,6 +84,15 @@ describe.skipIf(!ADMIN_URL)('Отзывы с карт и синхронизац�
       config: { api_token: 'x' },
     });
     expect(bad.status).toBe(400);
+    // Канал «Отзыв» создаётся через справочник каналов (форма администратора).
+    const created = await t.call('POST', '/api/v1/dict/channels', admin, {
+      kind: 'review',
+      name: 'Rocket Data (второе подключение)',
+      config: { api_url: 'http://rd.local', api_token: 'second-token' },
+    });
+    expect(created.status, JSON.stringify(created.body)).toBe(201);
+    expect(created.body.config).toMatchObject({ api_token: SECRET_MASK, poll_interval_s: 300 });
+    await t.call('POST', `/api/v1/dict/channels/${created.body.id}/deactivate`, admin);
     const ch = await t.call('GET', `/api/v1/dict/channels/${channelId}`, admin);
     expect(ch.body.config).toMatchObject({ api_token: SECRET_MASK, poll_interval_s: 10, low_rating_max: 2 });
     const raw = await one<{ config: { api_token: string } }>(`SELECT config FROM channel WHERE id = $1`, [

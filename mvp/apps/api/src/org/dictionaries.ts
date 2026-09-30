@@ -235,7 +235,7 @@ export const DICTIONARIES: Record<string, DictSpec> = {
     table: 'channel',
     title: 'Канал',
     fields: [
-      f('kind', z.enum(['webchat', 'app', 'telegram', 'email', 'api', 'voice'])),
+      f('kind', z.enum(['webchat', 'app', 'telegram', 'email', 'api', 'voice', 'review'])),
       f('name', name),
       f('queueId', uuid.nullable().optional()),
       // Ф7: бот канала (текстовый сценарий flow-engine) — ведёт новые обращения до перевода на оператора.
