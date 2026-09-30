@@ -3,9 +3,9 @@ name: mvp
 on:
   push:
     branches: [main]
-    paths: ['mvp/**', '.github/workflows/mvp.yml']
+    paths: ["mvp/**", ".github/workflows/mvp.yml"]
   pull_request:
-    paths: ['mvp/**', '.github/workflows/mvp.yml']
+    paths: ["mvp/**", ".github/workflows/mvp.yml"]
   workflow_dispatch:
 
 defaults:
@@ -19,7 +19,7 @@ jobs:
       postgres:
         image: postgres:16-alpine
         env: { POSTGRES_USER: cc, POSTGRES_PASSWORD: cc, POSTGRES_DB: cc }
-        ports: ['5432:5432']
+        ports: ["5432:5432"]
         options: >-
           --health-cmd "pg_isready -U cc" --health-interval 2s --health-retries 30
     env:
@@ -29,7 +29,12 @@ jobs:
       - uses: pnpm/action-setup@v4
         with: { package_json_file: mvp/package.json }
       - uses: actions/setup-node@v4
-        with: { node-version: 22, cache: pnpm, cache-dependency-path: mvp/pnpm-lock.yaml }
+        with:
+          {
+            node-version: 22,
+            cache: pnpm,
+            cache-dependency-path: mvp/pnpm-lock.yaml,
+          }
       - run: pnpm install --frozen-lockfile
       - run: pnpm format:check
       - run: pnpm lint
@@ -59,7 +64,7 @@ jobs:
     needs: checks
     runs-on: ubuntu-24.04
     env:
-      SEED_DEMO: 'true'
+      SEED_DEMO: "true"
       BOOTSTRAP_ADMIN_PASSWORD: Admin12345!
       # Заглушки внешних систем для e2e (мок Telegram Bot API, GreenMail) и адрес webhook изнутри контура.
       COMPOSE_PROFILES: test
@@ -69,13 +74,18 @@ jobs:
       TRUNK_HOST: trunk-sim:5060
       # Письма 2-й линии (Ф8) — в GreenMail.
       TICKET_SMTP_HOST: mail
-      TICKET_SMTP_PORT: '3025'
+      TICKET_SMTP_PORT: "3025"
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
         with: { package_json_file: mvp/package.json }
       - uses: actions/setup-node@v4
-        with: { node-version: 22, cache: pnpm, cache-dependency-path: mvp/pnpm-lock.yaml }
+        with:
+          {
+            node-version: 22,
+            cache: pnpm,
+            cache-dependency-path: mvp/pnpm-lock.yaml,
+          }
       - run: APPS="api worker router realtime call-control connector-telegram connector-email web mock-telegram mock-selfservice" ops/build-images.sh v1 && SKIP_MEDIA=1 ops/build-images.sh v2
       - run: API_TAG=v1 docker compose -f infra/compose/docker-compose.yml up -d --wait
       - name: Сквозные тесты в браузере (Playwright)
@@ -103,8 +113,66 @@ jobs:
         run: API_TAG=v2 node ops/test/route-under-rollout.mjs v2
       - name: Перезапуск узла NATS — без потерь
         run: node ops/test/nats-failover.mjs 2000
+      - name: Перезапуск Kamailio во время разговора — разговор продолжается и корректно завершается (BYE в обе стороны)
+        run: API_TAG=v2 node ops/test/kamailio-restart.mjs
       - if: failure()
         uses: actions/upload-artifact@v4
-        with: { name: e2e-results, path: mvp/e2e/test-results, if-no-files-found: ignore }
+        with:
+          {
+            name: e2e-results,
+            path: mvp/e2e/test-results,
+            if-no-files-found: ignore,
+          }
       - if: failure()
         run: docker compose -f infra/compose/docker-compose.yml logs --no-color | tail -300
+
+  # Автотест «обновление под нагрузкой» (02-архитектура 6.8, Ф11): версия базовой ветки (N) под нагрузкой
+  # 10 операторов / 30 вызовов / 100 чатов обновляется до версии PR (N+1) выпуском ops/release.sh и осушением медиа.
+  zero-downtime:
+    needs: checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      SEED_DEMO: "true"
+      BOOTSTRAP_ADMIN_PASSWORD: Admin12345!
+      COMPOSE_PROFILES: test
+      PUBLIC_BASE_URL: https://traefik
+      TRUNK_HOST: trunk-sim:5060
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { package_json_file: mvp/package.json }
+      - uses: actions/setup-node@v4
+        with:
+          {
+            node-version: 22,
+            cache: pnpm,
+            cache-dependency-path: mvp/pnpm-lock.yaml,
+          }
+      - name: Версия N — базовая ветка
+        run: |
+          BASE="${{ github.event_name == 'push' && github.event.before || format('origin/{0}', github.base_ref || 'main') }}"
+          git fetch --no-tags --depth=1 origin "${BASE#origin/}"
+          git worktree add /tmp/base FETCH_HEAD
+          cd /tmp/base/mvp && pnpm install --frozen-lockfile
+          APPS="api worker router realtime call-control connector-telegram connector-email web mock-telegram mock-selfservice" \
+            MEDIA_TAG=n ops/build-images.sh n
+      - name: Версия N+1 — этот PR (с тестовой миграцией под нагрузкой)
+        run: |
+          pnpm install --frozen-lockfile
+          APPS="api worker router realtime call-control connector-telegram connector-email web" MEDIA_TAG=n1 \
+            EXTRA_MIGRATIONS_DIR=ops/zero-downtime-test/probe PREV_WEB_IMAGE=cc/web:n ops/build-images.sh n1
+      - run: API_TAG=n MEDIA_TAG=n MOCK_TELEGRAM_TAG=n docker compose -f infra/compose/docker-compose.yml up -d --wait
+      - run: cd e2e && pnpm exec playwright install --with-deps chromium
+      - name: Обновление N → N+1 под нагрузкой — 0 обрывов, 0 потерь и дублей, 0 разлогиненных, p99 < 5 с
+        run: MEDIA_TAG=n1 MOCK_TELEGRAM_TAG=n node ops/zero-downtime-test/run.mjs n1
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          {
+            name: zero-downtime-report,
+            path: mvp/out/zero-downtime-report.json,
+            if-no-files-found: ignore,
+          }
+      - if: failure()
+        run: docker compose -f infra/compose/docker-compose.yml logs --no-color | tail -400

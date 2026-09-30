@@ -27,6 +27,8 @@ const ConfigSchema = BaseConfigSchema.extend({
   NATS_STREAM_REPLICAS: z.coerce.number().int().min(1).max(5).default(3),
   /** Период обхода дедлайнов автоматизации (автозакрытие, зависшие шаги бота). */
   AUTOMATION_SWEEP_MS: z.coerce.number().int().min(200).default(2000),
+  // Ф11: одновременно обрабатываемых входящих сообщений разных клиентов (порядок одного клиента сохраняется).
+  INBOUND_CONCURRENCY: z.coerce.number().int().min(1).max(32).default(4),
   // ---- Письма по тикетам 2-й линии (Ф8): SMTP заказчика. Без SMTP_HOST письма копятся в очереди. ----
   SMTP_HOST: z.preprocess((v) => (v === '' ? undefined : v), z.string().optional()),
   SMTP_PORT: z.coerce.number().int().default(25),
@@ -84,6 +86,7 @@ async function main(): Promise<void> {
     logger,
     registry: metrics.registry,
     onBotHttp: automation.runHttp,
+    concurrency: config.INBOUND_CONCURRENCY,
   });
   await inbound.start();
   const delivery = new DeliveryProcessor({ pool, js: nc.jetstream(), jsm, logger });

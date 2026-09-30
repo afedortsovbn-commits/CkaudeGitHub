@@ -6,7 +6,7 @@
 Требования, архитектура и план — в [`../Контакт-центр/planning/`](../Контакт-центр/planning/).
 Журнал выполненных фаз — [`docs/PROGRESS.md`](docs/PROGRESS.md).
 
-## Состав (выполнены фазы Ф0–Ф10)
+## Состав (выполнены фазы Ф0–Ф11)
 
 | Каталог                   | Что это                                                                                                                                                                                                                                                                |
 | ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -30,7 +30,7 @@
 | `packages/db`             | SQL-миграции (правило expand/contract), раннер миграций, схема Drizzle                                                                                                                                                                                                 |
 | `packages/service-kit`    | Общая основа сервисов: конфиг, JSON-логи, корректная остановка, NATS, transactional outbox, очередь задач (pg-boss), аренды в NATS KV, шифрование секретов, метрики                                                                                                    |
 | `infra/compose`           | Docker Compose: Traefik, PostgreSQL 16, NATS JetStream ×3, SeaweedFS (S3), api, worker, router, realtime, коннекторы, web ×2; профили `observability`, `test` (мок Telegram, GreenMail)                                                                                |
-| `ops/`                    | Сборка образов, поэтапное обновление, офлайн-комплект, проверки                                                                                                                                                                                                        |
+| `ops/`                    | Сборка образов, выпуск релиза без простоя (`release.sh`: предпроверки, expand-миграции, поэтапная замена, фиче-флаги, откат), обновление медиа осушением (`update-media.sh`: Asterisk, coturn, NATS, Kamailio), проверка совместимости контрактов (`compat/`), автотест под нагрузкой (`zero-downtime-test/`), офлайн-комплект, проверки |
 
 ## Быстрый старт
 
@@ -217,35 +217,50 @@ COMPOSE_PROFILES=demo SEED_DEMO=true BOOTSTRAP_ADMIN_PASSWORD='Admin12345!' \
 - Параметры расчёта (Настройки): порог SL для голоса и текста (`report.sl_voice_s`, `report.sl_text_s`), короткий
   сброс (`report.short_abandon_s`), «первый ответ вовремя» (`report.first_response_s`).
 
-## Обновление без остановки
+## Обновление без остановки (Ф11)
+
+Порядок и процедуры по классам компонентов — **[docs/регламент-обновления.md](docs/регламент-обновления.md)**.
 
 ```bash
-ops/build-images.sh v2
-API_TAG=v2 ops/rollout.sh api
-WEB_TAG=v2 ops/rollout.sh web
-CONNECTOR_TELEGRAM_TAG=v2 ops/rollout.sh connector-telegram
-CALL_CONTROL_TAG=v2 ops/rollout.sh call-control   # активный экземпляр узла передаёт его резервному
-MEDIA_TAG=v2 ops/update-media.sh                   # Asterisk: осушение узла → обновление → возврат, по очереди
+ops/build-images.sh v2                              # образы релиза (web переносит ресурсы работающей версии)
+ops/release.sh v2                                   # предпроверки → expand-миграции → поэтапная замена → app.version
+FEATURE_FLAGS=a,b MEDIA_TAG=v2 ops/release.sh v2    # + фиче-флаги после обновления, + Asterisk осушением
+ops/release.sh --rollback v1                        # откат на образы предыдущего релиза (без миграций)
+ops/update-media.sh coturn-1 coturn-2               # TURN: вывод из ICE-серверов, ожидание сессий, обновление
+ops/update-media.sh nats-1 nats-2 nats-3            # NATS по одному (lame duck mode)
+KAMAILIO_TAG=v2 ops/update-media.sh kamailio        # класс C: окно ≈ 7 с, разговоры продолжаются
+pnpm compat:check --base release-v1                 # совместимость событий и OpenAPI с прошлым релизом
+pnpm migrations:lint --base release-v1              # expand/contract, неизменность выпущенных миграций
+```
+
+- Интерфейс оператора узнаёт о новой версии (`/version.json`, событие `app.version`) и показывает «Доступна
+  новая версия»; обновляется сам, когда нет звонка и неотправленного ответа (флаг `web.auto_reload`), во время
+  звонка кнопка «Обновить» недоступна (M-OP-11). Образ web хранит ресурсы текущей и предыдущей версии.
+- «Настройки» → фиче-флаги и журнал выпусков (`GET /api/v1/admin/releases`, `/api/v1/admin/feature-flags`).
+- Миграции ждут блокировку не дольше `MIGRATION_LOCK_TIMEOUT_MS` (5 с) и повторяются; индексы на больших
+  таблицах — `CREATE INDEX CONCURRENTLY` в файле с `-- cc:no-transaction`; удаление — только contract-миграцией
+  следующего релиза с пометкой `-- contract-of: NNNN`.
+
+Проверки под нагрузкой (стек с `SEED_DEMO=true`, профиль `test`):
+
+```bash
+MEDIA_TAG=v2 node ops/zero-downtime-test/run.mjs v2 # 10 операторов, 30 вызовов, 100 чатов во время выпуска v2
+node ops/test/kamailio-restart.mjs                  # разговор переживает перезапуск Kamailio, BYE в обе стороны
+node ops/test/rollout-under-load.mjs v2 50 60       # 50 запросов/с во время обновления api — 0 ошибок
+SERVICE=web node ops/test/rollout-under-load.mjs v2 40 30
+node ops/test/chat-under-rollout.mjs v2 60          # переписка во время обновления worker, realtime, api
+node ops/test/route-under-rollout.mjs v2            # распределение обращений во время обновления router
+node ops/test/webhooks-under-rollout.mjs v2 60      # внешний канал и webhooks во время обновления worker, api
+node ops/test/connectors-under-rollout.mjs v2 60    # Telegram и email во время обновления коннекторов
+node ops/test/calls-under-update.mjs media          # ~10 разговоров SIPp во время update-media.sh — 0 обрывов
+node ops/test/calls-under-update.mjs call-control v2
+node ops/test/ivr-under-switch.mjs graceful         # клиенты в IVR при штатной смене call-control — пауза ≤ 3 с
+node ops/test/ivr-under-switch.mjs kill             # то же при аварийной (kill) — пауза ≤ 8 с
+node ops/test/nats-failover.mjs 2000                # перезапуск узла-лидера NATS — 0 потерь и дублей
 ```
 
 Маршруты Traefik заданы в `infra/traefik/dynamic.yml`, а не в метках контейнеров: во время обновления метки
-старых и новых экземпляров не должны различаться. Скрипт поднимает новые экземпляры рядом со старыми, ждёт их готовности, затем корректно останавливает
-старые: `readyz` → 503, пауза, пока балансировщик снимет экземпляр, завершение текущих запросов,
-закрытие соединений. Проверка под нагрузкой:
-
-```bash
-node ops/test/rollout-under-load.mjs v2 50 60   # 50 запросов/с в течение 60 с, во время обновления — 0 ошибок
-SERVICE=web node ops/test/rollout-under-load.mjs v2 40 30
-node ops/test/chat-under-rollout.mjs v2 60     # переписка во время обновления worker, realtime, api — 0 потерь
-node ops/test/route-under-rollout.mjs v2         # распределение обращений во время обновления router — 0 потерь
-node ops/test/webhooks-under-rollout.mjs v2 60   # внешний канал и webhooks во время обновления worker, api (профиль test)
-node ops/test/connectors-under-rollout.mjs v2 60 # Telegram и email во время обновления коннекторов (профиль test)
-node ops/test/calls-under-update.mjs media       # ~10 разговоров SIPp во время update-media.sh — 0 обрывов
-node ops/test/calls-under-update.mjs call-control v2  # то же во время переключения call-control
-node ops/test/ivr-under-switch.mjs graceful      # клиенты в IVR при штатной смене call-control — пауза ≤ 3 с
-node ops/test/ivr-under-switch.mjs kill          # то же при аварийной (kill) — пауза ≤ 8 с
-node ops/test/nats-failover.mjs 2000             # перезапуск узла-лидера NATS — 0 потерь и дублей
-```
+старых и новых экземпляров не должны различаться.
 
 ## Работа без интернета (M-NFR-10)
 
@@ -267,7 +282,7 @@ pnpm install && pnpm build
 pnpm lint && pnpm typecheck && pnpm test
 TEST_DATABASE_URL=postgres://cc:cc_dev_password@127.0.0.1:5432/postgres pnpm test   # + интеграционные тесты API
 cd e2e && pnpm exec playwright test                                                  # e2e против запущенного стека
-pnpm format:check && pnpm licenses:check && pnpm migrations:lint
+pnpm format:check && pnpm licenses:check && pnpm migrations:lint && pnpm test:ops && pnpm compat:check
 ```
 
 ## Правила для разработки

@@ -9,6 +9,47 @@ const CONSUMER = 'worker-inbound';
 const MAX_DELIVER = 20;
 
 /**
+ * Ключ очерёдности: сообщения одного клиента в канале обрабатываются строго по очереди, разных клиентов —
+ * параллельно (Ф11: под нагрузкой 100 чатов последовательная обработка не успевала, хвост рос при обновлении).
+ */
+export function orderingKey(raw: unknown): string {
+  const m = raw as { channelId?: string; identity?: { kind?: string; value?: string } } | null;
+  return `${m?.channelId ?? ''}:${m?.identity?.kind ?? ''}:${m?.identity?.value ?? ''}`;
+}
+
+/**
+ * Исполнитель задач с ограничением параллельности и порядком внутри ключа: задача ключа начинается после
+ * завершения предыдущей задачи того же ключа.
+ */
+export class KeyedRunner {
+  private readonly tails = new Map<string, Promise<void>>();
+  private readonly inflight = new Set<Promise<void>>();
+
+  constructor(private readonly limit: number) {}
+
+  /** Ставит задачу; ждёт, только если достигнут предел одновременных задач. */
+  async push(key: string, task: () => Promise<void>): Promise<void> {
+    while (this.inflight.size >= this.limit) await Promise.race(this.inflight);
+    const prev = this.tails.get(key) ?? Promise.resolve();
+    // Ошибки задачи обрабатывает сама задача (handle — nak и журнал); очередь ключа не прерывается.
+    const p: Promise<void> = prev
+      .then(task)
+      .catch(() => undefined)
+      .finally(() => {
+        this.inflight.delete(p);
+        if (this.tails.get(key) === p) this.tails.delete(key);
+      });
+    this.tails.set(key, p);
+    this.inflight.add(p);
+  }
+
+  /** Дожидается всех поставленных задач. */
+  async drain(): Promise<void> {
+    while (this.inflight.size) await Promise.all(this.inflight);
+  }
+}
+
+/**
  * Обработчик потока CC_INBOUND. Durable-потребитель общий для всех экземпляров worker:
  * сообщение подтверждается только после фиксации транзакции; при остановке экземпляра
  * неподтверждённые сообщения будут доставлены другому (ack_wait).
@@ -28,6 +69,8 @@ export class InboundProcessor {
       registry: import('prom-client').Registry;
       /** Запрос бота во внешнюю систему — выполняется после фиксации транзакции (Ф7). */
       onBotHttp?: (h: BotHttp) => void;
+      /** Одновременно обрабатываемых сообщений (разных клиентов) в экземпляре; по умолчанию 4. */
+      concurrency?: number;
     },
   ) {
     this.processed = new Counter({
@@ -62,13 +105,22 @@ export class InboundProcessor {
   }
 
   private async run(): Promise<void> {
+    const runner = new KeyedRunner(Math.max(1, this.o.concurrency ?? 4));
     while (this.running) {
       try {
         const batch = await this.consumer!.fetch({ max_messages: 50, expires: 1000 });
         for await (const m of batch) {
-          await this.handle(m);
+          let key = '';
+          try {
+            key = orderingKey(m.json());
+          } catch {
+            /* некорректное сообщение отбросит handle */
+          }
+          await runner.push(key, () => this.handle(m));
           if (!this.running) break;
         }
+        // Остановка и следующая пачка — после завершения начатых: подтверждение только после фиксации.
+        await runner.drain();
       } catch (err) {
         this.o.logger.warn({ err: String(err) }, 'ошибка чтения потока CC_INBOUND, повтор');
         await new Promise((r) => setTimeout(r, 500));

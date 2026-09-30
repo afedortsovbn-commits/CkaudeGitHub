@@ -40,8 +40,14 @@ for c in "${NEW[@]}"; do
   while :; do
     st=$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$c")
     [ "$st" = healthy ] && break
-    if [ "$st" = unhealthy ] || [ "$st" = exited ] || [ "$SECONDS" -ge "$deadline" ]; then
-      log "новый экземпляр ${c:0:12} не стал healthy ($st) — откат: удаляю новые, старые продолжают работать"
+    # «unhealthy» у только что запущенного экземпляра — ещё не отказ: под нагрузкой старт может занять больше
+    # start-period, а статус станет healthy после первой успешной проверки. Отказ — остановка контейнера
+    # или истечение HEALTH_TIMEOUT.
+    running=$(docker inspect -f '{{.State.Running}}' "$c")
+    if [ "$running" != true ] || [ "$SECONDS" -ge "$deadline" ]; then
+      log "новый экземпляр ${c:0:12} не стал healthy ($st за ${HEALTH_TIMEOUT} с) — откат: удаляю новые, старые продолжают работать"
+      log "  последние строки журнала нового экземпляра:"
+      docker logs --tail 20 "$c" 2>&1 | sed 's/^/    /' || true
       docker stop -t "$STOP_TIMEOUT" "${NEW[@]}" >/dev/null; docker rm "${NEW[@]}" >/dev/null
       exit 1
     fi

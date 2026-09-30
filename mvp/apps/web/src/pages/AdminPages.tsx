@@ -1,4 +1,4 @@
-import { Button, NumberInput, Select, Stack, Table, TextInput, Title } from '@mantine/core';
+import { Badge, Button, NumberInput, Select, Stack, Switch, Table, TextInput, Title } from '@mantine/core';
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { get, patch } from '../lib/api';
@@ -103,7 +103,82 @@ export function SettingsPage() {
       <Button onClick={() => save.mutate(undefined)} loading={save.isPending}>
         {t.save}
       </Button>
+      <ReleasePanel />
     </Stack>
+  );
+}
+
+const RELEASE_STATUS: Record<string, [string, string]> = {
+  started: ['идёт', 'blue'],
+  succeeded: ['успешно', 'green'],
+  failed: ['ошибка', 'red'],
+  rolled_back: ['откат', 'orange'],
+};
+
+/**
+ * Обновления без простоя (Ф11): фиче-флаги (новая функциональность включается после обновления всех
+ * экземпляров) и журнал выпусков ops/release.sh. Изменения действуют без перезапуска.
+ */
+function ReleasePanel() {
+  const flags = useList('/admin/feature-flags');
+  const releases = useList('/admin/releases');
+  const toggle = useAction((b: { key: string; enabled: boolean }) =>
+    patch(`/admin/feature-flags/${encodeURIComponent(b.key)}`, { enabled: b.enabled }),
+  );
+  return (
+    <>
+      <Title order={4} mt="md">
+        {t.release.flags}
+      </Title>
+      {(flags.data ?? []).map((f) => (
+        <Switch
+          key={String(f.key)}
+          data-testid={`flag-${String(f.key)}`}
+          label={String(f.key)}
+          description={f.description ? String(f.description) : undefined}
+          checked={Boolean(f.enabled)}
+          onChange={(e) => toggle.mutate({ key: String(f.key), enabled: e.currentTarget.checked })}
+        />
+      ))}
+      <Title order={4} mt="md">
+        {t.release.log}
+      </Title>
+      <Table data-testid="release-log">
+        <Table.Thead>
+          <Table.Tr>
+            <Table.Th>{t.release.tag}</Table.Th>
+            <Table.Th>{t.release.started}</Table.Th>
+            <Table.Th>{t.release.duration}</Table.Th>
+            <Table.Th>{t.release.status}</Table.Th>
+          </Table.Tr>
+        </Table.Thead>
+        <Table.Tbody>
+          {(releases.data ?? []).map((r) => {
+            const [label, color] = RELEASE_STATUS[String(r.status)] ?? [String(r.status), 'gray'];
+            const ms = r.finishedAt
+              ? new Date(String(r.finishedAt)).getTime() - new Date(String(r.startedAt)).getTime()
+              : null;
+            return (
+              <Table.Tr key={String(r.id)}>
+                <Table.Td>
+                  {r.prevTag ? `${String(r.prevTag)} → ` : ''}
+                  {String(r.tag)}
+                </Table.Td>
+                <Table.Td>
+                  {new Date(String(r.startedAt)).toLocaleString('ru-RU', { timeZone: 'Europe/Minsk' })}
+                </Table.Td>
+                <Table.Td>{ms === null ? '—' : `${Math.round(ms / 1000)} с`}</Table.Td>
+                <Table.Td>
+                  <Badge color={color} variant="light">
+                    {label}
+                  </Badge>
+                </Table.Td>
+              </Table.Tr>
+            );
+          })}
+        </Table.Tbody>
+      </Table>
+    </>
   );
 }
 

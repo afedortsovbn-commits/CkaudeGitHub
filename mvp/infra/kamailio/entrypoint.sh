@@ -9,6 +9,7 @@ MEDIA_NODES="${MEDIA_NODES:-asterisk-1:5060 asterisk-2:5060}"
 for f in kamailio.cfg tls.cfg; do
   sed -e "s|__SIP_SECRET__|${SIP_SECRET}|g" -e "s|__SIP_DOMAIN__|${SIP_DOMAIN}|g" \
       -e "s|__TRUNK_HOST__|${TRUNK_HOST}|g" -e "s|__LISTEN_IF__|${LISTEN_IF:-eth0}|g" \
+      -e "s|__SIP_ADVERTISE__|${SIP_ADVERTISE:-kamailio}|g" \
       "/opt/cc/kamailio/$f" > "/etc/kamailio/$f"
 done
 : > /etc/kamailio/dispatcher.list

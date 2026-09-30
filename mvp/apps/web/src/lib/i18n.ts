@@ -44,6 +44,14 @@ const ru = {
     reloadIn: 'Обновление через',
     reload: 'Обновить',
   },
+  release: {
+    flags: 'Фиче-флаги',
+    log: 'Журнал выпусков',
+    tag: 'Версия',
+    started: 'Начат',
+    duration: 'Длительность',
+    status: 'Итог',
+  },
 } as const;
 
 export const t = ru;
