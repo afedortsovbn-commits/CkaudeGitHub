@@ -43,6 +43,8 @@ jobs:
       - run: pnpm test
       - name: Лицензии зависимостей
         run: pnpm licenses:check
+      - name: Строки интерфейса web и виджета — только в ресурсах локализации (M-NFR-08)
+        run: pnpm i18n:check
       - name: Базовая ревизия для сверки (ветка PR или предыдущий коммит main)
         run: |
           BASE_REF="${{ github.base_ref || 'main' }}"
@@ -117,6 +119,8 @@ jobs:
         run: node ops/test/nats-failover.mjs 2000
       - name: Перезапуск Kamailio во время разговора — разговор продолжается и корректно завершается (BYE в обе стороны)
         run: API_TAG=v2 node ops/test/kamailio-restart.mjs
+      - name: Несколько SIP-транков — отказ и молчание основного переводят вызов в резервный (Ф12b)
+        run: node ops/test/trunk-failover.mjs
       # Последней: полное восстановление возвращает данные стенда к моменту копии.
       - name: Резервная копия на работающей системе, проверка копии и полное восстановление (Ф12)
         run: API_TAG=v2 node ops/test/backup-restore.mjs

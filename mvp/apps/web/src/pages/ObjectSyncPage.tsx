@@ -19,6 +19,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { errorText, get, post, put } from '../lib/api';
 import { type Row, useAction, useList } from '../lib/data';
+import { t } from '../lib/i18n';
 
 const MASK = '********';
 
@@ -57,18 +58,11 @@ interface RunResult {
   problems: Problem[];
 }
 
-const ACTION: Record<Change['action'], { label: string; color: string }> = {
-  added: { label: 'добавлен', color: 'green' },
-  updated: { label: 'изменён', color: 'blue' },
-  deactivated: { label: 'деактивирован', color: 'red' },
-  reactivated: { label: 'снова активен', color: 'teal' },
-};
-const FIELD: Record<string, string> = {
-  name: 'название',
-  address: 'адрес',
-  enterpriseId: 'предприятие',
-  externalIds: 'внешние идентификаторы',
-  source: 'источник',
+const ACTION_COLOR: Record<Change['action'], string> = {
+  added: 'green',
+  updated: 'blue',
+  deactivated: 'red',
+  reactivated: 'teal',
 };
 const fmt = (v: unknown) =>
   v === null || v === undefined || v === '' ? '—' : typeof v === 'object' ? JSON.stringify(v) : String(v);
@@ -78,12 +72,11 @@ const dt = (v: unknown) =>
 function Summary({ r }: { r: RunResult }) {
   return (
     <Group gap="xs" data-testid="sync-summary">
-      <Badge color={r.status === 'ok' ? 'green' : 'red'}>{r.status === 'ok' ? 'успешно' : 'ошибка'}</Badge>
-      {r.dryRun && <Badge color="gray">проверка без изменений</Badge>}
-      <Text size="sm">
-        в выгрузке {r.total}: добавлено {r.added}, изменено {r.updated}, деактивировано {r.deactivated}, снова
-        активно {r.reactivated}, пропущено {r.skipped}
-      </Text>
+      <Badge color={r.status === 'ok' ? 'green' : 'red'}>
+        {r.status === 'ok' ? t.reviews.ok : t.reviews.error}
+      </Badge>
+      {r.dryRun && <Badge color="gray">{t.reviews.dryBadge}</Badge>}
+      <Text size="sm">{t.reviews.summary(r)}</Text>
     </Group>
   );
 }
@@ -100,13 +93,13 @@ function RunDetails({ r }: { r: RunResult }) {
       {r.problems.length > 0 && (
         <>
           <Text fw={600} size="sm">
-            Замечания к выгрузке ({r.problems.length})
+            {t.reviews.problems(r.problems.length)}
           </Text>
           <Table striped data-testid="sync-problems">
             <Table.Tbody>
               {r.problems.map((p, i) => (
                 <Table.Tr key={i}>
-                  <Table.Td>{p.line ? `строка ${p.line}` : ''}</Table.Td>
+                  <Table.Td>{p.line ? t.reviews.line(p.line) : ''}</Table.Td>
                   <Table.Td>{p.code ?? ''}</Table.Td>
                   <Table.Td>{p.message}</Table.Td>
                 </Table.Tr>
@@ -118,7 +111,7 @@ function RunDetails({ r }: { r: RunResult }) {
       {r.changes.length > 0 && (
         <>
           <Text fw={600} size="sm">
-            Изменения ({r.changes.length})
+            {t.reviews.changes(r.changes.length)}
           </Text>
           <Table striped data-testid="sync-changes">
             <Table.Tbody>
@@ -127,13 +120,13 @@ function RunDetails({ r }: { r: RunResult }) {
                   <Table.Td>{c.code}</Table.Td>
                   <Table.Td>{c.name}</Table.Td>
                   <Table.Td>
-                    <Badge color={ACTION[c.action].color} variant="light">
-                      {ACTION[c.action].label}
+                    <Badge color={ACTION_COLOR[c.action]} variant="light">
+                      {t.reviews.actions[c.action]}
                     </Badge>
                   </Table.Td>
                   <Table.Td>
                     {Object.entries(c.fields ?? {})
-                      .map(([k, v]) => `${FIELD[k] ?? k}: ${fmt(v.from)} → ${fmt(v.to)}`)
+                      .map(([k, v]) => `${t.reviews.fields[k] ?? k}: ${fmt(v.from)} → ${fmt(v.to)}`)
                       .join('; ')}
                   </Table.Td>
                 </Table.Tr>
@@ -175,7 +168,7 @@ export function ObjectSyncPage() {
         maxDeactivateShare: v!.maxDeactivateShare,
         ...(token ? { token } : {}),
       }).then(() => setToken('')),
-    'Настройки синхронизации сохранены',
+    t.reviews.saved,
   );
   const run = async (dryRun: boolean) => {
     setBusy(dryRun ? 'dry' : 'run');
@@ -185,8 +178,7 @@ export function ObjectSyncPage() {
       void qc.invalidateQueries();
       notifications.show({
         color: r.status === 'ok' ? 'green' : 'red',
-        message:
-          r.status === 'ok' ? (dryRun ? 'Проверка выполнена' : 'Синхронизация выполнена') : String(r.error),
+        message: r.status === 'ok' ? (dryRun ? t.reviews.dryDone : t.reviews.runDone) : String(r.error),
       });
     } catch (e) {
       notifications.show({ color: 'red', message: errorText(e) });
@@ -198,22 +190,19 @@ export function ObjectSyncPage() {
   if (!v) return null;
   return (
     <Stack>
-      <Title order={3}>Синхронизация объектов</Title>
+      <Title order={3}>{t.reviews.syncTitle}</Title>
       <Text size="sm" c="dimmed" maw={900}>
-        Справочник объектов (АЗС, ЭЗС) ежедневно загружается из внешней системы: новые объекты добавляются,
-        изменённые обновляются, исчезнувшие из выгрузки или закрытые — деактивируются. Названия, адреса,
-        предприятия и внешние идентификаторы синхронизируемых объектов вручную не меняются. Если выгрузка
-        деактивировала бы слишком много объектов (или пришла пустой), запуск останавливается без изменений.
+        {t.reviews.syncIntro}
       </Text>
       <Stack maw={620} gap="xs">
         <Switch
-          label="Ежедневная синхронизация включена"
+          label={t.reviews.syncEnabled}
           checked={v.enabled}
           onChange={(e) => setV({ ...v, enabled: e.currentTarget.checked })}
           data-testid="sync-enabled"
         />
         <TextInput
-          label="Адрес выгрузки справочника (HTTP GET)"
+          label={t.reviews.syncUrl}
           placeholder="https://erp.local/api/objects"
           value={v.url ?? ''}
           onChange={(e) => setV({ ...v, url: e.currentTarget.value })}
@@ -222,25 +211,25 @@ export function ObjectSyncPage() {
         <SegmentedControl
           data={[
             { value: 'json', label: 'JSON' },
-            { value: 'csv', label: 'CSV (как ручной импорт)' },
+            { value: 'csv', label: t.reviews.formatCsv },
           ]}
           value={v.format}
           onChange={(x) => setV({ ...v, format: x as Settings['format'] })}
         />
         <PasswordInput
-          label="Токен (Authorization: Bearer)"
-          description={v.token === MASK ? 'Задан; оставьте пустым, чтобы не менять' : 'Не задан'}
+          label={t.reviews.token}
+          description={v.token === MASK ? t.reviews.tokenSet : t.reviews.tokenNotSet}
           value={token}
           onChange={(e) => setToken(e.currentTarget.value)}
         />
         <Group grow>
           <TextInput
-            label="Время запуска (Europe/Minsk)"
+            label={t.reviews.time}
             value={v.time}
             onChange={(e) => setV({ ...v, time: e.currentTarget.value })}
           />
           <NumberInput
-            label="Предельная доля деактивации, %"
+            label={t.reviews.maxShare}
             min={0}
             max={100}
             value={Math.round(v.maxDeactivateShare * 100)}
@@ -249,7 +238,7 @@ export function ObjectSyncPage() {
         </Group>
         <Group>
           <Button onClick={() => save.mutate(undefined)} loading={save.isPending}>
-            Сохранить
+            {t.reviews.save}
           </Button>
           <Button
             variant="outline"
@@ -257,7 +246,7 @@ export function ObjectSyncPage() {
             loading={busy === 'dry'}
             data-testid="sync-dry"
           >
-            Проверить (без изменений)
+            {t.reviews.dryRun}
           </Button>
           <Button
             color="orange"
@@ -265,24 +254,24 @@ export function ObjectSyncPage() {
             loading={busy === 'run'}
             data-testid="sync-run"
           >
-            Синхронизировать сейчас
+            {t.reviews.runNow}
           </Button>
         </Group>
       </Stack>
       {result && <RunDetails r={result} />}
       <Title order={4} mt="md">
-        Журнал запусков
+        {t.reviews.runsTitle}
       </Title>
       <Table striped data-testid="sync-runs">
         <Table.Thead>
           <Table.Tr>
-            <Table.Th>Начало</Table.Th>
-            <Table.Th>Запуск</Table.Th>
-            <Table.Th>Итог</Table.Th>
-            <Table.Th>Добавлено</Table.Th>
-            <Table.Th>Изменено</Table.Th>
-            <Table.Th>Деактивировано</Table.Th>
-            <Table.Th>Пропущено</Table.Th>
+            <Table.Th>{t.reviews.colStart}</Table.Th>
+            <Table.Th>{t.reviews.colTrigger}</Table.Th>
+            <Table.Th>{t.reviews.colResult}</Table.Th>
+            <Table.Th>{t.reviews.colAdded}</Table.Th>
+            <Table.Th>{t.reviews.colUpdated}</Table.Th>
+            <Table.Th>{t.reviews.colDeactivated}</Table.Th>
+            <Table.Th>{t.reviews.colSkipped}</Table.Th>
             <Table.Th />
           </Table.Tr>
         </Table.Thead>
@@ -292,16 +281,20 @@ export function ObjectSyncPage() {
               <Table.Td>{dt(r.startedAt)}</Table.Td>
               <Table.Td>
                 {r.trigger === 'schedule'
-                  ? 'по расписанию'
-                  : `вручную${r.startedByName ? ` (${String(r.startedByName)})` : ''}`}
-                {r.dryRun ? ' · проверка' : ''}
+                  ? t.reviews.bySchedule
+                  : t.reviews.manual(r.startedByName ? String(r.startedByName) : '')}
+                {r.dryRun ? t.reviews.dryMark : ''}
               </Table.Td>
               <Table.Td>
                 <Badge
                   color={r.status === 'ok' ? 'green' : r.status === 'error' ? 'red' : 'gray'}
                   variant="light"
                 >
-                  {r.status === 'ok' ? 'успешно' : r.status === 'error' ? 'ошибка' : 'выполняется'}
+                  {r.status === 'ok'
+                    ? t.reviews.ok
+                    : r.status === 'error'
+                      ? t.reviews.error
+                      : t.reviews.running}
                 </Badge>
               </Table.Td>
               <Table.Td>{String(r.added)}</Table.Td>
@@ -310,14 +303,14 @@ export function ObjectSyncPage() {
               <Table.Td>{String(r.skipped)}</Table.Td>
               <Table.Td>
                 <Button size="xs" variant="subtle" onClick={() => void open(r.id)}>
-                  Подробнее
+                  {t.reviews.details}
                 </Button>
               </Table.Td>
             </Table.Tr>
           ))}
         </Table.Tbody>
       </Table>
-      <Modal opened={!!details} onClose={() => setDetails(null)} title="Запуск синхронизации" size="xl">
+      <Modal opened={!!details} onClose={() => setDetails(null)} title={t.reviews.runModal} size="xl">
         {details && <RunDetails r={details} />}
       </Modal>
     </Stack>

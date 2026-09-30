@@ -1,6 +1,7 @@
 import { notifications } from '@mantine/notifications';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { errorText, get } from './api';
+import { t } from './i18n';
 
 export interface Row {
   id: string;
@@ -12,7 +13,7 @@ export const useList = <T = Row>(path: string, enabled = true) =>
   useQuery({ queryKey: [path], queryFn: () => get<T[]>(path), enabled });
 
 /** Мутация с уведомлением и обновлением всех списков. */
-export function useAction<A>(fn: (a: A) => Promise<unknown>, okText = 'Сохранено') {
+export function useAction<A>(fn: (a: A) => Promise<unknown>, okText = t.saved) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: fn,
@@ -22,7 +23,7 @@ export function useAction<A>(fn: (a: A) => Promise<unknown>, okText = 'Сохр�
       warnOpenTickets((res as { openTickets?: TicketRef[] } | undefined)?.openTickets);
     },
     onError: (e) =>
-      notifications.show({ color: 'red', title: 'Ошибка', message: errorText(e), autoClose: 8000 }),
+      notifications.show({ color: 'red', title: t.error, message: errorText(e), autoClose: 8000 }),
   });
 }
 
@@ -43,13 +44,14 @@ export function warnOpenTickets(list: TicketRef[] | undefined): void {
   if (!list?.length) return;
   notifications.show({
     color: 'yellow',
-    title: `Есть открытые тикеты: ${list.length}`,
-    message: `${list
-      .slice(0, 20)
-      .map((t) => `№${t.number}`)
-      .join(
-        ', ',
-      )}${list.length > 20 ? '…' : ''} — переадресуйте их или назначьте ответственных («Контроль 2-й линии»).`,
+    title: t.dataLib.estOtkrytyeTikety(list.length),
+    message: t.dataLib.pereadresuyteIkhIliNaznachte(
+      list
+        .slice(0, 20)
+        .map((t) => `№${t.number}`)
+        .join(', '),
+      list.length > 20 ? '…' : '',
+    ),
     autoClose: false,
   });
 }

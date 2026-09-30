@@ -21,7 +21,7 @@ export function UpdateBanner() {
       : u.decision.kind === 'wait_draft'
         ? t.update.waitDraft
         : u.decision.kind === 'reload' && u.reloadAt
-          ? `${t.update.reloadIn} ${Math.max(0, Math.ceil((u.reloadAt - now) / 1000))} с`
+          ? t.updateBannerUi.s(t.update.reloadIn, Math.max(0, Math.ceil((u.reloadAt - now) / 1000)))
           : u.autoReload
             ? t.update.auto
             : t.update.autoOff;

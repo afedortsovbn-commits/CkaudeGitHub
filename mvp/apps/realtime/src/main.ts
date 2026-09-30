@@ -74,6 +74,15 @@ async function main(): Promise<void> {
   const server = startHealthServer({ port: config.PORT, lifecycle, metrics });
   const wss = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 });
 
+  /** Основной клиент, если этот присоединён к другому (слияние дублей, M-CARD-01). */
+  async function resolveContact(id: string): Promise<string> {
+    const { rows } = await pool.query<{ merged_into_id: string | null }>(
+      'SELECT merged_into_id FROM contact WHERE id = $1',
+      [id],
+    );
+    return rows[0]?.merged_into_id ?? id;
+  }
+
   async function authenticate(req: IncomingMessage): Promise<{ peer: Peer; sessionId?: string } | null> {
     const url = new URL(req.url ?? '/', 'http://x');
     const opToken = url.searchParams.get('token');
@@ -92,7 +101,7 @@ async function main(): Promise<void> {
           [c.channelId, String(req.headers.origin ?? '')],
         );
         return rows[0]?.ok
-          ? { peer: { kind: 'client', contactId: c.contactId, channelId: c.channelId } }
+          ? { peer: { kind: 'client', contactId: await resolveContact(c.contactId), channelId: c.channelId } }
           : null;
       }
     } catch {
@@ -203,6 +212,22 @@ async function main(): Promise<void> {
     }
   }, 25_000);
   const refresh = setInterval(async () => {
+    // Клиенты, присоединённые к другому после подключения: события приходят с id основного клиента.
+    const clients = [...conns].filter((c) => c.peer.kind === 'client');
+    if (clients.length) {
+      const ids = [...new Set(clients.map((c) => (c.peer.kind === 'client' ? c.peer.contactId : '')))];
+      const merged = await pool
+        .query<{ id: string; merged_into_id: string }>(
+          'SELECT id, merged_into_id FROM contact WHERE id = ANY($1::uuid[]) AND merged_into_id IS NOT NULL',
+          [ids],
+        )
+        .then((r) => new Map(r.rows.map((x) => [x.id, x.merged_into_id])))
+        .catch(() => new Map<string, string>());
+      for (const c of clients) {
+        const to = c.peer.kind === 'client' ? merged.get(c.peer.contactId) : undefined;
+        if (to && c.peer.kind === 'client') c.peer = { ...c.peer, contactId: to };
+      }
+    }
     for (const c of conns) {
       if (c.peer.kind !== 'operator') continue;
       const p = await principals

@@ -10,6 +10,7 @@ import { APP_CONTEXT, type AppContext } from '../context';
 import { ownAttachments, saveUpload, sendAttachment } from '../lib/attachments';
 import { one, rows, toApi, withTx } from '../lib/db';
 import { ApiError, badRequest, notFound, parse } from '../lib/errors';
+import { ensureRequiredTag } from './required-tag';
 
 const uuid = z.string().uuid();
 const SCOPE_COLS = {
@@ -70,7 +71,7 @@ interface Conv {
 
 const LIST_SQL = `SELECT c.id, c.status, c.channel_kind, c.queue_id, c.assignee_id, c.topic_id, c.enterprise_id,
     c.is_important, c.is_urgent, c.callback_requested, c.last_message_at, c.created_at, c.assigned_at, c.closed_at, c.seq, c.contact_id,
-    COALESCE(ct.display_name, ct.phone, ct.email, 'Клиент') AS contact_name, q.name AS queue_name, u.full_name AS assignee_name,
+    COALESCE(ct.display_name, ct.phone, ct.email, 'Клиент') AS contact_name, q.name AS queue_name, q.require_tag AS queue_require_tag, u.full_name AS assignee_name,
     t.name AS topic_name, (c.channel_meta #>> '{review,rating}')::int AS review_rating,
     (SELECT left(m.body, 140) FROM message m WHERE m.conversation_id = c.id AND m.direction IN ('in','out')
       ORDER BY m.sent_at DESC, m.seq DESC LIMIT 1) AS last_message,
@@ -118,6 +119,31 @@ export class ConversationsController {
         break;
       case 'closed':
         add(`c.status = 'closed'`);
+        break;
+      case 'hold':
+        // «Удержание» (M-OP-02): мои обращения, чей звонок сейчас на удержании (клиент слушает музыку).
+        add(
+          `c.assignee_id = ? AND c.status = 'active' AND EXISTS (SELECT 1 FROM call k WHERE k.conversation_id = c.id
+             AND k.state = 'talking' AND k.on_hold)`,
+          p.id,
+        );
+        break;
+      case 'wrapup':
+        // «Постобработка» (M-OP-02): разговор с клиентом завершён, а карточка ещё не закрыта. Звонок — все вызовы
+        // обращения завершены (был разговор); чат — последним написал оператор и клиент молчит дольше
+        // operator.wrapup_chat_idle_s («Настройки»). Статусы обращения не меняются — вкладка строится по признакам.
+        add(
+          `c.assignee_id = ? AND c.status = 'active' AND (
+             (c.channel_kind = 'voice'
+               AND EXISTS (SELECT 1 FROM call k WHERE k.conversation_id = c.id AND k.connected_at IS NOT NULL)
+               AND NOT EXISTS (SELECT 1 FROM call k WHERE k.conversation_id = c.id AND k.state <> 'ended'))
+             OR (c.channel_kind <> 'voice' AND (
+               SELECT m.direction = 'out' AND m.sent_at < now() - make_interval(secs => COALESCE(
+                        (SELECT (value #>> '{}')::int FROM system_setting WHERE key = 'operator.wrapup_chat_idle_s'), 300))
+                 FROM message m WHERE m.conversation_id = c.id AND m.direction IN ('in', 'out')
+                ORDER BY m.sent_at DESC, m.seq DESC LIMIT 1)))`,
+          p.id,
+        );
         break;
       case 'bot':
         // «У бота» (M-OP-02): текстовые диалоги с ботом и звонки в IVR — до перевода на оператора.
@@ -505,6 +531,7 @@ export class ConversationsController {
         if (missing.length)
           throw badRequest(`Заполните обязательные поля: ${missing.map((f) => f.label).join(', ')}`);
       }
+      await ensureRequiredTag(tx, id);
       await tx.query(
         `UPDATE conversation SET status = 'closed', disposition_id = $2, closed_at = now(), closed_by = $3,
            callback_at = $4, version = version + 1, updated_at = now() WHERE id = $1`,

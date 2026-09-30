@@ -1,0 +1,26 @@
+/** Строки интерфейса: раздел «layout» (M-NFR-08). */
+export const layout = {
+  rabocheeMestoOperatora: 'Рабочее место оператора',
+  supervizor: 'Супервизор',
+  otchety: 'Отчёты',
+  kabinet2YLinii: 'Кабинет 2-й линии',
+  kontrol2YLinii: 'Контроль 2-й линии',
+  kanaly: 'Каналы',
+  stsenariiIvr: 'Сценарии IVR',
+  audiobiblioteka: 'Аудиобиблиотека',
+  boty: 'Боты',
+  shablonyOtvetov: 'Шаблоны ответов',
+  bazaZnaniy: 'База знаний',
+  avtootvety: 'Автоответы',
+  podskazkiProvaydery: 'Подсказки: провайдеры',
+  obyavleniyaOSboyakh: 'Объявления о сбоях',
+  integratsii: 'Интеграции',
+  klyuchiApi: 'Ключи API',
+  vneshniyBotBotGateway: 'Внешний бот (Bot Gateway)',
+  dokumentatsiyaApi: 'Документация API',
+  eksportIImport: 'Экспорт и импорт',
+  personalnyeDannye: 'Персональные данные',
+  zdravstvuyte: 'Здравствуйте, ',
+  razdelyVMenyuSleva:
+    'Разделы — в меню слева: рабочее место оператора, панель супервизора, настройка IVR, каналов, оргструктуры, прав и справочников.',
+};

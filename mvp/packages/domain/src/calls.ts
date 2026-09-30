@@ -23,6 +23,18 @@ interface CallRow {
   on_hold: boolean;
   agent_user_id: string | null;
   end_reason: string | null;
+  consult_channel: string | null;
+  consult_state: 'dialing' | 'talking' | null;
+  consult_user_id: string | null;
+  consult_target: ConsultTarget | null;
+}
+
+/** Адресат консультации (Ф12b): оператор или внешний номер; data — поля прямого перевода на подразделение. */
+export interface ConsultTarget {
+  label: string;
+  userId?: string;
+  number?: string;
+  data?: Record<string, unknown>;
 }
 
 /** Клиент по номеру телефона (идентификатор `phone`), при необходимости — новый (M-CARD-01). */
@@ -94,6 +106,10 @@ export async function emitCallState(tx: PoolClient, callId: string): Promise<voi
     onHold: c.on_hold,
     agentUserId: c.agent_user_id,
     endReason: c.end_reason,
+    consult:
+      c.consult_channel && c.consult_state
+        ? { state: c.consult_state, label: c.consult_target?.label ?? '', userId: c.consult_user_id }
+        : null,
   };
   await emitConversation(tx, CONVERSATION_EVENTS.call, await loadRef(tx, c.conversation_id), { ...data });
 }
@@ -339,8 +355,9 @@ export async function endCall(tx: PoolClient, callId: string, reason: string): P
   const neverConnected =
     c.state === 'queued' || c.state === 'ivr' || (c.state === 'dialing' && c.direction === 'in');
   await tx.query(
-    `UPDATE call SET state = 'ended', ended_at = now(), end_reason = $2, on_hold = false,
-       version = version + 1, updated_at = now() WHERE id = $1`,
+    `UPDATE call SET state = 'ended', ended_at = now(), end_reason = $2, on_hold = false, consult_channel = NULL,
+       consult_state = NULL, consult_user_id = NULL, consult_target = NULL, version = version + 1, updated_at = now()
+     WHERE id = $1`,
     [callId, reason],
   );
   await callEvent(tx, callId, 'ended', null, { reason });
@@ -559,4 +576,133 @@ export async function transferCallExternal(
     authorUserId: o.byUserId,
   });
   await emitCallState(tx, callId);
+}
+
+// ------------------------------------------------------------------ консультативный перевод (Ф12b)
+
+/**
+ * Начало консультации (M-OP-05, M-TKT-11): клиент на удержании (музыка), оператору — второй канал к адресату.
+ * Разговор с клиентом и запись продолжаются; оператор затем соединяет клиента с адресатом или возвращается.
+ */
+export async function startConsult(
+  tx: PoolClient,
+  callId: string,
+  o: { channel: string; byUserId: string; byName: string; target: ConsultTarget },
+): Promise<void> {
+  const { rows } = await tx.query<{ conversation_id: string }>(
+    `UPDATE call SET on_hold = true, consult_channel = $2, consult_state = 'dialing', consult_user_id = $3,
+       consult_target = $4, version = version + 1, updated_at = now() WHERE id = $1 RETURNING conversation_id`,
+    [callId, o.channel, o.target.userId ?? null, JSON.stringify(o.target)],
+  );
+  await callEvent(tx, callId, 'consult_start', o.byUserId, {
+    label: o.target.label,
+    toUserId: o.target.userId ?? null,
+    number: o.target.number ?? null,
+    ...o.target.data,
+  });
+  await appendMessage(tx, {
+    conversationId: rows[0]!.conversation_id,
+    direction: 'note',
+    body: `${o.byName} консультируется: ${o.target.label} (клиент на удержании)`,
+    channelKind: 'voice',
+    authorUserId: o.byUserId,
+  });
+  await emitCallState(tx, callId);
+}
+
+/** Адресат ответил — оператор говорит с ним. */
+export async function consultConnected(tx: PoolClient, callId: string): Promise<void> {
+  await tx.query(
+    `UPDATE call SET consult_state = 'talking', version = version + 1, updated_at = now() WHERE id = $1`,
+    [callId],
+  );
+  await callEvent(tx, callId, 'consult_connected');
+  await emitCallState(tx, callId);
+}
+
+/**
+ * Консультация завершилась без перевода: оператор вернулся к клиенту, адресат не ответил или положил трубку.
+ * Клиент снимается с удержания (call-control возвращает его в разговор).
+ */
+export async function endConsult(
+  tx: PoolClient,
+  callId: string,
+  reason: 'cancel' | 'no_answer' | 'hangup' | 'failed',
+  byUserId: string | null,
+): Promise<void> {
+  const { rows } = await tx.query<CallRow>(`SELECT * FROM call WHERE id = $1 FOR UPDATE`, [callId]);
+  const c = rows[0];
+  if (!c?.consult_channel) return;
+  await tx.query(
+    `UPDATE call SET on_hold = false, consult_channel = NULL, consult_state = NULL, consult_user_id = NULL,
+       consult_target = NULL, version = version + 1, updated_at = now() WHERE id = $1`,
+    [callId],
+  );
+  await callEvent(tx, callId, 'consult_end', byUserId, { reason, label: c.consult_target?.label ?? '' });
+  const why = {
+    cancel: 'оператор вернулся к клиенту',
+    no_answer: 'адресат не ответил',
+    hangup: 'адресат завершил разговор',
+    failed: 'не удалось позвонить адресату',
+  }[reason];
+  await appendMessage(tx, {
+    conversationId: c.conversation_id,
+    direction: 'note',
+    body: `Консультация (${c.consult_target?.label ?? ''}) завершена без перевода: ${why}`,
+    channelKind: 'voice',
+    authorUserId: byUserId,
+  });
+  await emitCallState(tx, callId);
+}
+
+/**
+ * Перевод после консультации: клиент соединяется с адресатом, консультировавший оператор отключается.
+ * Адресат-оператор становится ведущим обращения (как при слепом переводе оператору, но уже на связи);
+ * внешний номер подразделения — вызов «внешний», обращение остаётся у оператора для классификации (M-TKT-11).
+ * Событие перевода — с признаком консультации (`consult: true`) для отчёта по 2-й линии.
+ */
+export async function completeConsult(
+  tx: PoolClient,
+  callId: string,
+  o: { byUserId: string; byName: string },
+): Promise<{ agentUserId: string | null } | null> {
+  const { rows } = await tx.query<CallRow>(`SELECT * FROM call WHERE id = $1 FOR UPDATE`, [callId]);
+  const c = rows[0];
+  if (!c?.consult_channel || c.consult_state !== 'talking') return null;
+  const t = c.consult_target ?? { label: '' };
+  const toUser = c.consult_user_id;
+  await tx.query(
+    `UPDATE call SET state = $2, agent_channel = consult_channel, agent_user_id = $3, on_hold = false,
+       consult_channel = NULL, consult_state = NULL, consult_user_id = NULL, consult_target = NULL,
+       version = version + 1, updated_at = now() WHERE id = $1`,
+    [callId, toUser ? 'talking' : 'external', toUser],
+  );
+  const data = { ...t.data, consult: true };
+  if (toUser) {
+    await tx.query(
+      `UPDATE conversation SET assignee_id = $2, status = 'active', assigned_at = now(), version = version + 1,
+         updated_at = now() WHERE id = $1`,
+      [c.conversation_id, toUser],
+    );
+    await callEvent(tx, callId, 'transfer_user', o.byUserId, { toUserId: toUser, ...data });
+  } else {
+    await callEvent(tx, callId, 'transfer_external', o.byUserId, { number: t.number ?? null, ...data });
+  }
+  await appendMessage(tx, {
+    conversationId: c.conversation_id,
+    direction: 'system',
+    body: `${o.byName} перевёл звонок после консультации: ${t.label}`,
+    channelKind: 'voice',
+    authorUserId: o.byUserId,
+  });
+  await emitConversation(tx, CONVERSATION_EVENTS.updated, await loadRef(tx, c.conversation_id), {
+    action: 'transferred',
+    byUserId: o.byUserId,
+    consult: true,
+    ...(t.data?.direct
+      ? directTransferData(t.data, toUser ? 'queue' : 'external')
+      : { transferKind: 'user' }),
+  });
+  await emitCallState(tx, callId);
+  return { agentUserId: toUser };
 }

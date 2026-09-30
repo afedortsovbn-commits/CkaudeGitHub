@@ -59,6 +59,8 @@ const SETTINGS: Record<string, z.ZodTypeAny> = {
   'ticket.transfer_message': z.string().max(1000),
   'system.timezone': z.string().min(1),
   'operator.max_chats': z.number().int().min(1).max(20),
+  // Ф12b: чат попадает во вкладку «Постобработка», если клиент молчит после ответа оператора дольше, с.
+  'operator.wrapup_chat_idle_s': z.number().int().min(10).max(86400),
   'routing.escalation_boost': z.number().int().min(0).max(100000),
   // Ф10: пороги панели супервизора и параметры отчётов.
   'supervisor.thresholds': SupervisorThresholdsSchema,

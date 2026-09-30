@@ -7,6 +7,7 @@ import { APP_CONTEXT, type AppContext } from './context';
 import { AgentStatusController } from './chat/agent-status.controller';
 import { ClientChatController } from './chat/client.controller';
 import { ConversationsController } from './chat/conversations.controller';
+import { ContactsController } from './chat/contacts.controller';
 import { SupervisorController } from './chat/supervisor.controller';
 import { TelephonyController } from './chat/telephony.controller';
 import { HealthController } from './health.controller';
@@ -44,6 +45,7 @@ export class AppModule {
         MatrixController,
         ClientChatController,
         ConversationsController,
+        ContactsController,
         AgentStatusController,
         SupervisorController,
         TelephonyController,

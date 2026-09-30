@@ -18,24 +18,24 @@ import { type Row, useAction, useList } from '../lib/data';
 import { t } from '../lib/i18n';
 
 const TOPIC_FIELDS = [
-  { key: 'name', label: 'Название', required: true },
-  { key: 'code', label: 'Код' },
-  { key: 'isImportant', label: 'Особо важная (быстрый фильтр в списках и отчётах)', type: 'switch' as const },
+  { key: 'name', label: t.topics.nazvanie, required: true },
+  { key: 'code', label: t.topics.kod },
+  { key: 'isImportant', label: t.topics.osoboVazhnayaBystryyFiltr, type: 'switch' as const },
   {
     key: 'defaultResponseDays',
-    label: 'Срок ответа 2-й линии по умолчанию, дней',
+    label: t.topics.srokOtveta2Y,
     type: 'number' as const,
-    description: 'Пусто — наследуется от родительской темы, иначе глобальная настройка (15 дней)',
+    description: t.topics.pustoNasleduetsyaOtRoditelskoy,
   },
-  { key: 'sortOrder', label: 'Порядок', type: 'number' as const },
+  { key: 'sortOrder', label: t.topics.poryadok, type: 'number' as const },
 ];
 
 const FIELD_TYPES = [
-  { value: 'text', label: 'Текст' },
-  { value: 'number', label: 'Число' },
-  { value: 'date', label: 'Дата' },
-  { value: 'select', label: 'Список' },
-  { value: 'phone', label: 'Телефон' },
+  { value: 'text', label: t.topics.tekst },
+  { value: 'number', label: t.topics.chislo },
+  { value: 'date', label: t.topics.data },
+  { value: 'select', label: t.topics.spisok },
+  { value: 'phone', label: t.topics.telefon },
   { value: 'email', label: 'Email' },
 ];
 
@@ -61,9 +61,12 @@ function Fields({ topic }: { topic: Row }) {
   return (
     <Paper withBorder p="sm">
       <Group justify="space-between" mb="xs">
-        <Text fw={600}>Поля карточки темы «{String(topic.name)}»</Text>
+        <Text fw={600}>
+          {t.topics.polyaKartochkiTemy}
+          {String(topic.name)}»
+        </Text>
         <Button size="xs" onClick={() => setEditing('new')}>
-          Добавить поле
+          {t.topics.dobavitPole}
         </Button>
       </Group>
       <Table>
@@ -73,10 +76,10 @@ function Fields({ topic }: { topic: Row }) {
               <Table.Td>{String(f.label)}</Table.Td>
               <Table.Td>{FIELD_TYPES.find((x) => x.value === f.type)?.label}</Table.Td>
               <Table.Td>
-                {f.requiredOnClose ? <Badge size="xs">обяз. при закрытии</Badge> : null}{' '}
+                {f.requiredOnClose ? <Badge size="xs">{t.topics.obyazPriZakrytii}</Badge> : null}{' '}
                 {f.requiredOnEscalate ? (
                   <Badge size="xs" color="orange">
-                    обяз. при передаче
+                    {t.topics.obyazPriPeredache}
                   </Badge>
                 ) : null}
               </Table.Td>
@@ -101,22 +104,22 @@ function Fields({ topic }: { topic: Row }) {
         </Table.Tbody>
       </Table>
       <Text size="xs" c="dimmed">
-        Поля наследуются подтемами. Обязательность задаётся отдельно для закрытия и для передачи на 2-ю линию.
+        {t.topics.polyaNasleduyutsyaPodtemamiObyazatel}
       </Text>
       <FormModal
         opened={editing !== null}
-        title="Поле карточки"
+        title={t.topics.poleKartochki}
         isCreate={editing === 'new'}
         initial={editing && editing !== 'new' ? editing : { type: 'text' }}
         fields={[
-          { key: 'key', label: 'Ключ (латиница)', required: true, createOnly: true },
-          { key: 'label', label: 'Название', required: true },
-          { key: 'type', label: 'Тип', type: 'select', required: true, options: FIELD_TYPES },
-          { key: 'mask', label: 'Маска ввода', placeholder: '0000 0000 0000 0000' },
-          { key: 'options', label: 'Варианты для списка (через ;)' },
-          { key: 'requiredOnClose', label: 'Обязательно при закрытии', type: 'switch' },
-          { key: 'requiredOnEscalate', label: 'Обязательно при передаче на 2-ю линию', type: 'switch' },
-          { key: 'sortOrder', label: 'Порядок', type: 'number' },
+          { key: 'key', label: t.topics.klyuchLatinitsa, required: true, createOnly: true },
+          { key: 'label', label: t.topics.nazvanie, required: true },
+          { key: 'type', label: t.topics.tip, type: 'select', required: true, options: FIELD_TYPES },
+          { key: 'mask', label: t.topics.maskaVvoda, placeholder: '0000 0000 0000 0000' },
+          { key: 'options', label: t.topics.variantyDlyaSpiskaCherez },
+          { key: 'requiredOnClose', label: t.topics.obyazatelnoPriZakrytii, type: 'switch' },
+          { key: 'requiredOnEscalate', label: t.topics.obyazatelnoPriPeredacheNa, type: 'switch' },
+          { key: 'sortOrder', label: t.topics.poryadok, type: 'number' },
         ]}
         loading={save.isPending}
         onClose={() => setEditing(null)}
@@ -162,24 +165,27 @@ export function TopicsPage() {
           </Text>
           {r.isImportant ? (
             <Badge color="red" size="xs">
-              особо важная
+              {t.topics.osoboVazhnaya}
             </Badge>
           ) : null}
           {r.defaultResponseDays ? (
             <Badge variant="outline" size="xs">
-              срок {String(r.defaultResponseDays)} дн.
+              {t.topics.srok}
+              {String(r.defaultResponseDays)}
+              {t.topics.dn}
             </Badge>
           ) : null}
           {Number(r.fieldCount) > 0 && (
             <Badge variant="light" size="xs">
-              полей: {String(r.fieldCount)}
+              {t.topics.poley}
+              {String(r.fieldCount)}
             </Badge>
           )}
           {Number(r.level) < 3 && r.isActive ? (
             <ActionIcon
               size="sm"
               variant="light"
-              title="Добавить подтему"
+              title={t.topics.dobavitPodtemu}
               onClick={() => setEditing({ parentId: r.id })}
             >
               +
@@ -211,7 +217,7 @@ export function TopicsPage() {
             checked={showInactive}
             onChange={(e) => setShowInactive(e.currentTarget.checked)}
           />
-          <Button onClick={() => setEditing({ parentId: null })}>Добавить тему</Button>
+          <Button onClick={() => setEditing({ parentId: null })}>{t.topics.dobavitTemu}</Button>
         </Group>
       </Group>
       <Group align="flex-start" grow>
@@ -219,12 +225,18 @@ export function TopicsPage() {
         {selected ? (
           <Fields topic={selected} />
         ) : (
-          <Text c="dimmed">Выберите тему, чтобы настроить поля карточки.</Text>
+          <Text c="dimmed">{t.topics.vyberiteTemuChtobyNastroit}</Text>
         )}
       </Group>
       <FormModal
         opened={editing !== null}
-        title={editing?.row ? 'Тема: изменение' : editing?.parentId ? 'Новая подтема' : 'Новая тема'}
+        title={
+          editing?.row
+            ? t.topics.temaIzmenenie
+            : editing?.parentId
+              ? t.topics.novayaPodtema
+              : t.topics.novayaTema
+        }
         fields={TOPIC_FIELDS}
         initial={editing?.row ?? {}}
         isCreate={!editing?.row}

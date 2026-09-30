@@ -87,7 +87,7 @@ export function DictPage({
             {columns.map((c) => (
               <Table.Th key={c.key}>{c.label}</Table.Th>
             ))}
-            <Table.Th>Статус</Table.Th>
+            <Table.Th>{t.dictPageUi.status}</Table.Th>
             <Table.Th />
           </Table.Tr>
         </Table.Thead>
@@ -130,7 +130,7 @@ export function DictPage({
       </Table>
       <FormModal
         opened={editing !== null}
-        title={editing === 'new' ? `${title}: новая запись` : `${title}: изменение`}
+        title={editing === 'new' ? t.dictPageUi.novayaZapis(title) : t.dictPageUi.izmenenie(title)}
         fields={fields}
         initial={initial}
         isCreate={editing === 'new'}
