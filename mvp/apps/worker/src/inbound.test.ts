@@ -43,7 +43,9 @@ describe('KeyedRunner (Ф11)', () => {
   });
 
   it('ключ — канал и отправитель', () => {
-    expect(orderingKey({ channelId: 'c', identity: { kind: 'telegram', value: '42' } })).toBe('c:telegram:42');
+    expect(orderingKey({ channelId: 'c', identity: { kind: 'telegram', value: '42' } })).toBe(
+      'c:telegram:42',
+    );
     expect(orderingKey(null)).toBe('::');
   });
 });

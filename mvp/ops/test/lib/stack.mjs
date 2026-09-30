@@ -267,7 +267,11 @@ export function sipp(name, scenario, extra) {
 /** Ждёт завершения SIPp и возвращает {successful, failed, log}. */
 export function sippResult(name) {
   sh('docker', ['wait', name]);
-  const out = sh('docker', ['logs', name], { stdio: ['ignore', 'pipe', 'pipe'] });
+  // Итоговая статистика — в конце журнала; весь журнал долгого прогона не помещается в буфер.
+  const out = sh('docker', ['logs', '--tail', '400', name], {
+    stdio: ['ignore', 'pipe', 'pipe'],
+    maxBuffer: 1 << 26,
+  });
   let err = '';
   const tmp = join(tmpdir(), `${name}-err.log`);
   try {

@@ -199,7 +199,10 @@ log(`чаты: виджет ${widgetClients.length}, Telegram ${N_TG}`);
 
 let chatsRunning = true;
 const sendErrors = [];
+// Чаты стартуют вразнобой в пределах одного интервала — как живые клиенты, а не одновременным залпом.
+const stagger = () => sleep(Math.random() * MSG_EVERY_S * 1000);
 async function widgetLoop(token, i) {
+  await stagger();
   for (let n = 0; chatsRunning; n++) {
     const text = `zdt ${stamp} w${i} #${n}`;
     const id = randomUUID();
@@ -221,6 +224,7 @@ async function widgetLoop(token, i) {
 }
 async function tgLoop(i) {
   const chatId = 700000 + i;
+  await stagger();
   for (let n = 0; chatsRunning; n++) {
     const text = `zdt ${stamp} t${i} #${n}`;
     sentAt.set(text, Date.now());
@@ -303,9 +307,17 @@ const sampler = (async () => {
       p50: lat[Math.floor(lat.length / 2)] ?? null,
       max: lat.at(-1) ?? null,
     });
-    await sleep(10_000);
+    await sleep(5000);
   }
 })();
+
+// Выпуск — в установившемся режиме: первые сообщения 100 новых чатов (создание обращений, автоответы) и старт
+// вызовов дают разовый всплеск; ждём, пока хвост входящих не станет небольшим (не дольше 90 с).
+for (let i = 0; i < 45; i++) {
+  const last = timeline.at(-1);
+  if (last && last.inboundPending !== null && last.inboundPending < 10 && last.p50 !== null && last.p50 < 2000) break;
+  await sleep(2000);
+}
 
 // ---------------------------------------------------------------- выпуск N+1 под нагрузкой
 const run = (cmd, args, env) =>
@@ -358,8 +370,9 @@ const latencies = [...sentAt.entries()]
   .map(([t, s]) => (deliveredAt.get(t) ?? Date.now()) - s)
   .sort((a, b) => a - b);
 const pct = (p) => latencies[Math.min(latencies.length - 1, Math.floor((latencies.length * p) / 100))] ?? 0;
+// Критерий 02 (6.8) — доставка во время обновления: сообщения, отправленные от начала выпуска до 20 с после.
 const duringRelease = [...sentAt.entries()]
-  .filter(([, s]) => s >= releaseStart && s <= releaseEnd)
+  .filter(([, s]) => s >= releaseStart && s <= releaseEnd + 20_000)
   .map(([t, s]) => (deliveredAt.get(t) ?? Date.now()) - s)
   .sort((a, b) => a - b);
 const p99Release =
@@ -445,7 +458,7 @@ const checks = {
   '0 потерянных сообщений': lost.length === 0 && sendErrors.length === 0,
   '0 дублированных сообщений': dupes.length === 0,
   '0 разлогиненных операторов': loggedOut === 0 && unregistered === 0,
-  'p99 доставки оператору < 5 с': pct(99) < 5000,
+  'p99 доставки оператору во время обновления < 5 с': duringRelease.length > 0 && p99Release < 5000,
 };
 summary.checks = checks;
 mkdirSync(dirname(REPORT), { recursive: true });

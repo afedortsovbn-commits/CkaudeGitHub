@@ -63,12 +63,19 @@ if [ "${#missing[@]}" -gt 0 ]; then
   log "ОШИБКА: нет образов ${missing[*]} — соберите: ops/build-images.sh $TAG"
   exit 1
 fi
+# Все экземпляры здоровы; кратковременно «unhealthy» под нагрузкой — ждём восстановления до 60 с.
 unhealthy=()
-for s in $SERVICES; do
-  for c in $(dc ps -q "$s" 2>/dev/null); do
-    st=$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$c")
-    [ "$st" = healthy ] || [ "$st" = running ] || unhealthy+=("$s(${c:0:12}:$st)")
+for attempt in $(seq 1 30); do
+  unhealthy=()
+  for s in $SERVICES; do
+    for c in $(dc ps -q "$s" 2>/dev/null); do
+      st=$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$c")
+      [ "$st" = healthy ] || [ "$st" = running ] || unhealthy+=("$s(${c:0:12}:$st)")
+    done
   done
+  [ "${#unhealthy[@]}" -eq 0 ] && break
+  [ "$attempt" = 1 ] && log "ждём восстановления: ${unhealthy[*]}"
+  sleep 2
 done
 if [ "${#unhealthy[@]}" -gt 0 ]; then
   log "ОШИБКА: стек нездоров до выпуска: ${unhealthy[*]} — обновление без простоя невозможно"
