@@ -21,6 +21,20 @@ export const COMPOSE = [
   join(MVP, process.env.COMPOSE_FILE ?? 'infra/compose/docker-compose.yml'),
 ];
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Прямое подключение к PostgreSQL стека (опубликован на 127.0.0.1) — для сверки с источником истины. Драйвер
+ * берётся из пакета @cc/db; дешевле, чем `docker compose exec psql` под нагрузкой.
+ */
+export function dbPool() {
+  const { Pool } = createRequire(join(MVP, 'packages/db/package.json'))('pg');
+  const url =
+    process.env.PG_URL ??
+    `postgres://cc:${process.env.POSTGRES_PASSWORD ?? 'cc_dev_password'}@127.0.0.1:${process.env.PG_HOST_PORT ?? 5432}/cc`;
+  const pool = new Pool({ connectionString: url, max: 2 });
+  pool.on('error', () => undefined);
+  return pool;
+}
 export const sh = (cmd, args, opts = {}) => execFileSync(cmd, args, { encoding: 'utf8', ...opts });
 export const dc = (...args) => sh('docker', [...COMPOSE, ...args]);
 
@@ -55,9 +69,15 @@ export async function req(method, path, { token, body, headers = {}, retries = 5
 }
 
 export async function apiLogin(email, password = DEMO_PASSWORD) {
-  const r = await req('POST', '/api/v1/auth/login', { body: { email, password } });
-  if (r.status !== 200) throw new Error(`вход ${email}: ${r.status} ${JSON.stringify(r.body)}`);
-  return r.body.accessToken;
+  // Сразу после запуска стека Traefik может ещё не знать экземпляры api (ответ статики 404/405) — ждём до 60 с.
+  for (let attempt = 0; ; attempt++) {
+    const r = await req('POST', '/api/v1/auth/login', { body: { email, password } });
+    if (r.status === 200) return r.body.accessToken;
+    if (![404, 405, 502, 503].includes(r.status) || attempt >= 30) {
+      throw new Error(`вход ${email}: ${r.status} ${JSON.stringify(r.body).slice(0, 200)}`);
+    }
+    await sleep(2000);
+  }
 }
 
 export async function setStatus(token, status) {

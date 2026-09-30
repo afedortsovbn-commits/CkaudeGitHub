@@ -22,7 +22,7 @@ import {
   apiLogin,
   BASE,
   browserOperator,
-  dc,
+  dbPool,
   launchBrowser,
   MVP,
   req,
@@ -53,8 +53,9 @@ const MOCK_TG = process.env.MOCK_TELEGRAM_URL ?? 'http://127.0.0.1:8081';
 const stamp = Date.now().toString(36);
 const t0 = Date.now();
 const log = (m) => console.log(`[zdt ${new Date().toISOString().slice(11, 19)}] ${m}`);
-const psql = (sql) =>
-  dc('exec', '-T', 'postgres', 'psql', '-U', 'cc', '-d', 'cc', '-At', '-F', '\t', '-c', sql);
+const db = dbPool();
+/** Строки результата как массивы значений (для сверки с БД). */
+const q = async (sql) => (await db.query({ text: sql, rowMode: 'array' })).rows;
 
 // ---------------------------------------------------------------- подготовка
 log(`подготовка: ${N_OPERATORS} операторов, ${N_CALLS} вызовов по ${CALL_S} с, ${N_WIDGET + N_TG} чатов`);
@@ -269,9 +270,11 @@ const callsName = sipp('zdt-calls', 'uac-call.xml', [
 const callsFrom = new Date().toISOString();
 log(`вызовы: разгон до ${N_CALLS} одновременных`);
 await sleep((N_CALLS + 10) * 1000);
-const liveCalls = () =>
-  Number(psql(`SELECT count(*) FROM call WHERE state <> 'ended' AND started_at >= '${callsFrom}'`).trim());
-log(`идёт вызовов: ${liveCalls()}, отправлено сообщений: ${sentAt.size}`);
+const liveCalls = async () =>
+  Number(
+    (await q(`SELECT count(*) FROM call WHERE state <> 'ended' AND started_at >= '${callsFrom}'`))[0][0],
+  );
+log(`идёт вызовов: ${await liveCalls()}, отправлено сообщений: ${sentAt.size}`);
 
 // ---------------------------------------------------------------- очереди во времени
 // Хвост входящих (CC_INBOUND, потребитель worker) и неотправленный outbox — где копится задержка.
@@ -290,7 +293,7 @@ const sampler = (async () => {
     }
     let outbox = null;
     try {
-      outbox = Number(psql('SELECT count(*) FROM outbox WHERE published_at IS NULL').trim());
+      outbox = Number((await q('SELECT count(*) FROM outbox WHERE published_at IS NULL'))[0][0]);
     } catch {
       /* PostgreSQL недоступен — пропуск отсчёта */
     }
@@ -315,7 +318,14 @@ const sampler = (async () => {
 // вызовов дают разовый всплеск; ждём, пока хвост входящих не станет небольшим (не дольше 90 с).
 for (let i = 0; i < 45; i++) {
   const last = timeline.at(-1);
-  if (last && last.inboundPending !== null && last.inboundPending < 10 && last.p50 !== null && last.p50 < 2000) break;
+  if (
+    last &&
+    last.inboundPending !== null &&
+    last.inboundPending < 10 &&
+    last.p50 !== null &&
+    last.p50 < 2000
+  )
+    break;
   await sleep(2000);
 }
 
@@ -355,10 +365,9 @@ await nc?.close();
 // ---------------------------------------------------------------- проверки
 // Сообщения: всё отправленное сохранено ровно один раз (источник истины — БД).
 const stored = new Map();
-for (const line of psql(`SELECT body, count(*) FROM message WHERE body LIKE 'zdt ${stamp} %' GROUP BY body`)
-  .split('\n')
-  .filter(Boolean)) {
-  const [body, n] = line.split('\t');
+for (const [body, n] of await q(
+  `SELECT body, count(*) FROM message WHERE body LIKE 'zdt ${stamp} %' GROUP BY body`,
+)) {
   stored.set(body, Number(n));
 }
 const lost = [...sentAt.keys()].filter((t) => !stored.has(t));
@@ -380,13 +389,10 @@ const p99Release =
 const notRealtime = [...sentAt.keys()].filter((t) => !deliveredAt.has(t)).length + resynced;
 
 // Вызовы: журнал (CDR) — все вызовы теста завершены клиентом, ни один не оборван системой.
-const cdr = psql(
+const cdr = await q(
   `SELECT coalesce(end_reason, state), count(*) FROM call WHERE started_at >= '${callsFrom}'
      AND from_number LIKE '+37529%' GROUP BY 1 ORDER BY 1`,
-)
-  .split('\n')
-  .filter(Boolean)
-  .map((l) => l.split('\t'));
+);
 const cdrBad = cdr.filter(([r]) => r !== 'client_hangup').reduce((s, [, n]) => s + Number(n), 0);
 
 // Операторы: все в системе (не выброшены на вход), софтфоны зарегистрированы.
@@ -419,6 +425,7 @@ const loggedOut = ops.filter((o) => !o.loggedIn).length;
 const unregistered = ops.filter((o) => !o.registered).length;
 stopMonitor();
 await browser.close();
+await db.end();
 
 const summary = {
   newTag: NEW_TAG,

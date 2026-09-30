@@ -7,6 +7,11 @@ declare const __APP_VERSION__: string;
 
 /** Версия загруженной сборки (тег образа web, задаётся при сборке — ops/build-images.sh). */
 export const APP_VERSION: string = typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : 'dev';
+let current = APP_VERSION;
+/** Только для тестов: версия «загруженной» сборки (в тестах сборки нет — 'dev'). */
+export function setCurrentVersionForTest(v: string): void {
+  current = v;
+}
 
 /**
  * Новая версия интерфейса без прерывания работы (Ф11, M-OP-11, 02-архитектура 6.2 п.8).
@@ -92,7 +97,7 @@ async function loadFlags(): Promise<void> {
 
 function currentDecision(): UpdateDecision {
   return decideUpdate({
-    current: APP_VERSION,
+    current,
     latest: state.latest,
     inCall: softphoneBusy(),
     drafts: drafts.size,
@@ -115,12 +120,13 @@ function reevaluate(): void {
   }
   if (reloadTimer) return;
   const delay = 5_000 + Math.floor(Math.random() * 15_000);
-  set({ reloadAt: Date.now() + delay });
+  // Таймер — до set(): set() оповещает подписчиков, среди которых и reevaluate (иначе — бесконечная рекурсия).
   reloadTimer = setTimeout(() => {
     reloadTimer = undefined;
     if (currentDecision().kind === 'reload') location.reload();
     else reevaluate();
   }, delay);
+  set({ reloadAt: Date.now() + delay });
 }
 
 let started = false;
