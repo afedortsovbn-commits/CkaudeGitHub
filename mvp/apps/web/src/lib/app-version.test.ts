@@ -27,14 +27,23 @@ describe('наблюдатель новой версии (M-OP-11)', () => {
     vi.useFakeTimers();
     const reload = vi.fn();
     vi.stubGlobal('location', { reload });
-    vi.stubGlobal('document', { visibilityState: 'visible', addEventListener: vi.fn(), removeEventListener: vi.fn() });
+    vi.stubGlobal('document', {
+      visibilityState: 'visible',
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    });
     vi.stubGlobal('window', { addEventListener: vi.fn(), removeEventListener: vi.fn() });
     vi.stubGlobal(
       'fetch',
       vi.fn(async (url: string) =>
         String(url).includes('version.json')
           ? { ok: true, json: async () => ({ version: 'v2' }) }
-          : { ok: true, status: 200, json: async () => ({ 'web.auto_reload': true }), text: async () => '{}' },
+          : {
+              ok: true,
+              status: 200,
+              json: async () => ({ 'web.auto_reload': true }),
+              text: async () => '{}',
+            },
       ),
     );
     const m = await import('./app-version');
