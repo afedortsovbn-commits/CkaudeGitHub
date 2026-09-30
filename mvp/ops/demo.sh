@@ -50,6 +50,10 @@ up() {
   Telegram (мок)          адрес Bot API в настройке бота: http://mock-telegram:3000
                           клиент пишет: curl -X POST http://127.0.0.1:8081/__test/<токен>/message \\
                             -H 'content-type: application/json' -d '{"chatId":1001,"text":"Здравствуйте","firstName":"Иван"}'
+  Отзыв с карт (мок       отзыв по АЗС №1 появится в очереди «Отзывы» в течение 10 с:
+  Rocket Data)            curl -X POST http://127.0.0.1:8082/rocketdata/demo/__test/reviews -H 'content-type: application/json' \\
+                            -d '{"location_id":"rd-azs-1","platform":"yandex","rating":2,"text":"Долго ждал на кассе","author_name":"Иван"}'
+  Выгрузка объектов (мок) «Администрирование → Синхронизация объектов» → «Проверить» / «Синхронизировать сейчас»
 
 Вход (пароль сотрудников — $DEMO_PASSWORD):
   admin@cc.local / $BOOTSTRAP_ADMIN_PASSWORD   администратор

@@ -9,6 +9,8 @@
 #   MEDIA_NODES="…"       — какие узлы (по умолчанию asterisk-1 asterisk-2; также coturn-N)
 #   SERVICES="…"          — состав и порядок (по умолчанию коннекторы → worker → router → realtime → api →
 #                           call-control → web)
+#   START_SERVICES="…"    — новые сервисы релиза, которые запустить, если они ещё не работают (например,
+#                           connector-rocketdata при выпуске Ф13); прочие незапущенные сервисы пропускаются
 #   COMPAT_BASE=<ref>     — ревизия предыдущего релиза для проверки совместимости (по умолчанию — последний
 #                           тег release-*, иначе origin/main); SKIP_COMPAT=1 — не проверять (сервер без git)
 #   MIGRATION_LOCK_TIMEOUT_MS (5000) — сколько миграция ждёт блокировку, прежде чем повторить (не выстраивает
@@ -122,7 +124,7 @@ finish() {
 
 # ---------------------------------------------------------------- 3. поэтапная замена
 for s in $SERVICES; do
-  if [ -z "$(dc ps -q "$s" 2>/dev/null)" ]; then
+  if [ -z "$(dc ps -q "$s" 2>/dev/null)" ] && [[ " ${START_SERVICES:-} " != *" $s "* ]]; then
     log "$s не запущен — пропуск"
     step "rollout:$s" skipped 0
     continue
