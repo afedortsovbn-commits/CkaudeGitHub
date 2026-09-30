@@ -31,6 +31,7 @@ import { notify, onRealtime, useRealtime } from '../lib/realtime';
 import { ExternalDataPanel } from './IvrAdminPages';
 import { AssistPanel, renderTemplate, SlashList, useSlashTemplates } from '../components/AssistPanel';
 import { softphone, useSoftphone } from '../lib/softphone';
+import { setDraft } from '../lib/app-version';
 import { EscalateModal, SubstitutesPanel, TicketList, useTicketCount } from './TicketPages';
 
 const CHANNEL: Record<string, string> = {
@@ -314,6 +315,12 @@ function Messages({ conv, typing, onTyping }: { conv: Row; typing: boolean; onTy
   const viewport = useRef<HTMLDivElement>(null);
   const qc = useQueryClient();
   useEffect(() => viewport.current?.scrollTo({ top: viewport.current.scrollHeight }), [msgs.data, typing]);
+  // Неотправленный ответ откладывает автообновление интерфейса до новой версии (Ф11, M-OP-11).
+  const dirty = !!text.trim() || files.length > 0;
+  useEffect(() => {
+    setDraft(`reply:${String(conv.id)}`, dirty);
+    return () => setDraft(`reply:${String(conv.id)}`, false);
+  }, [conv.id, dirty]);
   const canWrite = note
     ? conv.status !== 'closed'
     : conv.assigneeId === me?.id && ['active', 'hold'].includes(String(conv.status));

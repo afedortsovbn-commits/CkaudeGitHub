@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { getAccessToken, refreshSession } from './api';
 
 export interface RtEvent {
-  type: 'event' | 'typing' | 'hello' | 'ticket';
+  type: 'event' | 'typing' | 'hello' | 'ticket' | 'app_version';
   event?: string;
   data?: Record<string, unknown> & {
     conversationId?: string;
@@ -13,6 +13,8 @@ export interface RtEvent {
   };
   from?: string;
   contactId?: string;
+  /** app_version (Ф11): версия интерфейса после обновления web. */
+  version?: string;
 }
 
 type Listener = (e: RtEvent) => void;

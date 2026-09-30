@@ -10,6 +10,7 @@ const POLL_TIMEOUT_S = 20;
 
 const sleep = (ms: number, signal: AbortSignal) =>
   new Promise<void>((resolve) => {
+    if (signal.aborted) return resolve();
     const t = setTimeout(resolve, ms);
     signal.addEventListener('abort', () => (clearTimeout(t), resolve()), { once: true });
   });
@@ -111,8 +112,15 @@ export class BotRunner {
         this.o.journal.status(id, 'connected', 'polling');
         const offset = Number((await this.o.offsets.get(id))?.string() || 0);
         const updates = await this.api.getUpdates(offset, POLL_TIMEOUT_S, signal);
-        for (const u of updates) await this.handleUpdate(u);
-        if (updates.length) await this.o.offsets.put(id, String(updates.at(-1)!.update_id + 1));
+        // При остановке — только текущее обновление: остальные получит следующий владелец аренды
+        // (смещение — за последним переданным), иначе большая пачка не укладывается в тайм-аут остановки.
+        let last: number | undefined;
+        for (const u of updates) {
+          await this.handleUpdate(u);
+          last = u.update_id;
+          if (signal.aborted) break;
+        }
+        if (last !== undefined) await this.o.offsets.put(id, String(last + 1));
       } catch (err) {
         if (signal.aborted) break;
         this.o.logger.warn({ err: String(err), channelId: id }, 'ошибка канала Telegram');

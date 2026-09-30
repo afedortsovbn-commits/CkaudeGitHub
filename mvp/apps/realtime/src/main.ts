@@ -18,7 +18,7 @@ import { DeliverPolicy, JSONCodec } from 'nats';
 import { Gauge } from 'prom-client';
 import { type WebSocket, WebSocketServer } from 'ws';
 import { z } from 'zod';
-import { deliver, deliverTicket, type Peer } from './routing';
+import { deliver, deliverApp, deliverTicket, type Peer } from './routing';
 
 const ConfigSchema = BaseConfigSchema.extend({
   DATABASE_URL: z.string().url(),
@@ -152,7 +152,7 @@ async function main(): Promise<void> {
   const jsm = await nc.jetstreamManager();
   await ensureStream(jsm, { ...EVENTS_STREAM, replicas: config.NATS_STREAM_REPLICAS });
   const consumer = await nc.jetstream().consumers.get('CC_EVENTS', {
-    filterSubjects: ['cc.events.conversation.>', 'cc.events.ticket.>'],
+    filterSubjects: ['cc.events.conversation.>', 'cc.events.ticket.>', 'cc.events.app.>'],
     deliver_policy: DeliverPolicy.New,
   });
   const messages = await consumer.consume();
@@ -165,8 +165,13 @@ async function main(): Promise<void> {
         continue;
       }
       const isTicket = e.type.startsWith('ticket.');
+      const isApp = e.type.startsWith('app.');
       for (const c of conns) {
-        const out = isTicket ? deliverTicket(c.peer, e as never) : deliver(c.peer, e as never);
+        const out = isApp
+          ? deliverApp(c.peer, e as never)
+          : isTicket
+            ? deliverTicket(c.peer, e as never)
+            : deliver(c.peer, e as never);
         if (out && c.ws.readyState === c.ws.OPEN) c.ws.send(JSON.stringify(out));
       }
     }

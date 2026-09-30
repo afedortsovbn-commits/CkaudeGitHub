@@ -42,6 +42,26 @@ describe.skipIf(!ADMIN_URL)('Телефония Ф5 (интеграция)', () 
     expect((await t.call('GET', '/api/v1/telephony/softphone', resp)).status).toBe(403);
   });
 
+  it('coturn, выведенный на обновление (telephony.turn_disabled), не выдаётся в ICE-серверах (Ф11)', async () => {
+    const prev = t.ctx.config.TURN_URLS;
+    t.ctx.config.TURN_URLS = 'turn:turn.test:3478,turn:turn.test:3479';
+    const admin = await t.login('admin@test.local');
+    try {
+      let r = await t.call('GET', '/api/v1/telephony/ice', op);
+      expect(r.body.iceServers[1].urls).toEqual(['turn:turn.test:3478', 'turn:turn.test:3479']);
+      const patch = await t.call('PATCH', '/api/v1/settings', admin, {
+        'telephony.turn_disabled': ['coturn-2'],
+      });
+      expect(patch.status).toBe(200);
+      r = await t.call('GET', '/api/v1/telephony/ice', op);
+      expect(r.body.iceServers[1].urls).toEqual(['turn:turn.test:3478']);
+      expect(r.body.iceServers[0].urls).toEqual(['stun:turn.test:3478']);
+    } finally {
+      await t.call('PATCH', '/api/v1/settings', admin, { 'telephony.turn_disabled': [] });
+      t.ctx.config.TURN_URLS = prev;
+    }
+  });
+
   it('демо-абонент доступен только на демо-стенде; номер нормализуется', async () => {
     expect((await t.call('POST', '/api/v1/telephony/demo-caller', undefined, {})).status).toBe(404);
     t.ctx.config.DEMO_CALLER_ENABLED = 'true';

@@ -8,3 +8,4 @@ coverage/
 offline-bundle/
 test-results/
 playwright-report/
+.compat-tmp/

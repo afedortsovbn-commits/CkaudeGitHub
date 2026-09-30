@@ -349,6 +349,9 @@ services:
       SIP_SECRET: ${SIP_SECRET:-dev-only-sip-secret-change-me}
       SIP_DOMAIN: ${SIP_DOMAIN:-cc.local}
       MEDIA_NODES: asterisk-1:5060 asterisk-2:5060
+      # Имя/адрес Kamailio в Record-Route (переживает пересоздание контейнера); на сервере с внешним транком —
+      # внешний адрес, по которому транк достигает Kamailio.
+      SIP_ADVERTISE: ${SIP_ADVERTISE:-kamailio}
       # Адрес SIP-транка оператора связи (МТС) для исходящих; пусто — исходящие наружу недоступны.
       TRUNK_HOST: ${TRUNK_HOST:-}
     networks: [cc]
@@ -405,8 +408,7 @@ services:
   # перед каждым вызовом, поэтому экземпляр можно вывести из списка и обновить без обрыва (02-архитектура 6.5).
   coturn-1:
     <<: *coturn
-    command:
-      [
+    command: [
         '-n',
         '--listening-port=3478',
         '--use-auth-secret',
@@ -419,12 +421,13 @@ services:
         '--no-dtls',
         '--log-file=stdout',
         '--simple-log',
+        # Метрики (turn_total_allocations) — ops/update-media.sh coturn-N ждёт по ним завершения сессий.
+        '--prometheus',
       ]
     ports: ['${TURN1_PORT:-3478}:3478/udp', '${TURN1_PORT:-3478}:3478/tcp']
   coturn-2:
     <<: *coturn
-    command:
-      [
+    command: [
         '-n',
         '--listening-port=3478',
         '--use-auth-secret',
@@ -437,6 +440,8 @@ services:
         '--no-dtls',
         '--log-file=stdout',
         '--simple-log',
+        # Метрики (turn_total_allocations) — ops/update-media.sh coturn-N ждёт по ним завершения сессий.
+        '--prometheus',
       ]
     ports: ['${TURN2_PORT:-3479}:3478/udp', '${TURN2_PORT:-3479}:3478/tcp']
 

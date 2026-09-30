@@ -2,6 +2,7 @@ import { AppShell, Badge, Button, Group, NavLink, ScrollArea, Text } from '@mant
 import { useEffect } from 'react';
 import { NavLink as RouterLink, Outlet, useLocation } from 'react-router';
 import { NotificationBell } from '../components/NotificationBell';
+import { UpdateBanner } from '../components/UpdateBanner';
 import { SoftphoneCall, SoftphoneStatus } from '../components/Softphone';
 import { useRealtime } from '../lib/realtime';
 import { softphone } from '../lib/softphone';
@@ -94,6 +95,7 @@ export function Layout() {
         </ScrollArea>
       </AppShell.Navbar>
       <AppShell.Main>
+        <UpdateBanner />
         <Outlet />
         {phone && <SoftphoneCall />}
       </AppShell.Main>
