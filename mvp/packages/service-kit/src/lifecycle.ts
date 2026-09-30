@@ -27,6 +27,8 @@ export class Lifecycle {
   private state: LifecycleState = 'starting';
   private readonly hooks: Hook[] = [];
   private shutdownPromise: Promise<void> | undefined;
+  /** Выполняемый хук остановки — для журнала при превышении тайм-аута. */
+  private currentHook: string | undefined;
 
   constructor(private readonly opts: LifecycleOptions) {}
 
@@ -71,7 +73,10 @@ export class Lifecycle {
     const exit = this.opts.exit ?? ((code: number) => process.exit(code));
     const sleep = this.opts.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
     const timer = setTimeout(() => {
-      logger.error({ timeoutMs }, 'корректная остановка не уложилась в тайм-аут');
+      logger.error(
+        { timeoutMs, hook: this.currentHook ?? null, state: this.state },
+        'корректная остановка не уложилась в тайм-аут',
+      );
       exit(1);
     }, timeoutMs);
     timer.unref?.();
@@ -83,9 +88,11 @@ export class Lifecycle {
     this.state = 'stopping';
     let failed = false;
     for (const h of [...this.hooks].sort((a, b) => a.order - b.order)) {
+      this.currentHook = h.name;
+      const t0 = Date.now();
       try {
         await h.fn();
-        logger.info({ hook: h.name }, 'остановлено');
+        logger.info({ hook: h.name, ms: Date.now() - t0 }, 'остановлено');
       } catch (err) {
         failed = true;
         logger.error({ hook: h.name, err }, 'ошибка при остановке');

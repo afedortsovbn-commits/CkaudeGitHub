@@ -64,7 +64,11 @@ for c in "${OLD[@]}"; do
   docker stop -t "$STOP_TIMEOUT" "$c" >/dev/null
   code=$(docker inspect -f '{{.State.ExitCode}}' "$c")
   log "  остановлен за $((SECONDS - t0)) с, код выхода $code"
-  [ "$code" = 0 ] || STOP_WARN=1
+  if [ "$code" != 0 ]; then
+    STOP_WARN=1
+    log "  последние строки журнала старого экземпляра:"
+    docker logs --tail 30 "$c" 2>&1 | sed 's/^/    /' || true
+  fi
   docker rm "$c" >/dev/null
 done
 [ -z "${STOP_WARN:-}" ] || { log "ОШИБКА: не все старые экземпляры завершились корректно (см. логи)"; exit 3; }
