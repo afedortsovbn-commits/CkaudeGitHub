@@ -5,8 +5,10 @@ import {
   type CallControlReply,
   callControlSubject,
   normalizePhone,
+  parseTurnUrls,
   sipUserOf,
   type SoftphoneConfig,
+  TURN_DISABLED_SETTING,
 } from '@cc/contracts';
 import { scopeFilter, type Principal } from '@cc/auth';
 import type { FastifyReply, FastifyRequest } from 'fastify';
@@ -69,11 +71,22 @@ export class TelephonyController {
     );
   }
 
-  private iceServers(user: string) {
-    const urls = this.ctx.config.TURN_URLS.split(',')
-      .map((s) => s.trim())
-      .filter(Boolean);
-    if (!urls.length || !this.ctx.config.TURN_SECRET) return [];
+  /**
+   * ICE-серверы с короткоживущими TURN-учётными данными. Экземпляры coturn из настройки
+   * `telephony.turn_disabled` не выдаются: так coturn выводится из работы на время обновления
+   * (ops/update-media.sh coturn-N, 02-архитектура 6.5) — новые вызовы его не используют, идущие доживают.
+   */
+  private async iceServers(user: string) {
+    const all = parseTurnUrls(this.ctx.config.TURN_URLS);
+    if (!all.length || !this.ctx.config.TURN_SECRET) return [];
+    const row = await one<{ value: unknown }>(
+      this.ctx.pool,
+      'SELECT value FROM system_setting WHERE key = $1',
+      [TURN_DISABLED_SETTING],
+    );
+    const disabled = new Set(Array.isArray(row?.value) ? (row.value as string[]) : []);
+    const urls = all.filter((t) => !disabled.has(t.name)).map((t) => t.url);
+    if (!urls.length) return [];
     const c = ephemeralCredentials(this.ctx.config.TURN_SECRET, user, 3600);
     return [
       { urls: urls.map((u) => u.replace(/^turns?:/, 'stun:')).filter((u) => u.startsWith('stun:')) },
@@ -89,7 +102,7 @@ export class TelephonyController {
   /** Учётные данные софтфона оператора/супервизора (SIP-пароль живёт SIP_CREDENTIALS_TTL_H часов). */
   @Get('telephony/softphone')
   @RequirePerm('conversations.work', 'supervisor.monitor')
-  softphone(@CurrentUser() p: Principal, @Req() req: Req) {
+  async softphone(@CurrentUser() p: Principal, @Req() req: Req) {
     const user = sipUserOf(p.id);
     const c = ephemeralCredentials(this.secret(), user, this.ctx.config.SIP_CREDENTIALS_TTL_H * 3600);
     const cfg: SoftphoneConfig = {
@@ -101,21 +114,21 @@ export class TelephonyController {
       domain: this.ctx.config.SIP_DOMAIN,
       expiresAt: c.expiresAt,
     };
-    return { ...cfg, iceServers: this.iceServers(user) };
+    return { ...cfg, iceServers: await this.iceServers(user) };
   }
 
   /** ICE-серверы с новыми TURN-учётными данными — перед каждым вызовом (вывод coturn из работы, 6.5). */
   @Get('telephony/ice')
   @RequirePerm('conversations.work', 'supervisor.monitor')
-  ice(@CurrentUser() p: Principal) {
-    return { iceServers: this.iceServers(sipUserOf(p.id)) };
+  async ice(@CurrentUser() p: Principal) {
+    return { iceServers: await this.iceServers(sipUserOf(p.id)) };
   }
 
   /** Демо-страница «Позвонить в КЦ»: одноразовый WebRTC-абонент без SIP-транка (только демо-стенд). */
   @Public()
   @Post('telephony/demo-caller')
   @HttpCode(200)
-  demoCaller(@Body() body: unknown, @Req() req: Req) {
+  async demoCaller(@Body() body: unknown, @Req() req: Req) {
     if (this.ctx.config.DEMO_CALLER_ENABLED !== 'true') throw notFound('Страница');
     if (!this.demoLimiter.allow(req.ip))
       throw new ApiError(429, 'rate_limited', 'Слишком часто, подождите немного');
@@ -132,7 +145,7 @@ export class TelephonyController {
       displayName: b.name || 'Демо-клиент',
       domain: this.ctx.config.SIP_DOMAIN,
       did: this.ctx.config.DEMO_CALLER_DID,
-      iceServers: this.iceServers(user),
+      iceServers: await this.iceServers(user),
     };
   }
 

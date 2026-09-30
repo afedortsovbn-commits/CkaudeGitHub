@@ -1,5 +1,5 @@
 import { Body, Controller, Get, HttpCode, Inject, Param, Patch, Post, Put, Query } from '@nestjs/common';
-import { newId, SupervisorThresholdsSchema } from '@cc/contracts';
+import { newId, SupervisorThresholdsSchema, TURN_DISABLED_SETTING } from '@cc/contracts';
 import Papa from 'papaparse';
 import { z } from 'zod';
 import { scopeFilter } from '@cc/auth';
@@ -66,6 +66,8 @@ const SETTINGS: Record<string, z.ZodTypeAny> = {
   'report.sl_text_s': z.number().int().min(1).max(86400),
   'report.short_abandon_s': z.number().int().min(0).max(600),
   'report.first_response_s': z.number().int().min(1).max(86400),
+  // Ф11: экземпляры coturn, выведенные из выдачи ICE на время обновления (ops/update-media.sh coturn-N).
+  [TURN_DISABLED_SETTING]: z.array(z.string().regex(/^[A-Za-z0-9_.-]{1,64}$/)).max(20),
 };
 
 const toCols = (data: Record<string, unknown>) => {

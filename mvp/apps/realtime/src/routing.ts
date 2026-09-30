@@ -1,5 +1,11 @@
 import { inScope, type Principal } from '@cc/auth';
-import type { ConversationRef, EventEnvelope, MessageDto } from '@cc/contracts';
+import {
+  APP_EVENTS,
+  type AppVersionEventData,
+  type ConversationRef,
+  type EventEnvelope,
+  type MessageDto,
+} from '@cc/contracts';
 
 export type Peer =
   | { kind: 'operator'; principal: Principal }
@@ -53,4 +59,16 @@ export function deliverTicket(
   if (!e.data.notifyUserIds?.includes(peer.principal.id)) return null;
   const { ticketId, number, status } = e.data;
   return { type: 'ticket', event: e.type, data: { ticketId, number, status } };
+}
+
+/**
+ * Новая версия интерфейса (Ф11, `app.version` после обновления web): всем вошедшим сотрудникам — баннер
+ * «Доступна новая версия» и автообновление вне звонка (M-OP-11). Клиентам виджета не отправляется.
+ */
+export function deliverApp(
+  peer: Peer,
+  e: Omit<EventEnvelope, 'data'> & { data: AppVersionEventData },
+): Record<string, unknown> | null {
+  if (peer.kind !== 'operator' || e.type !== APP_EVENTS.version) return null;
+  return { type: 'app_version', component: e.data.component, version: e.data.version };
 }

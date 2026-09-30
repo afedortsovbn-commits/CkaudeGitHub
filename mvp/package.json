@@ -13,7 +13,9 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "licenses:check": "node ops/licenses/check.mjs",
-    "migrations:lint": "node ops/test/migrations-lint.mjs"
+    "migrations:lint": "node ops/test/migrations-lint.mjs",
+    "compat:check": "node ops/compat/check.mjs",
+    "test:ops": "node --test ops/compat/*.test.mjs"
   },
   "devDependencies": {
     "@eslint/js": "9.39.5",

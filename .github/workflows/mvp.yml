@@ -38,8 +38,20 @@ jobs:
       - run: pnpm test
       - name: Лицензии зависимостей
         run: pnpm licenses:check
-      - name: Правило expand/contract для миграций
-        run: pnpm migrations:lint
+      - name: Базовая ревизия для сверки (ветка PR или предыдущий коммит main)
+        run: |
+          BASE_REF="${{ github.base_ref || 'main' }}"
+          git fetch --no-tags --depth=1 origin "$BASE_REF"
+          if [ "${{ github.event_name }}" = push ]; then
+            git fetch --no-tags --depth=1 origin "${{ github.event.before }}" && echo "COMPAT_BASE=${{ github.event.before }}" >> "$GITHUB_ENV" \
+              || echo "COMPAT_BASE=origin/$BASE_REF" >> "$GITHUB_ENV"
+          else
+            echo "COMPAT_BASE=origin/$BASE_REF" >> "$GITHUB_ENV"
+          fi
+      - name: Правило expand/contract для миграций (и неизменность выпущенных)
+        run: pnpm migrations:lint --base "$COMPAT_BASE"
+      - name: Совместимость контрактов событий и OpenAPI с базовой ревизией — только аддитивные изменения
+        run: pnpm test:ops && pnpm compat:check --base "$COMPAT_BASE"
       - name: Squawk (безопасность миграций PostgreSQL)
         run: npx --yes squawk-cli@2 --assume-in-transaction --exclude=prefer-robust-stmts,require-timeout-settings,prefer-bigint-over-int,prefer-bigint-over-smallint,adding-foreign-key-constraint,require-concurrent-index-creation packages/db/migrations/*.sql
 

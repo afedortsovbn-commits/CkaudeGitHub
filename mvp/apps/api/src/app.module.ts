@@ -18,6 +18,7 @@ import { OrgController } from './org/org.controller';
 import { UsersController } from './org/users.controller';
 import { PingController } from './ping.controller';
 import { ReportsController } from './reports/reports.controller';
+import { ReleaseController } from './release/release.controller';
 import { NotificationsController } from './tickets/notifications.controller';
 import { TicketsController } from './tickets/tickets.controller';
 import { ConfigController } from './config/config.controller';
@@ -53,6 +54,7 @@ export class AppModule {
         ConfigController,
         DocsController,
         ReportsController,
+        ReleaseController,
       ],
       providers: [
         { provide: APP_CONTEXT, useValue: ctx },

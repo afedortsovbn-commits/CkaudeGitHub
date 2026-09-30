@@ -1,6 +1,6 @@
 import type { Principal } from '@cc/auth';
 import { describe, expect, it } from 'vitest';
-import { deliver, deliverTicket } from './routing';
+import { deliver, deliverApp, deliverTicket } from './routing';
 
 const E1 = 'e1';
 const base = {
@@ -79,5 +79,25 @@ describe('deliverTicket (Ф8)', () => {
   });
   it('клиенты события тикетов не получают', () => {
     expect(deliverTicket({ kind: 'client', contactId: 'k1', channelId: 'c' }, tk(['u1']))).toBeNull();
+  });
+});
+
+describe('deliverApp (Ф11)', () => {
+  const e = {
+    id: 'x',
+    type: 'app.version',
+    version: 1,
+    occurredAt: '',
+    source: 'release',
+    data: { component: 'web' as const, version: 'v2' },
+  };
+  it('новая версия — всем сотрудникам, клиентам виджета — нет', () => {
+    expect(deliverApp({ kind: 'operator', principal: op([], false, []) }, e)).toEqual({
+      type: 'app_version',
+      component: 'web',
+      version: 'v2',
+    });
+    expect(deliverApp({ kind: 'client', contactId: 'k1', channelId: 'ch' }, e)).toBeNull();
+    expect(deliverApp({ kind: 'operator', principal: op([]) }, { ...e, type: 'app.other' })).toBeNull();
   });
 });
