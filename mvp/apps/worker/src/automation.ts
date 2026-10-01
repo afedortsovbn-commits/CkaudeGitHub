@@ -3,6 +3,7 @@ import {
   type BotHttp,
   claimStaleBotSteps,
   resumeBotHttp,
+  sweepBotWaits,
   sweepExternalBots,
   sweepInactivity,
 } from '@cc/domain';
@@ -13,7 +14,8 @@ import type { Pool, PoolClient } from 'pg';
 /**
  * Фоновая часть автоматизации текстовых каналов (Ф7): запросы бота во внешние системы (узел «Запрос во
  * внешнюю систему» → api по NATS request/reply, как у IVR) и периодический обход дедлайнов — автозакрытие
- * при молчании клиента и шаги бота, чей запрос не завершился (экземпляр worker остановили посреди запроса).
+ * при молчании клиента, ожидание ответа клиента шагом бота (Ф14, «клиент молчит» — напоминание или «нет ответа») и
+ * шаги бота, чей запрос не завершился (экземпляр worker остановили посреди запроса).
  * Обход выполняют все экземпляры: строки забираются FOR UPDATE SKIP LOCKED.
  */
 export class Automation {
@@ -89,6 +91,8 @@ export class Automation {
     try {
       const n = await this.tx((c) => sweepInactivity(c));
       if (n) this.o.logger.info({ n }, 'автозакрытие: предупреждения и закрытия по молчанию клиента');
+      const waits = await this.tx((c) => sweepBotWaits(c));
+      for (const h of waits) this.runHttp(h);
       const ext = await this.tx((c) => sweepExternalBots(c));
       if (ext) this.o.logger.warn({ n: ext }, 'внешний бот не ответил вовремя — диалоги переданы операторам');
       const stale = await this.tx((c) => claimStaleBotSteps(c));

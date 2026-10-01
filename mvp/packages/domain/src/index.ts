@@ -10,3 +10,5 @@ export * from './tickets';
 export * from './webhooks';
 export * from './reviews';
 export * from './objects-sync';
+export * from './queue-position';
+export * from './supervisor';

@@ -638,6 +638,26 @@ function TextNodeParams({
       onChange={(v) => set(key, v === '' ? 0 : Number(v))}
     />
   );
+  // Ф14: ожидание ответа клиента — пусто или 0 означает «ждать без ограничения» (выхода «нет ответа» нет).
+  const wait = (
+    <>
+      <NumberInput
+        label={t.flowEditor.zhdatOtvetaS}
+        description={t.flowEditor.zhdatOtvetaOpisanie}
+        min={0}
+        max={86400}
+        value={Number(p.waitSec ?? 0) || ''}
+        onChange={(v) => set('waitSec', v === '' || !Number(v) ? undefined : Number(v))}
+        data-testid="param-waitSec"
+      />
+      {Number(p.waitSec ?? 0) > 0 && (
+        <>
+          {num('reminders', t.flowEditor.napomnitRaz, 0, 5)}
+          {textArea('remindText', t.flowEditor.tekstNapominaniya, t.flowEditor.tekstNapominaniyaOpisanie)}
+        </>
+      )}
+    </>
+  );
   const buttons = (p.buttons as { id: string; label: string }[] | undefined) ?? [];
   switch (nodeType) {
     case 'message':
@@ -707,6 +727,7 @@ function TextNodeParams({
           />
           {textArea('retryText', t.flowEditor.esliOtvetNeSovpal, ' ')}
           {num('retries', t.flowEditor.povtorovVoprosaZatemVykhod, 0, 10)}
+          {wait}
         </>
       );
     case 'ask':
@@ -743,6 +764,7 @@ function TextNodeParams({
           />
           {textArea('retryText', t.flowEditor.esliFormatNePodoshel, ' ')}
           {num('retries', t.flowEditor.povtorovZatemVykhodNe, 0, 10)}
+          {wait}
         </>
       );
     case 'handoff':
@@ -1136,6 +1158,16 @@ function ChatTestRun({ graph, refs, onClose }: { graph: FlowGraph; refs: Refs; o
     const r = resumeFlow(graph, step.state, { type: 'text', text }, ctx());
     drive(r, [{ from: 'client', text }]);
   };
+  /** Клиент молчит (Ф14): срок ожидания шага истёк — напоминание или выход «нет ответа». */
+  const silence = () => {
+    if (!step) return;
+    drive(resumeFlow(graph, step.state, { type: 'timeout' }, ctx()), [
+      {
+        from: 'system',
+        text: t.flowEditor.klientMolchitS(step.action.type === 'prompt' ? step.action.waitSec : 0),
+      },
+    ]);
+  };
   const runHttp = async (a: Extract<Action, { type: 'http' }>, fail = false) => {
     if (!step) return;
     setBusy(true);
@@ -1230,6 +1262,11 @@ function ChatTestRun({ graph, refs, onClose }: { graph: FlowGraph; refs: Refs; o
             <Button onClick={() => answer(input)} data-testid="test-send">
               {t.flowEditor.otpravit}
             </Button>
+            {!!a.waitSec && (
+              <Button variant="light" color="gray" onClick={silence} data-testid="test-silence">
+                {t.flowEditor.klientMolchit}
+              </Button>
+            )}
           </Group>
         )}
         {a?.type === 'http' && (

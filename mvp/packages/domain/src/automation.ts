@@ -16,6 +16,7 @@ import {
 import type { Pool, PoolClient } from 'pg';
 import { appendMessage, emitConversation, loadRef } from './conversations';
 import { DomainError } from './tickets';
+import { positionSettings, queuePosition } from './queue-position';
 import { enqueueBotTurn } from './webhooks';
 
 /**
@@ -56,6 +57,18 @@ export interface BotState extends FlowState {
   done?: boolean;
   /** Внешний бот (Bot Gateway, Ф9): подписка вида «bot», которой отдаются ходы диалога. */
   external?: string;
+  /**
+   * Бот ждёт ответа клиента до until (Ф14, «клиент молчит»). Ключ ожидания — узел, попытка и число напоминаний:
+   * срабатывает, только если обращение всё ещё на том же шаге (ответ клиента меняет шаг и снимает ожидание).
+   */
+  wait?: BotWait;
+}
+
+export interface BotWait {
+  node: string;
+  attempt: number;
+  reminded: number;
+  until: string;
 }
 
 export interface RuleRow {
@@ -173,8 +186,24 @@ async function replyOnce(
   if (c.auto_state[kind]) return;
   const rule = (await rulesFor(tx, kind, c.channel_id, c.channel_kind))[0];
   if (!rule) return;
+  if (kind === 'queued') vars = { ...vars, ...(await positionVars(tx, c)) };
   await autoMessage(tx, c, render(rule.text, vars), { auto: kind });
   await markAuto(tx, c, { [kind]: new Date().toISOString() });
+}
+
+/**
+ * Переменные позиции в очереди для правила «в очереди» (Ф14, M-TEL-07): {{позиция}} / {{position}} — только если у
+ * очереди включено «сообщать позицию»; иначе пусто (опция по умолчанию выключена).
+ */
+async function positionVars(tx: PoolClient, c: ConvRow): Promise<Record<string, string>> {
+  const { rows } = await tx.query<{ queue_id: string | null }>(
+    `SELECT queue_id FROM conversation WHERE id = $1`,
+    [c.id],
+  );
+  const s = await positionSettings(tx, rows[0]?.queue_id ?? null);
+  const pos = s.enabled ? await queuePosition(tx, c.id) : null;
+  const v = pos ? String(pos) : '';
+  return { позиция: v, position: v };
 }
 
 /** Нерабочее время по расписанию правила — один раз за обращение. */
@@ -308,13 +337,25 @@ async function applyEffects(tx: PoolClient, c: ConvRow, effects: Effect[]): Prom
   }
 }
 
-async function saveState(tx: PoolClient, c: ConvRow, st: BotState, wakeAt: Date | null): Promise<void> {
-  c.bot_state = st;
+/** Сохранить шаг бота; ожидание ответа клиента (wait) — только явно переданное, прежнее снимается. */
+async function saveState(
+  tx: PoolClient,
+  c: ConvRow,
+  st: BotState,
+  wakeAt: Date | null,
+  wait?: BotWait,
+): Promise<void> {
+  const next: BotState = { ...st, wait };
+  if (!wait) delete next.wait;
+  c.bot_state = next;
   await tx.query(
     `UPDATE conversation SET bot_state = $2, bot_wake_at = $3, updated_at = now() WHERE id = $1`,
-    [c.id, JSON.stringify(st), wakeAt],
+    [c.id, JSON.stringify(next), wakeAt],
   );
 }
+
+const waitMatches = (st: BotState, w: BotWait) =>
+  st.node === w.node && st.attempt === w.attempt && (st.reminded ?? 0) === w.reminded;
 
 /** Выполнять действия бота, пока шаг не потребует ответа клиента или внешней системы. */
 async function drive(
@@ -339,7 +380,20 @@ async function drive(
           auto: 'bot',
           ...(a.buttons.length ? { buttons: a.buttons } : {}),
         });
-        await saveState(tx, c, r.state, null);
+        await saveState(
+          tx,
+          c,
+          r.state,
+          null,
+          a.waitSec
+            ? {
+                node: r.state.node,
+                attempt: r.state.attempt,
+                reminded: r.state.reminded ?? 0,
+                until: new Date(now.getTime() + a.waitSec * 1000).toISOString(),
+              }
+            : undefined,
+        );
         return null;
       case 'http': {
         const token = newId();
@@ -490,6 +544,35 @@ export async function claimStaleBotSteps(tx: PoolClient, limit = 20): Promise<Bo
   return out;
 }
 
+/**
+ * Клиент молчит на шаге бота (Ф14, M-AUTO-04): срок ожидания истёк — напоминание или выход «нет ответа». Срок —
+ * данные шага в БД (`bot_state.wait`, меняется одной транзакцией с шагом), его проверяет обход любого экземпляра
+ * worker (SKIP LOCKED) — переживает выпуск worker. Ответ клиента меняет шаг и снимает ожидание; ожидание не
+ * своего шага (ключ — узел, попытка, напоминания) снимается без перехода. Возвращает запросы во внешнюю систему,
+ * если ветка «нет ответа» к ним ведёт.
+ */
+export async function sweepBotWaits(tx: PoolClient, now = new Date()): Promise<BotHttp[]> {
+  const { rows } = await tx.query<{ id: string }>(
+    `SELECT id FROM conversation
+      WHERE status = 'bot' AND bot_state ? 'wait' AND (bot_state #>> '{wait,until}')::timestamptz <= $1::timestamptz
+      ORDER BY (bot_state #>> '{wait,until}')::timestamptz LIMIT 20 FOR UPDATE SKIP LOCKED`,
+    [now],
+  );
+  const out: BotHttp[] = [];
+  for (const r of rows) {
+    const c = await loadConv(tx, r.id);
+    const st = c.bot_state;
+    if (!st?.wait) continue;
+    const { wait, ...rest } = st;
+    await tx.query(`UPDATE conversation SET bot_state = bot_state - 'wait' WHERE id = $1`, [c.id]);
+    c.bot_state = rest;
+    if (st.done || st.pending || st.external || !waitMatches(st, wait)) continue;
+    const h = await continueBot(tx, c, { type: 'timeout' }, now);
+    if (h) out.push(h);
+  }
+  return out;
+}
+
 // ------------------------------------------------------------------ автозакрытие при молчании клиента
 
 /** Закрыть обращение автоматически (бот, молчание клиента): без результата обработки и оператора. */
@@ -538,6 +621,8 @@ export async function sweepInactivity(tx: PoolClient, now = new Date()): Promise
       `SELECT c.id, c.channel_kind, c.contact_id, c.auto_state ->> 'inactivityWarnedAt' AS warned
          FROM conversation c
         WHERE c.status IN ('active', 'bot') AND c.channel_kind <> 'voice'
+          -- Бот ждёт ответа с тайм-аутом (Ф14) — молчание обработает сам бот (ветка «нет ответа»).
+          AND NOT (c.status = 'bot' AND COALESCE(c.bot_state, '{}') ? 'wait')
           AND (cardinality($1::uuid[]) = 0 OR c.channel_id = ANY ($1))
           AND (cardinality($2::text[]) = 0 OR c.channel_kind = ANY ($2))
           AND (c.channel_kind <> 'review' OR c.channel_id = ANY ($1) OR c.channel_kind = ANY ($2))

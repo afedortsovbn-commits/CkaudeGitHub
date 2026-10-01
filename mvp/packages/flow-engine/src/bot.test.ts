@@ -184,4 +184,88 @@ describe('текстовый бот (flow-engine, Ф7)', () => {
     expect(matchButton(b, '2')?.id).toBe('b');
     expect(matchButton(b, '3')).toBeUndefined();
   });
+  it('клиент молчит (Ф14): напоминание → «нет ответа»; ответ сбрасывает напоминания; без ожидания — событие не касается шага', () => {
+    const g: FlowGraph = {
+      version: 1,
+      kind: 'text',
+      nodes: [
+        node('start', 'start'),
+        node('menu', 'buttons', {
+          text: 'Выберите тему',
+          buttons: [{ id: 'a', label: 'Баланс' }],
+          retries: 1,
+          retryText: 'Нажмите кнопку.',
+          waitSec: 60,
+          reminders: 1,
+          remindText: 'Вы здесь? {{name}}, выберите тему.',
+        }),
+        node('phone', 'ask', {
+          text: 'Телефон?',
+          variable: 'phone',
+          validation: 'phone',
+          retries: 0,
+          waitSec: 30,
+        }),
+        node('silent', 'message', { text: 'Не дождались ответа.' }),
+        node('op', 'handoff', { queueId: 'q1', text: '' }),
+      ],
+      edges: [
+        edge('start', 'next', 'menu'),
+        edge('menu', 'btn:a', 'phone'),
+        edge('menu', 'other', 'op'),
+        edge('menu', 'noanswer', 'silent'),
+        edge('silent', 'next', 'op'),
+        edge('phone', 'next', 'op'),
+        edge('phone', 'invalid', 'op'),
+      ],
+    };
+    let r = startFlow(g, { name: 'Анна' }, ctx);
+    expect(r.action).toEqual({
+      type: 'prompt',
+      text: 'Выберите тему',
+      buttons: [{ id: 'a', label: 'Баланс' }],
+      waitSec: 60,
+    });
+    const atMenu = r.state;
+    r = step(resumeFlow(g, atMenu, { type: 'timeout' }, ctx));
+    expect(r.action).toMatchObject({ type: 'prompt', text: 'Вы здесь? Анна, выберите тему.', waitSec: 60 });
+    expect(r.state.reminded).toBe(1);
+    const reminded = r.state;
+    r = step(resumeFlow(g, reminded, { type: 'timeout' }, ctx));
+    expect(r.action).toEqual({ type: 'say', text: 'Не дождались ответа.' });
+    expect(r.path.map((x) => x.exit).filter(Boolean)).toContain('noanswer');
+    r = step(resumeFlow(g, r.state, { type: 'done' }, ctx));
+    expect(r.action).toMatchObject({ type: 'handoff', queueId: 'q1' });
+    // Неверный ответ после напоминания: повтор вопроса, напоминания — заново.
+    r = step(resumeFlow(g, reminded, { type: 'text', text: 'что?' }, ctx));
+    expect(r.action).toMatchObject({ type: 'prompt', text: 'Нажмите кнопку.\n\nВыберите тему' });
+    expect(r.state.reminded).toBeUndefined();
+    r = step(resumeFlow(g, r.state, { type: 'timeout' }, ctx));
+    expect(r.action).toMatchObject({ text: 'Вы здесь? Анна, выберите тему.' });
+    // «Сбор поля» без напоминаний и с неподключённым «нет ответа» — сразу к оператору очереди канала.
+    r = step(resumeFlow(g, atMenu, { type: 'text', text: 'баланс' }, ctx));
+    expect(r.action).toEqual({ type: 'prompt', text: 'Телефон?', buttons: [], waitSec: 30 });
+    r = step(resumeFlow(g, r.state, { type: 'timeout' }, ctx));
+    expect(r.action).toEqual({ type: 'handoff', queueId: null, topicId: null, priority: 0, text: '' });
+    // Узел без ожидания тайм-аут не обрабатывает (прежние боты не меняются).
+    const plain = startFlow(bot, {}, ctx);
+    const atBotMenu = step(resumeFlow(bot, plain.state, { type: 'done' }, ctx)).state;
+    expect(resumeFlow(bot, atBotMenu, { type: 'timeout' }, ctx)).toBeNull();
+    // Проверка графа: «нет ответа» без связи — предупреждение, параметры ожидания проверяются.
+    const v = validateGraph(g);
+    expect(v.errors).toEqual([]);
+    expect(v.warnings.map((w) => w.message)).toContain(
+      '«Сбор поля»: выход «нет ответа» не подключён — бот передаст диалог оператору',
+    );
+    const bad: FlowGraph = {
+      ...g,
+      nodes: g.nodes.map((n) =>
+        n.id === 'phone' ? { ...n, params: { ...n.params, waitSec: 5, reminders: 9 } } : n,
+      ),
+    };
+    expect(validateGraph(bad).errors.map((e) => e.message)).toEqual([
+      '«Сбор поля»: ждать ответа — от 10 с до 24 ч',
+      '«Сбор поля»: напоминаний — от 0 до 5',
+    ]);
+  });
 });

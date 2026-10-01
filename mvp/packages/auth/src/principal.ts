@@ -18,6 +18,14 @@ export const PERMISSIONS = [
   'reports.view',
   /** Ручное слияние дублей клиентов (M-CARD-01, Ф12b). */
   'contacts.merge',
+  /** Ф14 (M-TEL-10): суфлирование — супервизора слышит только оператор. */
+  'calls.whisper',
+  /** Ф14: вмешательство — супервизор в разговоре, его слышат оба. */
+  'calls.barge',
+  /** Ф14: перехват обращения (звонок или чат переходит к супервизору). */
+  'conversations.takeover',
+  /** Ф14: подсказка оператору в чате — скрытое сообщение, клиенту не уходит. */
+  'conversations.hint',
 ] as const;
 export type Permission = (typeof PERMISSIONS)[number];
 

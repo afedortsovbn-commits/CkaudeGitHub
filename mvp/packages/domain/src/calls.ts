@@ -2,6 +2,7 @@ import {
   type CallState,
   type CallStateEvent,
   CONVERSATION_EVENTS,
+  type SupervisorMode,
   newId,
   normalizePhone,
   VoiceChannelConfigSchema,
@@ -27,6 +28,8 @@ interface CallRow {
   consult_state: 'dialing' | 'talking' | null;
   consult_user_id: string | null;
   consult_target: ConsultTarget | null;
+  supervisor_user_id?: string | null;
+  supervisor_mode?: SupervisorMode | null;
 }
 
 /** Адресат консультации (Ф12b): оператор или внешний номер; data — поля прямого перевода на подразделение. */
@@ -109,6 +112,10 @@ export async function emitCallState(tx: PoolClient, callId: string): Promise<voi
     consult:
       c.consult_channel && c.consult_state
         ? { state: c.consult_state, label: c.consult_target?.label ?? '', userId: c.consult_user_id }
+        : null,
+    supervisor:
+      c.supervisor_user_id && c.supervisor_mode
+        ? { userId: c.supervisor_user_id, mode: c.supervisor_mode }
         : null,
   };
   await emitConversation(tx, CONVERSATION_EVENTS.call, await loadRef(tx, c.conversation_id), { ...data });
@@ -356,7 +363,8 @@ export async function endCall(tx: PoolClient, callId: string, reason: string): P
     c.state === 'queued' || c.state === 'ivr' || (c.state === 'dialing' && c.direction === 'in');
   await tx.query(
     `UPDATE call SET state = 'ended', ended_at = now(), end_reason = $2, on_hold = false, consult_channel = NULL,
-       consult_state = NULL, consult_user_id = NULL, consult_target = NULL, version = version + 1, updated_at = now()
+       consult_state = NULL, consult_user_id = NULL, consult_target = NULL, supervisor_user_id = NULL,
+       supervisor_mode = NULL, position_playback = NULL, version = version + 1, updated_at = now()
      WHERE id = $1`,
     [callId, reason],
   );
@@ -705,4 +713,87 @@ export async function completeConsult(
   });
   await emitCallState(tx, callId);
   return { agentUserId: toUser };
+}
+
+// ------------------------------------------------------------------ супервизор в разговоре (Ф14, M-TEL-10)
+
+/**
+ * Режим подключения супервизора к разговору: прослушивание, суфлирование, вмешательство; null — отключился. Режим
+ * эфемерен (держит активный call-control), в строке вызова — для плашки оператору и панели супервизора. Каждая
+ * смена — событие в журнале вызова.
+ */
+export async function setSupervisorMode(
+  tx: PoolClient,
+  callId: string,
+  o: { userId: string; mode: SupervisorMode | null; reason?: string },
+): Promise<void> {
+  const { rows } = await tx.query<CallRow>(`SELECT * FROM call WHERE id = $1 FOR UPDATE`, [callId]);
+  const c = rows[0];
+  if (!c || c.state === 'ended') return;
+  if (!o.mode && c.supervisor_user_id !== o.userId) return; // отключается не тот, кто записан, — без изменений
+  if (c.supervisor_user_id === (o.mode ? o.userId : null) && c.supervisor_mode === o.mode) return;
+  await tx.query(
+    `UPDATE call SET supervisor_user_id = $2, supervisor_mode = $3, version = version + 1, updated_at = now()
+      WHERE id = $1`,
+    [callId, o.mode ? o.userId : null, o.mode],
+  );
+  await callEvent(
+    tx,
+    callId,
+    o.mode ? `supervisor_${o.mode}` : 'supervisor_left',
+    o.userId,
+    o.reason ? { reason: o.reason } : {},
+  );
+  await emitCallState(tx, callId);
+}
+
+/**
+ * Перехват звонка супервизором: его канал занимает место оператора в мосту (call-control), оператор отключается,
+ * обращение переназначается супервизору. Событие перевода с признаком перехвата (`takeover`) — для отчётов и
+ * журнала; оператору — уведомление (`notifyUserIds`, realtime).
+ */
+export async function takeoverCall(
+  tx: PoolClient,
+  callId: string,
+  o: { userId: string; userName: string; channel: string },
+): Promise<{ fromUserId: string | null } | null> {
+  const { rows } = await tx.query<CallRow & { agent_channel: string | null }>(
+    `SELECT * FROM call WHERE id = $1 FOR UPDATE`,
+    [callId],
+  );
+  const c = rows[0];
+  if (!c || c.state !== 'talking' || c.consult_channel) return null;
+  const from = c.agent_user_id;
+  const fromName = from
+    ? ((await tx.query<{ full_name: string }>(`SELECT full_name FROM app_user WHERE id = $1`, [from])).rows[0]
+        ?.full_name ?? '')
+    : '';
+  await tx.query(
+    `UPDATE call SET agent_channel = $2, agent_user_id = $3, supervisor_user_id = NULL, supervisor_mode = NULL,
+       version = version + 1, updated_at = now() WHERE id = $1`,
+    [callId, o.channel, o.userId],
+  );
+  await tx.query(
+    `UPDATE conversation SET assignee_id = $2, status = 'active', assigned_at = now(), version = version + 1,
+       updated_at = now() WHERE id = $1`,
+    [c.conversation_id, o.userId],
+  );
+  await callEvent(tx, callId, 'takeover', o.userId, { fromUserId: from });
+  await appendMessage(tx, {
+    conversationId: c.conversation_id,
+    direction: 'system',
+    body: `Супервизор ${o.userName} перехватил звонок${fromName ? ` у оператора ${fromName}` : ''}`,
+    channelKind: 'voice',
+    authorUserId: o.userId,
+  });
+  await emitConversation(tx, CONVERSATION_EVENTS.updated, await loadRef(tx, c.conversation_id), {
+    action: 'transferred',
+    transferKind: 'user',
+    takeover: true,
+    byUserId: o.userId,
+    fromUserId: from,
+    notifyUserIds: from ? [from] : [],
+  });
+  await emitCallState(tx, callId);
+  return { fromUserId: from };
 }

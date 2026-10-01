@@ -414,10 +414,19 @@ function Delivery({ m }: { m: Row }) {
 }
 
 function Messages({ conv, typing, onTyping }: { conv: Row; typing: boolean; onTyping(): void }) {
-  const { me } = useAuth();
+  const { me, can } = useAuth();
   const msgs = useList(`/conversations/${conv.id}/messages`);
   const [text, setText] = useState('');
-  const [note, setNote] = useState(false);
+  const [noteMode, setNote] = useState(false);
+  // Подсказка оператору (Ф14): супервизор пишет скрытое сообщение в чужом обращении — клиенту не уходит.
+  const canHint =
+    can('conversations.hint') &&
+    !!conv.assigneeId &&
+    conv.assigneeId !== me?.id &&
+    ['active', 'offered'].includes(String(conv.status));
+  const [hintMode, setHint] = useState(false);
+  const hint = hintMode && canHint;
+  const note = noteMode || hint;
   const [files, setFiles] = useState<Att[]>([]);
   const [busy, setBusy] = useState(false);
   const viewport = useRef<HTMLDivElement>(null);
@@ -445,11 +454,13 @@ function Messages({ conv, typing, onTyping }: { conv: Row; typing: boolean; onTy
     if (!text.trim() && !files.length) return;
     setBusy(true);
     try {
-      await post(`/conversations/${conv.id}/messages`, {
-        body: text.trim(),
-        attachmentIds: files.map((f) => f.id),
-        note,
-      });
+      if (hint) await post(`/conversations/${conv.id}/hint`, { body: text.trim() });
+      else
+        await post(`/conversations/${conv.id}/messages`, {
+          body: text.trim(),
+          attachmentIds: files.map((f) => f.id),
+          note,
+        });
       setText('');
       setFiles([]);
       void qc.invalidateQueries({ queryKey: [`/conversations/${conv.id}/messages`] });
@@ -464,15 +475,18 @@ function Messages({ conv, typing, onTyping }: { conv: Row; typing: boolean; onTy
       <ScrollArea h="calc(100vh - 330px)" viewportRef={viewport} type="auto">
         <Stack gap={6} p="xs" data-testid="messages">
           {(msgs.data ?? []).map((m) => {
-            const dir = String(m.direction);
+            const isHint = !!(m.meta as { hint?: boolean } | undefined)?.hint;
+            const dir = isHint ? 'hint' : String(m.direction);
             const style =
-              dir === 'in'
-                ? { alignSelf: 'flex-start', background: 'var(--mantine-color-gray-1)' }
-                : dir === 'out'
-                  ? { alignSelf: 'flex-end', background: 'var(--mantine-color-blue-1)' }
-                  : dir === 'note'
-                    ? { alignSelf: 'flex-end', background: 'var(--mantine-color-yellow-1)' }
-                    : { alignSelf: 'center', background: 'transparent' };
+              dir === 'hint'
+                ? { alignSelf: 'flex-end', background: 'var(--mantine-color-grape-1)' }
+                : dir === 'in'
+                  ? { alignSelf: 'flex-start', background: 'var(--mantine-color-gray-1)' }
+                  : dir === 'out'
+                    ? { alignSelf: 'flex-end', background: 'var(--mantine-color-blue-1)' }
+                    : dir === 'note'
+                      ? { alignSelf: 'flex-end', background: 'var(--mantine-color-yellow-1)' }
+                      : { alignSelf: 'center', background: 'transparent' };
             return (
               <Paper
                 key={m.id}
@@ -488,7 +502,9 @@ function Messages({ conv, typing, onTyping }: { conv: Row; typing: boolean; onTy
                       ? `${String(conv.contactName)}${reviewNote(m)}`
                       : dir === 'note'
                         ? t.workspace.zametka(noteAuthor(m))
-                        : autoLabel(m) || String(m.authorName ?? '')}{' '}
+                        : dir === 'hint'
+                          ? t.workspace.podskazkaSupervizora(String(m.authorName ?? ''))
+                          : autoLabel(m) || String(m.authorName ?? '')}{' '}
                     · {time(m.sentAt)}
                     {dir === 'out' && <Delivery m={m} />}
                   </Text>
@@ -582,11 +598,13 @@ function Messages({ conv, typing, onTyping }: { conv: Row; typing: boolean; onTy
           minRows={2}
           maxRows={6}
           placeholder={
-            note
-              ? t.workspace.vnutrennyayaZametkaKlientEe
-              : conv.channelKind === 'review'
-                ? t.reviews.replyPlaceholder
-                : t.workspace.otvetKlientuShablonyEnter
+            hint
+              ? t.workspace.podskazkaOperatoruPlaceholder
+              : note
+                ? t.workspace.vnutrennyayaZametkaKlientEe
+                : conv.channelKind === 'review'
+                  ? t.reviews.replyPlaceholder
+                  : t.workspace.otvetKlientuShablonyEnter
           }
           value={text}
           data-testid="reply"
@@ -623,7 +641,7 @@ function Messages({ conv, typing, onTyping }: { conv: Row; typing: boolean; onTy
                 variant="default"
                 size="xs"
                 data-testid="attach"
-                disabled={!note && conv.channelKind === 'review'}
+                disabled={hint || (!note && conv.channelKind === 'review')}
               >
                 {t.workspace.fayl}
               </Button>
@@ -640,12 +658,30 @@ function Messages({ conv, typing, onTyping }: { conv: Row; typing: boolean; onTy
           </Button>
         </Stack>
       </Group>
-      <Switch
-        size="xs"
-        label={t.workspace.vnutrennyayaZametka}
-        checked={note}
-        onChange={(e) => setNote(e.currentTarget.checked)}
-      />
+      <Group gap="md">
+        <Switch
+          size="xs"
+          label={t.workspace.vnutrennyayaZametka}
+          checked={noteMode && !hint}
+          onChange={(e) => {
+            setNote(e.currentTarget.checked);
+            if (e.currentTarget.checked) setHint(false);
+          }}
+        />
+        {canHint && (
+          <Switch
+            size="xs"
+            color="grape"
+            label={t.workspace.podskazkaOperatoru}
+            checked={hint}
+            onChange={(e) => {
+              setHint(e.currentTarget.checked);
+              if (e.currentTarget.checked) setNote(false);
+            }}
+            data-testid="hint-mode"
+          />
+        )}
+      </Group>
     </Stack>
   );
 }
@@ -1052,6 +1088,12 @@ const CALL_EVENT: Record<string, string> = {
   consult_start: t.workspace.konsultatsiya,
   consult_connected: t.workspace.adresatKonsultatsiiOtvetil,
   consult_end: t.workspace.konsultatsiyaBezPerevoda,
+  position: t.workspace.pozitsiyaVOcheredi,
+  supervisor_listen: t.workspace.supervizorSlushaet,
+  supervisor_whisper: t.workspace.supervizorSufliruet,
+  supervisor_barge: t.workspace.supervizorVmeshalsya,
+  supervisor_left: t.workspace.supervizorOtklyuchilsya,
+  takeover: t.workspace.perekhvatSupervizorom,
 };
 /** В кратком журнале стадий — без шагов IVR (они — отдельной строкой «Путь по IVR»). */
 const IVR_STEP = new Set(['ivr', 'ivr_dtmf', 'ivr_http']);
@@ -1152,7 +1194,7 @@ function CallsPanel({ conv }: { conv: Row }) {
               .filter((e) => !IVR_STEP.has(e.type))
               .map(
                 (e) =>
-                  `${time(e.at)} ${CALL_EVENT[e.type] ?? e.type}${e.data?.consult ? t.workspace.posleKonsultatsii : ''}${e.type === 'csat' ? t.workspace.iz52(String(e.data?.score)) : ''}`,
+                  `${time(e.at)} ${CALL_EVENT[e.type] ?? e.type}${e.data?.consult ? t.workspace.posleKonsultatsii : ''}${e.type === 'csat' ? t.workspace.iz52(String(e.data?.score)) : ''}${e.type === 'position' ? ` ${String(e.data?.position)}` : ''}`,
               )
               .join(' → ')}
           </Text>
@@ -1378,6 +1420,23 @@ export function WorkspacePage() {
                   {t.workspace.vzyat}
                 </Button>
               )}
+              {can('conversations.takeover') &&
+                conv.data.assigneeId !== me?.id &&
+                ['queued', 'offered', 'active', 'bot'].includes(String(conv.data.status)) && (
+                  <Button
+                    size="xs"
+                    color="orange"
+                    variant="light"
+                    data-testid="takeover"
+                    onClick={() =>
+                      void post(`/conversations/${selected}/takeover`)
+                        .then(() => qc.invalidateQueries())
+                        .catch((e: unknown) => notifications.show({ color: 'red', message: errorText(e) }))
+                    }
+                  >
+                    {t.workspace.perekhvatit}
+                  </Button>
+                )}
               {conv.data.status === 'offered' && conv.data.assigneeId === me?.id && (
                 <Group gap={4}>
                   <Button

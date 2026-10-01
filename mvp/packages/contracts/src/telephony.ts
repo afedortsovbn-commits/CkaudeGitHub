@@ -49,7 +49,16 @@ export interface CallStateEvent {
   endReason?: string | null;
   /** Идёт консультация (Ф12b): оператор говорит с адресатом, клиент на удержании. */
   consult?: CallConsultState | null;
+  /**
+   * Супервизор подключён к разговору (Ф14, M-TEL-10): прослушивание (оператор не видит), суфлирование (слышит только
+   * оператор) или вмешательство (слышат оба).
+   */
+  supervisor?: { userId: string; mode: SupervisorMode } | null;
 }
+
+/** Режим подключения супервизора к разговору (Ф14). */
+export const SUPERVISOR_MODES = ['listen', 'whisper', 'barge'] as const;
+export type SupervisorMode = (typeof SUPERVISOR_MODES)[number];
 
 /** Консультация оператора перед переводом (M-OP-05, M-TKT-11). */
 export interface CallConsultState {
@@ -100,7 +109,21 @@ export const CallControlCommandSchema = z.discriminatedUnion('op', [
     ]),
     comment: z.string().max(1000).optional(),
   }),
-  z.object({ op: z.literal('listen'), callId: z.string().uuid(), userId: z.string().uuid() }),
+  // Прослушивание (Ф5a); mode (Ф14) — сразу в режиме суфлирования или вмешательства.
+  z.object({
+    op: z.literal('listen'),
+    callId: z.string().uuid(),
+    userId: z.string().uuid(),
+    mode: z.enum(SUPERVISOR_MODES).optional(),
+  }),
+  // Ф14: смена режима подключённого супервизора без переподключения; перехват звонка супервизором.
+  z.object({
+    op: z.literal('supervise'),
+    callId: z.string().uuid(),
+    userId: z.string().uuid(),
+    mode: z.enum(SUPERVISOR_MODES),
+  }),
+  z.object({ op: z.literal('takeover'), callId: z.string().uuid(), userId: z.string().uuid() }),
   // Консультативный перевод (Ф12b): консультация с адресатом → соединить клиента с ним или вернуться к клиенту.
   z.object({
     op: z.literal('consult'),

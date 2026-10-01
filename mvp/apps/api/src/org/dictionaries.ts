@@ -185,6 +185,9 @@ export const DICTIONARIES: Record<string, DictSpec> = {
       f('wrapUpS', z.number().int().min(0).max(3600).default(15)),
       // Обязательный тег при закрытии обращения очереди (M-CARD-06).
       f('requireTag', z.boolean().default(false)),
+      // Позиция в очереди (Ф14, M-TEL-07): звонящему — «Вы второй в очереди», в чате — {{позиция}}; по умолчанию выкл.
+      f('announcePosition', z.boolean().default(false)),
+      f('announcePositionEveryS', z.number().int().min(15).max(3600).default(60)),
     ],
     orderBy: 'priority DESC, name',
     search: ['name'],

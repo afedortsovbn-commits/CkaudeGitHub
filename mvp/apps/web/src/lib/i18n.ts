@@ -24,6 +24,7 @@ import { settingsPage } from './i18n/settingsPage';
 import { softphoneLib } from './i18n/softphoneLib';
 import { softphoneUi } from './i18n/softphoneUi';
 import { supervisor } from './i18n/supervisor';
+import { supervisorNotices } from './i18n/supervisorNotices';
 import { tickets } from './i18n/tickets';
 import { topics } from './i18n/topics';
 import { updateBannerUi } from './i18n/updateBannerUi';
@@ -137,6 +138,7 @@ const ru = {
   softphoneLib,
   softphoneUi,
   supervisor,
+  supervisorNotices,
   tickets,
   topics,
   updateBannerUi,

@@ -7,6 +7,7 @@ import {
   newId,
   normalizePhone,
   sipUserOf,
+  type SupervisorMode,
   userIdOfSip,
 } from '@cc/contracts';
 import {
@@ -24,12 +25,14 @@ import {
   loadRef,
   publishedFlowForDid,
   setCallHold,
+  setSupervisorMode,
   startConsult,
   startInboundCall,
   startOutboundCall,
   transferCallExternal,
   transferCallToQueue,
   transferCallToUser,
+  takeoverCall,
 } from '@cc/domain';
 import { type FlowGraph, startFlow } from '@cc/flow-engine';
 import { KvLease, type Logger } from '@cc/service-kit';
@@ -37,6 +40,7 @@ import type { KV, Msg, NatsConnection, Subscription } from 'nats';
 import type { Pool, PoolClient } from 'pg';
 import { type Ari, type AriChannel, type AriEvent } from './ari';
 import { type IvrState, IvrRunner } from './ivr';
+import { PositionAnnouncer } from './position';
 import type { RecordingStore } from './recordings';
 
 export const STASIS_APP = 'cc';
@@ -77,9 +81,42 @@ interface CallRow {
   consult_state: 'dialing' | 'talking' | null;
   consult_user_id: string | null;
   consult_target: ConsultTarget | null;
+  position_playback: string | null;
+  supervisor_user_id: string | null;
+  supervisor_mode: SupervisorMode | null;
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Подключение супервизора к разговору (M-TEL-10, Ф14) — эфемерно, как прослушивание Ф5a: держит активный экземпляр,
+ * при его смене подключение завершается (разговор продолжается). Ключ — канал софтфона супервизора: он не
+ * переподключается при смене режима, меняется лишь то, куда он включён.
+ *  - listen: snoop клиента (что клиент говорит и слышит) → мост прослушивания с супервизором;
+ *  - whisper: snoop оператора со «шёпотом» (whisper out) — супервизор слышит разговор, его слышит только оператор;
+ *  - barge: супервизор — в мосту разговора, его слышат оба (и запись разговора).
+ */
+interface SupSession {
+  callId: string;
+  userId: string;
+  mode: SupervisorMode;
+  snoop: string | null;
+  /** Мост прослушивания (snoop + супервизор); при вмешательстве — нет. */
+  bridge: string | null;
+  answered: boolean;
+  /** Супервизор включён в мост разговора (вмешательство). */
+  inCall: boolean;
+  /** Новый snoop при смене режима: ждёт входа в Stasis, затем заменяет прежний. */
+  pending?: { snoop: string; mode: 'listen' | 'whisper' };
+  /** Перехват сразу после ответа софтфона супервизора (перехват без предварительного подключения). */
+  takeover?: boolean;
+}
+
+const SUPERVISOR_CALLER_ID: Record<SupervisorMode, string> = {
+  listen: '"Прослушивание разговора" <listen>',
+  whisper: '"Суфлирование" <listen>',
+  barge: '"Вмешательство в разговор" <listen>',
+};
 
 class CommandError extends Error {}
 
@@ -100,10 +137,11 @@ export class MediaNode {
   private timer?: NodeJS.Timeout;
   private chain: Promise<unknown> = Promise.resolve();
   private ticking = false;
-  /** Прослушивание супервизором: канал супервизора → snoop-канал и мост (эфемерно, не переживает переключение). */
-  private readonly listens = new Map<string, { snoop: string; bridge: string | null; callId: string }>();
+  /** Супервизоры в разговорах: канал софтфона супервизора → сеанс (эфемерно, не переживает переключение). */
+  private readonly listens = new Map<string, SupSession>();
 
   private readonly ivr: IvrRunner;
+  private readonly position: PositionAnnouncer;
 
   constructor(private readonly o: NodeOptions) {
     this.lease = new KvLease(o.leases, `media.${o.name}`, o.instanceId);
@@ -121,6 +159,14 @@ export class MediaNode {
       tx: (fn) => this.tx(fn),
       enqueue: (fn) => void this.enqueue(fn),
       isLeader: () => this.leader,
+    });
+    this.position = new PositionAnnouncer({
+      node: o.name,
+      ari: o.ari,
+      pool: o.pool,
+      logger: o.logger,
+      mediaBaseUrl: o.mediaBaseUrl,
+      tx: (fn) => this.tx(fn),
     });
   }
 
@@ -251,8 +297,9 @@ export class MediaNode {
     } else if (e.type === 'RecordingFailed' && e.recording) {
       await this.o.store.failed(this.o.name, e.recording.name);
       if (e.recording.name.startsWith('vm-')) await this.ivr.voicemailDone(e.recording.name.slice(3), false);
-    } else if (e.type === 'PlaybackFinished' && e.playback) await this.ivr.playbackFinished(e.playback.id);
-    else if (e.type === 'ChannelDtmfReceived' && e.channel && e.digit)
+    } else if (e.type === 'PlaybackFinished' && e.playback) {
+      if (!(await this.position.finished(e.playback.id))) await this.ivr.playbackFinished(e.playback.id);
+    } else if (e.type === 'ChannelDtmfReceived' && e.channel && e.digit)
       await this.ivr.digit(e.channel.id, e.digit);
   }
 
@@ -268,7 +315,9 @@ export class MediaNode {
       case 'consult':
         return this.consultAnswered(a1, ch);
       case 'listen':
-        return this.listenAnswered(a1, a2, ch);
+        return this.listenAnswered(a1, ch);
+      case 'svsnoop':
+        return this.snoopReady(a2, ch);
       case 'snoop':
         return;
       case 'recorder':
@@ -439,6 +488,7 @@ export class MediaNode {
     const bridge = await this.ensureBridge(c);
     await this.o.ari.bridges.add(bridge, [c.client_channel, agent.id]);
     await this.o.ari.channels.mohStop(c.client_channel);
+    await this.position.stop(c);
     await this.startRecording(c);
     const name = await this.userName(c.agent_user_id);
     await this.tx((tx) => connectAgent(tx, callId, { bridgeId: bridge, userName: name }));
@@ -481,27 +531,107 @@ export class MediaNode {
     });
   }
 
-  private async listenAnswered(callId: string, snoopId: string, sup: AriChannel): Promise<void> {
-    const l = this.listens.get(sup.id);
+  /** Софтфон супервизора ответил (ответ автоматический): включаем его по режиму сеанса. */
+  private async listenAnswered(callId: string, sup: AriChannel): Promise<void> {
+    const s = this.listens.get(sup.id);
     const c = await this.call('id = $2', [callId]);
-    if (!l || !c) {
+    if (!s || !c || c.state !== 'talking' || !c.agent_channel) {
+      this.listens.delete(sup.id);
       await this.o.ari.channels.hangup(sup.id);
-      await this.o.ari.channels.hangup(snoopId);
+      if (s?.snoop) await this.o.ari.channels.hangup(s.snoop);
       return;
     }
-    const bridge = newId();
-    await this.o.ari.bridges.create(bridge, `listen-${callId}`);
-    await this.o.ari.bridges.add(bridge, [snoopId, sup.id]);
-    l.bridge = bridge;
+    s.answered = true;
+    if (s.mode === 'barge') await this.joinCall(c, sup.id, s);
+    else if (s.snoop) await this.joinListenBridge(sup.id, s, s.snoop);
+    if (s.takeover) return this.doTakeover(c.id, sup.id, s);
+    await this.tx((tx) => setSupervisorMode(tx, c.id, { userId: s.userId, mode: s.mode }));
+  }
+
+  /** Новый snoop (смена режима) вошёл в Stasis: он заменяет прежний в мосту прослушивания. */
+  private async snoopReady(sup: string, ch: AriChannel): Promise<void> {
+    const s = this.listens.get(sup);
+    if (!s) {
+      await this.o.ari.channels.hangup(ch.id);
+      return;
+    }
+    if (s.pending?.snoop !== ch.id) return; // начальный snoop — включится при ответе софтфона
+    const mode = s.pending.mode;
+    s.pending = undefined;
+    const c = await this.call('id = $2', [s.callId]);
+    if (!c) {
+      await this.o.ari.channels.hangup(ch.id);
+      return;
+    }
+    const old = s.snoop;
+    await this.joinListenBridge(sup, s, ch.id);
+    if (old && old !== ch.id) await this.o.ari.channels.hangup(old);
+    s.mode = mode;
+    await this.tx((tx) => setSupervisorMode(tx, s.callId, { userId: s.userId, mode }));
+  }
+
+  /** Супервизор слушает через snoop: мост прослушивания (создаётся при необходимости), из моста разговора — выход. */
+  private async joinListenBridge(sup: string, s: SupSession, snoop: string): Promise<void> {
+    if (s.inCall) {
+      const c = await this.call('id = $2', [s.callId]);
+      if (c?.bridge_id) await this.o.ari.bridges.remove(c.bridge_id, [sup]).catch(() => undefined);
+      s.inCall = false;
+    }
+    if (!s.bridge) {
+      const bridge = newId();
+      await this.o.ari.bridges.create(bridge, `listen-${s.callId}`);
+      s.bridge = bridge;
+      await this.o.ari.bridges.add(bridge, [snoop, sup]);
+    } else {
+      const b = await this.o.ari.bridges.get(s.bridge).catch(() => null);
+      const missing = [snoop, sup].filter((x) => !b?.channels.includes(x));
+      if (missing.length) await this.o.ari.bridges.add(s.bridge, missing);
+    }
+    s.snoop = snoop;
+  }
+
+  /** Вмешательство: супервизор — в мосту разговора; snoop и мост прослушивания больше не нужны. */
+  private async joinCall(c: CallRow, sup: string, s: SupSession): Promise<void> {
+    const bridge = await this.ensureBridge(c);
+    if (s.bridge) {
+      await this.o.ari.bridges.remove(s.bridge, [sup]).catch(() => undefined);
+      await this.o.ari.bridges.destroy(s.bridge);
+      s.bridge = null;
+    }
+    if (!s.inCall) await this.o.ari.bridges.add(bridge, [sup]);
+    s.inCall = true;
+    for (const x of [s.snoop, s.pending?.snoop]) if (x) await this.o.ari.channels.hangup(x);
+    s.snoop = null;
+    s.pending = undefined;
+  }
+
+  private sessionOf(callId: string, userId?: string): [string, SupSession] | undefined {
+    for (const e of this.listens) if (e[1].callId === callId && (!userId || e[1].userId === userId)) return e;
+    return undefined;
+  }
+
+  /** Snoop для прослушивания (канал клиента) или суфлирования (канал оператора, шёпот — только ему). */
+  private async createSnoop(c: CallRow, sup: string, mode: 'listen' | 'whisper'): Promise<string> {
+    const id = newId();
+    await this.o.ari.channels.snoop(mode === 'whisper' ? c.agent_channel! : c.client_channel, {
+      snoopId: id,
+      app: STASIS_APP,
+      appArgs: `svsnoop,${c.id},${sup}`,
+      spy: 'both',
+      whisper: mode === 'whisper' ? 'out' : 'none',
+    });
+    return id;
   }
 
   /** Канал завершился: клиент, оператор, внешний абонент или прослушивающий супервизор. */
   private async gone(channelId: string, cause: number): Promise<void> {
     const l = this.listens.get(channelId);
     if (l) {
+      // Супервизор положил трубку (или не ответил) — подключение завершено, разговор идёт дальше.
       this.listens.delete(channelId);
-      await this.o.ari.channels.hangup(l.snoop);
-      if (l.bridge) await this.o.ari.bridges.destroy(l.bridge);
+      await this.releaseSession(l);
+      if (l.answered)
+        await this.tx((tx) => setSupervisorMode(tx, l.callId, { userId: l.userId, mode: null }));
       return;
     }
     const c = await this.call('(client_channel = $2 OR agent_channel = $2 OR consult_channel = $2)', [
@@ -576,13 +706,20 @@ export class MediaNode {
     await this.tx((tx) => endCall(tx, c.id, reason));
   }
 
-  private async dropListeners(callId: string): Promise<void> {
-    for (const [sup, l] of this.listens)
+  private async releaseSession(l: SupSession): Promise<void> {
+    for (const x of [l.snoop, l.pending?.snoop]) if (x) await this.o.ari.channels.hangup(x);
+    if (l.bridge) await this.o.ari.bridges.destroy(l.bridge);
+  }
+
+  /** Отключить супервизоров от вызова (разговор завершён, оператор сменился при переводе). */
+  private async dropListeners(callId: string, reason = 'call_changed'): Promise<void> {
+    for (const [sup, l] of [...this.listens])
       if (l.callId === callId) {
         this.listens.delete(sup);
         await this.o.ari.channels.hangup(sup);
-        await this.o.ari.channels.hangup(l.snoop);
-        if (l.bridge) await this.o.ari.bridges.destroy(l.bridge);
+        await this.releaseSession(l);
+        if (l.answered)
+          await this.tx((tx) => setSupervisorMode(tx, callId, { userId: l.userId, mode: null, reason }));
       }
   }
 
@@ -591,6 +728,7 @@ export class MediaNode {
   private async tick(): Promise<void> {
     if (!this.leader) return;
     await this.ivr.wake();
+    await this.position.tick();
     await this.dialOffered();
     await this.dropStaleOffers();
     await this.o.store.uploadPending(this.o.name, this.o.ari);
@@ -709,6 +847,8 @@ export class MediaNode {
         await this.ivr.recover(c);
       } else if (c.state === 'queued') {
         if (c.ivr_state) await this.ivr.recover(c);
+        // Сообщение о позиции шло без нас (событие о его конце потеряно) — следующее прозвучит по периоду.
+        await this.position.stop(c);
         await this.o.ari.channels.mohStart(c.client_channel);
       } else if (c.state === 'dialing') {
         const peer = byId.get(c.client_channel);
@@ -736,15 +876,32 @@ export class MediaNode {
         else if (agent.state === 'Up' && c.on_hold) await this.externalAnswered(c.id, agent);
       }
     }
+    // Подключения супервизоров эфемерны (Ф14): после смены активного экземпляра сеансов в памяти нет — их каналы
+    // (софтфон супервизора, snoop) и мосты прослушивания закрываются, отметка в вызове снимается. При
+    // переподключении ARI тем же экземпляром сеансы живы и не трогаются.
+    const ours = new Set<string>();
+    const ourBridges = new Set<string>();
+    for (const [sup, l] of this.listens) {
+      ours.add(sup);
+      for (const x of [l.snoop, l.pending?.snoop]) if (x) ours.add(x);
+      if (l.bridge) ourBridges.add(l.bridge);
+    }
+    for (const c of calls)
+      if (c.supervisor_user_id && !this.sessionOf(c.id, c.supervisor_user_id))
+        await this.tx((tx) =>
+          setSupervisorMode(tx, c.id, { userId: c.supervisor_user_id!, mode: null, reason: 'failover' }),
+        );
     for (const ch of channels) {
-      if (known.has(ch.id) || this.listens.has(ch.id)) continue;
+      if (known.has(ch.id) || ours.has(ch.id)) continue;
       const app = ch.dialplan?.app_name;
       const data = ch.dialplan?.app_data ?? '';
       if (app !== 'Stasis' || !data.startsWith(`${STASIS_APP},`)) continue;
       const args = data.split(',').slice(1);
       if (args[0] === 'trunk' || args[0] === 'webrtc') await this.newCall(ch, args[0], args[1] ?? '');
-      else if (args[0] !== 'snoop' && args[0] !== 'recorder') await this.o.ari.channels.hangup(ch.id);
+      else if (args[0] !== 'recorder') await this.o.ari.channels.hangup(ch.id);
     }
+    for (const b of await this.o.ari.bridges.list().catch(() => []))
+      if (b.name?.startsWith('listen-') && !ourBridges.has(b.id)) await this.o.ari.bridges.destroy(b.id);
   }
 
   // ------------------------------------------------------------------ команды api
@@ -766,7 +923,9 @@ export class MediaNode {
   private async execute(cmd: CallControlCommand): Promise<void> {
     const c = await this.call('id = $2', [cmd.callId]);
     if (!c) throw new CommandError('Звонок уже завершён');
-    if (cmd.op === 'listen') return this.listen(c, cmd.userId);
+    if (cmd.op === 'listen') return this.listen(c, cmd.userId, cmd.mode ?? 'listen');
+    if (cmd.op === 'supervise') return this.supervise(c, cmd.userId, cmd.mode);
+    if (cmd.op === 'takeover') return this.takeover(c, cmd.userId);
     if (c.agent_user_id !== cmd.userId) throw new CommandError('Звонок ведёт другой оператор');
     if (c.state !== 'talking' || !c.agent_channel) throw new CommandError('Звонок ещё не соединён');
     const bridge = await this.ensureBridge(c);
@@ -956,6 +1115,7 @@ export class MediaNode {
     const name = await this.userName(by);
     const done = await this.tx((tx) => completeConsult(tx, c.id, { byUserId: by!, byName: name }));
     if (!done) return;
+    await this.dropListeners(c.id);
     const bridge = await this.ensureBridge(c);
     if (byUserId && c.agent_channel) {
       await this.o.ari.bridges.remove(bridge, [c.agent_channel]).catch(() => undefined);
@@ -971,6 +1131,7 @@ export class MediaNode {
     const note = cmd.comment ? `: ${cmd.comment}` : '';
     const t = cmd.target;
     const detach = async () => {
+      await this.dropListeners(c.id);
       await this.o.ari.bridges.remove(bridge, [c.client_channel, agent]);
       await this.o.ari.channels.mohStart(c.client_channel);
       await this.o.ari.channels.hangup(agent);
@@ -1072,36 +1233,123 @@ export class MediaNode {
     }
   }
 
-  /** Прослушивание супервизором (M-TEL-10): snoop-канал клиента → софтфон супервизора. */
-  private async listen(c: CallRow, userId: string): Promise<void> {
-    if (c.state !== 'talking') throw new CommandError('Разговор ещё не начался');
-    const snoop = newId();
+  /**
+   * Подключение супервизора к разговору (M-TEL-10): софтфону супервизора звонит узел (ответ автоматический), затем
+   * он включается по режиму — прослушивание (Ф5a), суфлирование или вмешательство (Ф14). К разговору подключается
+   * один супервизор; повторная команда того же супервизора меняет режим (`supervise`).
+   */
+  private async listen(c: CallRow, userId: string, mode: SupervisorMode, takeover = false): Promise<void> {
+    if (c.state !== 'talking' || !c.agent_channel) throw new CommandError('Разговор ещё не начался');
+    const own = this.sessionOf(c.id, userId);
+    if (own) {
+      if (takeover) return this.takeover(c, userId);
+      return this.supervise(c, userId, mode);
+    }
+    if (this.sessionOf(c.id)) throw new CommandError('К разговору уже подключён другой супервизор');
+    if (c.agent_user_id === userId) throw new CommandError('Это ваш разговор');
     const sup = newId();
-    this.listens.set(sup, { snoop, bridge: null, callId: c.id });
+    const s: SupSession = {
+      callId: c.id,
+      userId,
+      mode,
+      snoop: null,
+      bridge: null,
+      answered: false,
+      inCall: false,
+      takeover,
+    };
+    this.listens.set(sup, s);
     try {
-      await this.o.ari.channels.snoop(c.client_channel, {
-        snoopId: snoop,
-        app: STASIS_APP,
-        appArgs: `snoop,${c.id}`,
-      });
+      if (mode !== 'barge') s.snoop = await this.createSnoop(c, sup, mode);
       await this.o.ari.channels.originate({
         endpoint: `PJSIP/webrtc/sip:${sipUserOf(userId)}@${this.o.sipProxy}`,
         channelId: sup,
         app: STASIS_APP,
-        appArgs: `listen,${c.id},${snoop}`,
-        callerId: '"Прослушивание разговора" <listen>',
+        appArgs: `listen,${c.id}`,
+        callerId: SUPERVISOR_CALLER_ID[mode],
         timeout: 30,
         variables: {
           'PJSIP_HEADER(add,X-CC-Listen)': c.id,
+          'PJSIP_HEADER(add,X-CC-Listen-Mode)': mode,
           'PJSIP_HEADER(add,X-CC-Conversation)': c.conversation_id,
         },
       });
     } catch (err) {
       this.listens.delete(sup);
-      await this.o.ari.channels.hangup(snoop);
-      throw new CommandError(`Не удалось начать прослушивание: ${String(err)}`);
+      if (s.snoop) await this.o.ari.channels.hangup(s.snoop);
+      throw new CommandError(`Не удалось подключиться к разговору: ${String(err)}`);
     }
-    await this.tx((tx) => callEvent(tx, c.id, 'listen', userId));
+    await this.tx((tx) => callEvent(tx, c.id, 'listen', userId, { mode, ...(takeover ? { takeover } : {}) }));
+  }
+
+  /** Смена режима подключённого супервизора без переподключения его софтфона (Ф14). */
+  private async supervise(c: CallRow, userId: string, mode: SupervisorMode): Promise<void> {
+    const e = this.sessionOf(c.id, userId);
+    if (!e) return this.listen(c, userId, mode);
+    const [sup, s] = e;
+    if (c.state !== 'talking' || !c.agent_channel) throw new CommandError('Разговор не идёт');
+    if (!s.answered) {
+      // Софтфон ещё не ответил — режим применится при ответе.
+      if (mode === 'barge' && s.snoop) {
+        await this.o.ari.channels.hangup(s.snoop);
+        s.snoop = null;
+      } else if (mode !== 'barge' && (mode !== s.mode || !s.snoop)) {
+        if (s.snoop) await this.o.ari.channels.hangup(s.snoop);
+        s.snoop = await this.createSnoop(c, sup, mode);
+      }
+      s.mode = mode;
+      return;
+    }
+    if (mode === s.mode && !s.pending) return;
+    if (mode === 'barge') {
+      await this.joinCall(c, sup, s);
+      s.mode = 'barge';
+      await this.tx((tx) => setSupervisorMode(tx, c.id, { userId, mode }));
+      return;
+    }
+    // Прослушивание ↔ суфлирование: новый snoop включится, когда войдёт в Stasis (snoopReady), прежний — снимется.
+    if (s.pending) await this.o.ari.channels.hangup(s.pending.snoop);
+    s.pending = { snoop: await this.createSnoop(c, sup, mode), mode };
+  }
+
+  /**
+   * Перехват звонка (Ф14): супервизор занимает место оператора в мосту, оператор отключается, обращение — у
+   * супервизора. Если супервизор ещё не подключён — сначала звонок его софтфону, перехват — после ответа.
+   */
+  private async takeover(c: CallRow, userId: string): Promise<void> {
+    if (c.state !== 'talking' || !c.agent_channel) throw new CommandError('Разговор не идёт');
+    if (c.consult_channel) throw new CommandError('Идёт консультация — перехват после её завершения');
+    if (c.agent_user_id === userId) throw new CommandError('Это ваш разговор');
+    const e = this.sessionOf(c.id, userId);
+    if (!e) return this.listen(c, userId, 'barge', true);
+    const [sup, s] = e;
+    if (!s.answered) {
+      s.takeover = true;
+      return;
+    }
+    return this.doTakeover(c.id, sup, s);
+  }
+
+  private async doTakeover(callId: string, sup: string, s: SupSession): Promise<void> {
+    const c = await this.call('id = $2', [callId]);
+    if (!c || c.state !== 'talking' || !c.agent_channel || c.consult_channel)
+      throw new CommandError('Перехват невозможен: разговор не идёт или идёт консультация');
+    const old = c.agent_channel;
+    const name = await this.userName(s.userId);
+    const r = await this.tx((tx) =>
+      takeoverCall(tx, c.id, { userId: s.userId, userName: name, channel: sup }),
+    );
+    if (!r) throw new CommandError('Перехват невозможен: разговор не идёт или идёт консультация');
+    // Канал супервизора теперь — канал ведущего разговор: он больше не «прослушивающий».
+    this.listens.delete(sup);
+    await this.joinCall(c, sup, s);
+    const bridge = await this.ensureBridge(c);
+    await this.o.ari.bridges.remove(bridge, [old]).catch(() => undefined);
+    await this.o.ari.channels.hangup(old);
+    this.o.logger.info(
+      { callId, supervisor: s.userId, from: r.fromUserId },
+      'звонок перехвачен супервизором',
+    );
   }
 }
 

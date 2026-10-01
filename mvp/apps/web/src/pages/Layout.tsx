@@ -3,6 +3,7 @@ import { useEffect } from 'react';
 import { NavLink as RouterLink, Outlet, useLocation } from 'react-router';
 import { BrowserWarning } from '../components/BrowserWarning';
 import { NotificationBell } from '../components/NotificationBell';
+import { SupervisorNotices } from '../components/SupervisorNotices';
 import { UpdateBanner } from '../components/UpdateBanner';
 import { SoftphoneCall, SoftphoneStatus } from '../components/Softphone';
 import { useRealtime } from '../lib/realtime';
@@ -116,6 +117,7 @@ export function Layout() {
         <UpdateBanner />
         <Outlet />
         {phone && <SoftphoneCall />}
+        {phone && userId && <SupervisorNotices userId={userId} />}
       </AppShell.Main>
     </AppShell>
   );

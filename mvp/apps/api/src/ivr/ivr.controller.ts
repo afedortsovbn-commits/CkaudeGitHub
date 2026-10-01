@@ -4,6 +4,7 @@ import {
   collectRefs,
   type FlowGraph,
   NUMBER_FRAGMENTS,
+  POSITION_FRAGMENTS,
   parseGraph,
   validateGraph,
   type ValidationResult,
@@ -369,7 +370,11 @@ export class IvrController {
       `SELECT fragment_key, id FROM audio_file WHERE kind = 'fragment' AND is_active`,
     );
     const m = new Map(have.map((r) => [r.fragment_key, r.id]));
-    return NUMBER_FRAGMENTS.map((f) => ({ ...f, audioId: m.get(f.key) ?? null }));
+    return [
+      ...NUMBER_FRAGMENTS.map((f) => ({ ...f, group: 'number', audioId: m.get(f.key) ?? null })),
+      // Фраза «Вы второй в очереди» (Ф14, позиция в очереди — опция очереди).
+      ...POSITION_FRAGMENTS.map((f) => ({ ...f, group: 'position', audioId: m.get(f.key) ?? null })),
+    ];
   }
 
   /**

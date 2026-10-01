@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { numberKeys, parseAmount, plural } from './numbers';
+import { numberKeys, parseAmount, plural, POSITION_FRAGMENTS, positionKeys } from './numbers';
 import { sayNumber } from './engine';
 import { getPath, render, toVar } from './template';
 import { isOpen } from './schedule';
@@ -88,5 +88,16 @@ describe('расписание', () => {
     };
     expect(isOpen(s, new Date('2026-09-29T20:30:00Z'))).toBe(true); // вт 23:30
     expect(isOpen(s, new Date('2026-09-29T18:30:00Z'))).toBe(false); // вт 21:30
+  });
+  it('позиция в очереди (Ф14): «Вы второй в очереди», составные порядковые, за пределами — не озвучивается', () => {
+    expect(positionKeys(2)).toEqual(['pos_you', 'ord_2', 'pos_in_queue']);
+    expect(positionKeys(20)).toEqual(['pos_you', 'ord_20', 'pos_in_queue']);
+    expect(positionKeys(21)).toEqual(['pos_you', '20', 'ord_1', 'pos_in_queue']);
+    expect(positionKeys(99)).toEqual(['pos_you', '90', 'ord_9', 'pos_in_queue']);
+    expect(positionKeys(0)).toEqual([]);
+    expect(positionKeys(100)).toEqual([]);
+    const keys = new Set(POSITION_FRAGMENTS.map((f) => f.key));
+    for (let n = 1; n <= 99; n++)
+      for (const k of positionKeys(n)) expect(keys.has(k) || /^\d+$/.test(k), `${n}: ${k}`).toBe(true);
   });
 });
