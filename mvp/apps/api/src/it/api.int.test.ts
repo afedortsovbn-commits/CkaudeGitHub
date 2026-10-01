@@ -42,10 +42,27 @@ describe.skipIf(!ADMIN_URL)('API Ф1 (интеграция)', () => {
       url: '/api/v1/auth/refresh',
       cookies: { cc_rt: cookie.value },
     });
-    expect(again.statusCode).toBe(401); // старый refresh-токен после ротации недействителен
-    const newCookie = ref.cookies.find((c) => c.name === 'cc_rt')!;
+    // Ответ с новым токеном мог потеряться — предыдущий ещё принимается (REFRESH_GRACE_S) и снова ротируется.
+    expect(again.statusCode).toBe(200);
+    await pool.query(
+      `UPDATE auth_session SET rotated_at = now() - interval '5 minutes' WHERE prev_refresh_hash IS NOT NULL`,
+    );
+    const late = await http().inject({
+      method: 'POST',
+      url: '/api/v1/auth/refresh',
+      cookies: { cc_rt: cookie.value },
+    });
+    expect(late.statusCode).toBe(401); // после интервала старый refresh-токен недействителен
+    const newCookie = again.cookies.find((c) => c.name === 'cc_rt')!;
+    const stale = ref.cookies.find((c) => c.name === 'cc_rt')!;
+    const viaStale = await http().inject({
+      method: 'POST',
+      url: '/api/v1/auth/refresh',
+      cookies: { cc_rt: stale.value },
+    });
+    expect(viaStale.statusCode).toBe(401); // промежуточный токен вытеснен повторной ротацией
     await http().inject({ method: 'POST', url: '/api/v1/auth/logout', cookies: { cc_rt: newCookie.value } });
-    const afterLogout = await call('GET', '/api/v1/auth/me', JSON.parse(ref.body).accessToken);
+    const afterLogout = await call('GET', '/api/v1/auth/me', JSON.parse(again.body).accessToken);
     expect(afterLogout.status).toBe(401); // сессия отозвана — access-токен больше не принимается
   });
 
