@@ -2,135 +2,171 @@ import { PermanentError } from '@cc/connector-kit';
 import { z } from 'zod';
 
 /**
- * Клиент API Rocket Data — адаптер по контракту-заглушке (описание API от заказчика не получено, В-32):
- * `mvp/docs/интеграции-rocketdata-и-объекты.md`. При получении описания меняется только этот файл (запросы и разбор
- * ответа) — остальной коннектор работает с `RdReview` и `RdAnswerResult`.
+ * Обмен с Rocket Data — адаптер по описанию заказчика (01.10, «Требования по интеграции с программным обеспечением
+ * контакт-центра», В-32; `mvp/docs/интеграции-rocketdata-и-объекты.md`). Остальной коннектор работает с `RdReview`;
+ * при изменении формата меняется только этот файл.
  *
- *   GET  {api_url}/v1/reviews?updated_since=<ISO>&cursor=<…>&limit=100   → {items: RdReview[], next_cursor}
- *   POST {api_url}/v1/reviews/{id}/answer   {text}   Idempotency-Key: <id сообщения>  → {id, status, error?}
- *   Авторизация — заголовок Authorization: Bearer <api_token>.
+ *   Отзыв:  Rocket Data → POST <адрес КЦ>/rd/<id канала>, JSON (TicketMapId, DateReceipt, StationGuid, StationType,
+ *           StationNum, EmitentName, ClientName, Message, Link, Site) → HTTP 200 (принят) или 400 (ошибка формата).
+ *   Ответ:  КЦ → POST <адрес сервиса ответов> JSON {Review_id, DateAnswer, Text} → HTTP 200.
+ *
+ * Время в описании — без часового пояса («2016-11-23T10:08:05»): это время Europe/Minsk (UTC+3, без перехода).
  */
 
+const MINSK_OFFSET = '+03:00';
+
+/** Строковое поле: число допускается (TicketMapId описан как «Число», в примере — строка). */
+const text = (max: number) =>
+  z.preprocess((v) => (typeof v === 'number' ? String(v) : v), z.string().trim().max(max));
+const required = (max: number) => text(max).pipe(z.string().min(1, 'значение обязательно'));
+
+/**
+ * Отзыв. Ограничения длины из таблицы 1 описания соблюдает отправитель; приём — с запасом, чтобы отзыв не
+ * терялся из-за длинной ссылки или текста (длиннее запаса — ошибка формата).
+ */
 const RdReviewSchema = z.object({
-  id: z.coerce.string().min(1).max(200),
-  location_id: z.coerce.string().max(200).nullish(),
-  location_code: z.coerce.string().max(200).nullish(),
-  platform: z.string().max(40).default('unknown'),
-  rating: z.coerce.number().int().min(1).max(5).nullish(),
-  text: z.string().max(20000).nullish(),
-  author_name: z.string().max(300).nullish(),
-  published_at: z.string().datetime({ offset: true }).nullish(),
-  updated_at: z.string().datetime({ offset: true }),
-  url: z.string().max(2000).nullish(),
-  /** Ответ на площадке (из системы или вне её). */
-  answer: z
-    .object({
-      text: z.string().nullish(),
-      status: z.string().nullish(),
-      published_at: z.string().nullish(),
+  TicketMapId: required(64),
+  DateReceipt: required(40),
+  StationGuid: required(64),
+  StationType: required(64),
+  StationNum: required(200),
+  EmitentName: required(300),
+  ClientName: text(300).nullish(),
+  Message: required(20_000),
+  Link: required(4000),
+  Site: required(200),
+  /** Оценки в описании нет; если Rocket Data начнёт её передавать — используется (срочность низкой оценки). */
+  Rating: z.preprocess(
+    (v) => (v === '' || v === null ? undefined : v),
+    z.coerce.number().int().min(1).max(5).optional(),
+  ),
+});
+export type RdReview = z.infer<typeof RdReviewSchema> & { receivedAt: string };
+
+/** Поле «как в описании» по имени в любом регистре (в примере описания — и `Site`, и `SITE`). */
+function canonical(raw: Record<string, unknown>): Record<string, unknown> {
+  const keys = new Map(Object.keys(RdReviewSchema.shape).map((k) => [k.toLowerCase(), k]));
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(raw)) out[keys.get(k.trim().toLowerCase()) ?? k] = v;
+  return out;
+}
+
+/**
+ * Разбор JSON. Пример в описании — не строгий JSON («типографские» кавычки, пропущенные запятые между строками):
+ * если строгий разбор не удался, пробуем исправить именно эти ошибки.
+ */
+function parseJson(body: string): unknown {
+  try {
+    return JSON.parse(body);
+  } catch (first) {
+    const fixed = body
+      .replace(/^\uFEFF/, '')
+      .replace(/[“”]/g, '"')
+      .replace(/"\s*\n(\s*")/g, '",\n$1');
+    try {
+      return JSON.parse(fixed);
+    } catch {
+      throw first;
+    }
+  }
+}
+
+/** «2016-11-23T10:08:05» (Минск), ISO с поясом или «23.11.2016 10:08[:05]» → ISO 8601 UTC; null — не дата. */
+export function parseRdDate(v: string): string | null {
+  const s = v.trim();
+  let iso = s;
+  const ru = /^(\d{2})\.(\d{2})\.(\d{4})[ T](\d{2}):(\d{2})(?::(\d{2}))?$/.exec(s);
+  if (ru) iso = `${ru[3]}-${ru[2]}-${ru[1]}T${ru[4]}:${ru[5]}:${ru[6] ?? '00'}`;
+  if (/^\d{4}-\d{2}-\d{2}([T ]\d{2}:\d{2}(:\d{2}(\.\d+)?)?)?$/.test(iso))
+    iso = `${iso.replace(' ', 'T')}${iso.length === 10 ? 'T00:00:00' : ''}${MINSK_OFFSET}`;
+  const t = Date.parse(iso);
+  return Number.isNaN(t) ? null : new Date(t).toISOString();
+}
+
+export class RdFormatError extends Error {
+  constructor(
+    message: string,
+    readonly details: { field: string; message: string }[] = [],
+  ) {
+    super(message);
+  }
+}
+
+/** Тело запроса Rocket Data → отзыв; ошибка формата — RdFormatError (ответ 400 с перечнем полей). */
+export function parseRdReview(body: string, now = new Date()): RdReview {
+  let data: unknown;
+  try {
+    data = parseJson(body);
+  } catch {
+    throw new RdFormatError('тело запроса — не JSON');
+  }
+  if (!data || typeof data !== 'object' || Array.isArray(data))
+    throw new RdFormatError('ожидается один отзыв — объект JSON');
+  const r = RdReviewSchema.safeParse(canonical(data as Record<string, unknown>));
+  if (!r.success)
+    throw new RdFormatError(
+      'ошибка в данных отзыва',
+      r.error.issues.map((i) => ({ field: i.path.join('.') || 'отзыв', message: i.message })),
+    );
+  if (!parseRdDate(r.data.DateReceipt))
+    throw new RdFormatError('ошибка в данных отзыва', [
+      { field: 'DateReceipt', message: 'ожидается дата, например 2016-11-23T10:08:05' },
+    ]);
+  return { ...r.data, receivedAt: now.toISOString() };
+}
+
+/** Время для Rocket Data — как в описании: «ГГГГ-ММ-ДДTчч:мм:сс» по Минску. */
+export function rdDate(d: Date): string {
+  const p = Object.fromEntries(
+    new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Europe/Minsk',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hourCycle: 'h23',
     })
-    .nullish(),
-});
-export type RdReview = z.infer<typeof RdReviewSchema>;
-
-const PageSchema = z.object({
-  items: z.array(z.unknown()),
-  next_cursor: z.string().nullish(),
-});
-
-const AnswerSchema = z.object({
-  id: z.coerce.string().nullish(),
-  /** published — опубликован на площадке, pending — принят и ждёт публикации (модерация), rejected — отклонён. */
-  status: z.enum(['published', 'pending', 'rejected']).default('pending'),
-  error: z.string().nullish(),
-});
-export type RdAnswerResult = z.infer<typeof AnswerSchema>;
+      .formatToParts(d)
+      .map((x) => [x.type, x.value]),
+  );
+  return `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}:${p.second}`;
+}
 
 export class RocketDataError extends Error {}
 
-/** 4xx (кроме 408/429) — повтор не поможет: отзыв удалён, ответ запрещён площадкой, неверные данные. */
+/** 4xx (кроме 408/429) — повтор не поможет: отзыв удалён, ответ запрещён, неверные данные. */
 const permanent = (status: number) => status >= 400 && status < 500 && status !== 408 && status !== 429;
 
-export class RocketDataApi {
-  private readonly base: string;
-
-  constructor(
-    apiUrl: string,
-    private readonly token: string,
-    private readonly timeoutMs = 20_000,
-  ) {
-    this.base = apiUrl.replace(/\/+$/, '');
+/**
+ * Ответ на отзыв: POST {Review_id, DateAnswer, Text} на адрес сервиса ответов. Успех — любой 2xx. Повтор
+ * исключает отметка «отправлено» коннектора; заголовок Idempotency-Key передаётся дополнительно (не мешает).
+ */
+export async function sendRdAnswer(
+  url: string,
+  a: { reviewId: string; text: string; at: Date; idempotencyKey: string },
+  timeoutMs = 20_000,
+): Promise<void> {
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json; charset=utf-8',
+      accept: 'application/json',
+      'idempotency-key': a.idempotencyKey,
+    },
+    body: JSON.stringify({ Review_id: a.reviewId, DateAnswer: rdDate(a.at), Text: a.text }),
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+  const body = await res.text().catch(() => '');
+  if (res.ok) return;
+  let detail = body.slice(0, 200);
+  try {
+    const j = JSON.parse(body) as { error?: unknown; message?: unknown };
+    detail = String(j.message ?? j.error ?? detail);
+  } catch {
+    /* не JSON — как есть */
   }
-
-  private async call(method: string, path: string, body?: unknown, headers: Record<string, string> = {}) {
-    const res = await fetch(`${this.base}${path}`, {
-      method,
-      headers: {
-        authorization: `Bearer ${this.token}`,
-        accept: 'application/json',
-        ...(body ? { 'content-type': 'application/json' } : {}),
-        ...headers,
-      },
-      body: body ? JSON.stringify(body) : undefined,
-      signal: AbortSignal.timeout(this.timeoutMs),
-    });
-    const text = await res.text();
-    if (!res.ok) {
-      let detail = text.slice(0, 200);
-      try {
-        const j = JSON.parse(text) as { error?: unknown; message?: unknown };
-        detail = String(j.error ?? j.message ?? detail);
-      } catch {
-        /* не JSON — как есть */
-      }
-      const msg = `Rocket Data: HTTP ${res.status}${detail ? ` — ${detail}` : ''}`;
-      throw permanent(res.status) ? new PermanentError(msg) : new RocketDataError(msg);
-    }
-    try {
-      return text ? (JSON.parse(text) as unknown) : null;
-    } catch {
-      throw new RocketDataError('Rocket Data: ответ — не JSON');
-    }
-  }
-
-  /**
-   * Одна страница отзывов, созданных или изменённых начиная с `since`. Некорректные записи не останавливают
-   * загрузку — возвращаются в `invalid` (пишутся в журнал канала).
-   */
-  async reviews(
-    since: string,
-    cursor: string | null,
-  ): Promise<{ items: RdReview[]; invalid: string[]; nextCursor: string | null }> {
-    const q = new URLSearchParams({ updated_since: since, limit: '100' });
-    if (cursor) q.set('cursor', cursor);
-    const page = PageSchema.parse(await this.call('GET', `/v1/reviews?${q.toString()}`));
-    const items: RdReview[] = [];
-    const invalid: string[] = [];
-    for (const raw of page.items) {
-      const r = RdReviewSchema.safeParse(raw);
-      if (r.success) items.push(r.data);
-      else
-        invalid.push(
-          `${String((raw as { id?: unknown })?.id ?? '?')}: ${r.error.issues[0]?.path.join('.')} ${r.error.issues[0]?.message}`,
-        );
-    }
-    return { items, invalid, nextCursor: page.next_cursor ?? null };
-  }
-
-  /** Ответ на отзыв; повтор с тем же ключом идемпотентности не создаёт второй ответ. */
-  async answer(reviewId: string, text: string, idempotencyKey: string): Promise<RdAnswerResult> {
-    const r = AnswerSchema.parse(
-      await this.call(
-        'POST',
-        `/v1/reviews/${encodeURIComponent(reviewId)}/answer`,
-        { text },
-        {
-          'idempotency-key': idempotencyKey,
-        },
-      ),
-    );
-    if (r.status === 'rejected')
-      throw new PermanentError(`площадка отклонила ответ${r.error ? `: ${r.error}` : ''}`);
-    return r;
-  }
+  const msg = `Rocket Data: HTTP ${res.status}${detail ? ` — ${detail}` : ''}`;
+  throw permanent(res.status) ? new PermanentError(msg) : new RocketDataError(msg);
 }

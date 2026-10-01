@@ -353,7 +353,7 @@ services:
     environment:
       <<: *app-env
       SERVICE_NAME: connector-rocketdata
-      # Выход в интернет из контура — только к API Rocket Data, через прокси (пусто — напрямую).
+      # Выход в интернет из контура — только к сервису ответов Rocket Data, через прокси (пусто — напрямую).
       HTTPS_PROXY: ${ROCKETDATA_PROXY:-}
       HTTP_PROXY: ${ROCKETDATA_PROXY:-}
       NO_PROXY: ${ROCKETDATA_NO_PROXY:-localhost,127.0.0.1,mock-selfservice}
@@ -365,6 +365,13 @@ services:
       nats-1: { condition: service_healthy }
       nats-2: { condition: service_healthy }
       nats-3: { condition: service_healthy }
+    # Приём отзывов от Rocket Data: https://<адрес>/rd/<id канала> (маршрут — infra/traefik/dynamic.yml).
+    labels:
+      traefik.enable: 'true'
+      traefik.http.services.connector-rocketdata.loadbalancer.server.port: '3000'
+      traefik.http.services.connector-rocketdata.loadbalancer.healthcheck.path: /readyz
+      traefik.http.services.connector-rocketdata.loadbalancer.healthcheck.interval: 1s
+      traefik.http.services.connector-rocketdata.loadbalancer.healthcheck.timeout: 1s
 
   # --- телефония (Ф5): Kamailio (SIP-периметр), Asterisk ×2 (медиа), coturn ×2 (TURN) ---
   kamailio:

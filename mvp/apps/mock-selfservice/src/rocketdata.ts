@@ -1,71 +1,47 @@
 /**
- * Ф13 — мок API Rocket Data и источника справочника объектов (профили test и demo; контракт-заглушка —
- * mvp/docs/интеграции-rocketdata-и-объекты.md). Состояние — в памяти процесса.
+ * Ф13 — мок Rocket Data и источников справочника объектов (профили test и demo). Обмен с Rocket Data — по описанию
+ * заказчика (mvp/docs/интеграции-rocketdata-и-объекты.md): отзывы Rocket Data присылает в КЦ сама (в проверках их
+ * отправляет тест: POST <адрес КЦ>/rd/<id канала>), мок принимает только ответы. Состояние — в памяти процесса.
  *
- * Rocket Data (авторизация Bearer ROCKETDATA_TOKEN); <акк> — независимая «учётная запись» (демо-канал — demo, проверки —
- * свои, чтобы не смешивать отзывы), адрес API канала — http://mock-selfservice:3000/rocketdata/<акк>:
- *   GET  /rocketdata/<акк>/v1/reviews?updated_since=<ISO>&cursor=<n>&limit=<n> → {items, next_cursor}
- *   POST /rocketdata/<акк>/v1/reviews/<id>/answer {text}, Idempotency-Key → {id, status: published|rejected, error?}
- *        (текст со словом «ОТКЛОНИТЬ» — площадка отклоняет ответ; неизвестный отзыв — 404)
+ * Rocket Data; <акк> — независимая «учётная запись» (демо-канал — demo, проверки — свои, чтобы не смешивать ответы),
+ * адрес сервиса ответов канала — http://mock-selfservice:3000/rocketdata/<акк>/answer:
+ *   POST /rocketdata/<акк>/answer {Review_id, DateAnswer, Text} → 200 {result: "ok"}
+ *        (нет Review_id/Text или DateAnswer не «ГГГГ-ММ-ДДTчч:мм:сс» — 400; текст со словом «ОТКЛОНИТЬ» — 422)
  * Управление из тестов и демо:
- *   POST /rocketdata/<акк>/__test/reviews {id?, location_id?, location_code?, platform?, rating?, text?,
- *        author_name?, answer_text?} — добавить или изменить отзыв (updated_at = сейчас); без id — новый id
- *   GET  /rocketdata/<акк>/__test/reviews — отзывы; GET …/__test/answers — полученные ответы (ключ идемпотентности,
- *        число запросов с этим ключом)
- *   POST /rocketdata/<акк>/__test/control {down: true|false} — «API недоступно» (503)
- *   POST /rocketdata/<акк>/__test/reset — очистить отзывы и ответы
+ *   GET  /rocketdata/<акк>/__test/answers — полученные ответы (ключ идемпотентности, число запросов с ним)
+ *   POST /rocketdata/<акк>/__test/control {down: true|false} — «сервис недоступен» (503)
+ *   POST /rocketdata/<акк>/__test/reset — очистить ответы
  *
- * Справочник объектов (авторизация Bearer OBJECTS_TOKEN):
- *   GET  /objects/feed.json — выгрузка JSON; GET /objects/feed.csv — то же в CSV
- *   POST /objects/__test/feed {items: [...]} — заменить выгрузку; POST /objects/__test/feed {reset: true} — исходная
+ * Справочник объектов:
+ *   GET  /objects/asu — выгрузка АЗС в формате АСУ НПО ЭК (Приложение 2 заказчика; без авторизации, как источник);
+ *   POST /objects/__test/asu {items: [...]} — заменить; {reset: true} — исходная
+ *   GET  /objects/feed.json, /objects/feed.csv — общий формат (Bearer OBJECTS_TOKEN);
+ *   POST /objects/__test/feed {items: [...]} — заменить; {reset: true} — исходная
  */
-import { randomUUID } from 'node:crypto';
 import type { IncomingMessage } from 'node:http';
 
-const RD_TOKEN = process.env.ROCKETDATA_TOKEN ?? 'demo-rocketdata-token';
 const OBJECTS_TOKEN = process.env.OBJECTS_TOKEN ?? 'demo-objects-token';
 
 type Send = (s: number, b: unknown) => void;
 type SendRaw = (s: number, body: string, contentType: string) => void;
 
-interface Review {
-  id: string;
-  location_id: string | null;
-  location_code: string | null;
-  platform: string;
-  rating: number | null;
-  text: string | null;
-  author_name: string | null;
-  published_at: string;
-  updated_at: string;
-  url: string;
-  answer: { text: string; status: string; published_at: string } | null;
-}
 interface Answer {
   reviewId: string;
   text: string;
+  dateAnswer: string;
   key: string | null;
   at: string;
   requests: number;
-  status: string;
 }
-
 interface Account {
-  reviews: Map<string, Review>;
   answers: Answer[];
   down: boolean;
 }
 const accounts = new Map<string, Account>();
 const account = (name: string): Account => {
   let a = accounts.get(name);
-  if (!a) accounts.set(name, (a = { reviews: new Map(), answers: [], down: false }));
+  if (!a) accounts.set(name, (a = { answers: [], down: false }));
   return a;
-};
-/** Метка времени строго возрастает — отзывы одного запроса различимы по updated_at. */
-let lastTs = 0;
-const nowIso = () => {
-  lastTs = Math.max(Date.now(), lastTs + 1);
-  return new Date(lastTs).toISOString();
 };
 
 interface FeedItem {
@@ -76,7 +52,7 @@ interface FeedItem {
   external_ids: Record<string, string>;
   is_active?: boolean;
 }
-/** Исходная выгрузка — объекты демо-стенда (коды предприятий E1–E3) и одна новая АЗС. */
+/** Исходная выгрузка общего формата — объекты демо-стенда (коды предприятий E1–E3) и одна новая АЗС. */
 const INITIAL_FEED: FeedItem[] = [
   ...['E1', 'E1', 'E2', 'E2', 'E3', 'E3'].map((e, i) => ({
     code: `AZS-${i + 1}`,
@@ -102,6 +78,47 @@ const INITIAL_FEED: FeedItem[] = [
 ];
 let feed: FeedItem[] = structuredClone(INITIAL_FEED);
 
+/** GUID демо-АЗС (как у демо-объектов, см. reviews-demo-seed): DE00…0001 … DE00…0007. */
+export const demoGuid = (n: number) => `DE${'0'.repeat(26)}${String(n).padStart(4, '0')}`;
+
+/** Исходная выгрузка АСУ НПО ЭК — демо-АЗС 1–6 (предприятия выгрузки 10/20/30) и новая АЗС №7 (вымышленные данные). */
+const INITIAL_ASU: Record<string, unknown>[] = [
+  ...['10', '10', '20', '20', '30', '30'].map((unit, i) => asuItem(i + 1, unit, '')),
+  asuItem(7, '20', 'Гродно'),
+];
+function asuItem(n: number, unitcode: string, town: string): Record<string, unknown> {
+  return {
+    objguid: demoGuid(n),
+    azsnum: String(n),
+    complex: String(500 + n),
+    complexdesc: `АЗС ${n}`,
+    typeshortname: 'АЗС',
+    name1: `АЗС №${n}`,
+    status: 'действующий',
+    latitude: '53.9',
+    longitude: '27.56',
+    unit: `РУП «Условнефтепродукт-${unitcode}»`,
+    unitshort: `УНП-${unitcode}`,
+    unitcode,
+    country: { iso: 'BY', digital: 112 },
+    mailaddress: town ? `г. ${town}, ул. Новая, ${n}` : `г. Минск, ул. Условная, ${n}`,
+    area: 'Минская',
+    district: '',
+    towntype: 'Город',
+    town,
+    phone: '+375 (17) 000-00-00',
+    fuels: [{ id: 1, name: 'АИ-95', code: 3, price: 2.6 }],
+    mode: 'круглосуточно',
+    paymentmethods: [],
+    services: [],
+    roads: [],
+    actions: [],
+    photo: '',
+    fuelid: [1],
+  };
+}
+let asu: Record<string, unknown>[] = structuredClone(INITIAL_ASU);
+
 function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
   return new Promise((resolve) => {
     let raw = '';
@@ -118,113 +135,65 @@ function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
 
 const str = (v: unknown) => (v === undefined || v === null || v === '' ? null : String(v));
 
-function upsertReview(reviews: Map<string, Review>, b: Record<string, unknown>): Review {
-  const id = str(b.id) ?? `rv-${randomUUID().slice(0, 8)}`;
-  const prev = reviews.get(id);
-  const at = nowIso();
-  const platform = str(b.platform) ?? prev?.platform ?? 'google';
-  const r: Review = {
-    id,
-    location_id: b.location_id !== undefined ? str(b.location_id) : (prev?.location_id ?? null),
-    location_code: b.location_code !== undefined ? str(b.location_code) : (prev?.location_code ?? null),
-    platform,
-    rating: b.rating !== undefined ? (b.rating === null ? null : Number(b.rating)) : (prev?.rating ?? 5),
-    text: b.text !== undefined ? str(b.text) : (prev?.text ?? null),
-    author_name: b.author_name !== undefined ? str(b.author_name) : (prev?.author_name ?? 'Посетитель'),
-    published_at: prev?.published_at ?? str(b.published_at) ?? at,
-    updated_at: at,
-    url: prev?.url ?? `https://${platform === 'yandex' ? 'yandex.by/maps' : 'maps.google.com'}/reviews/${id}`,
-    answer: b.answer_text
-      ? { text: String(b.answer_text), status: 'published', published_at: at }
-      : (prev?.answer ?? null),
-  };
-  reviews.set(id, r);
-  return r;
-}
-
 export function handleRocketData(req: IncomingMessage, url: URL, send: Send, sendRaw: SendRaw): boolean {
   const rd = /^\/rocketdata\/([A-Za-z0-9_-]{1,64})(\/.*)$/.exec(url.pathname);
-  if (rd) return rocketData(req, url, account(rd[1]!), rd[2]!, send);
+  if (rd) return rocketData(req, account(rd[1]!), rd[2]!, send);
   return objects(req, url.pathname, send, sendRaw);
 }
 
-function rocketData(req: IncomingMessage, url: URL, acc: Account, p: string, send: Send): boolean {
-  const { reviews, answers } = acc;
-  if (p.startsWith('/__test/')) {
-    void (async () => {
-      const b = req.method === 'POST' ? await readJson(req) : {};
-      if (p === '/__test/reviews' && req.method === 'POST') return send(200, upsertReview(reviews, b));
-      if (p === '/__test/reviews' && req.method === 'GET') return send(200, [...reviews.values()]);
-      if (p === '/__test/answers') return send(200, answers);
-      if (p === '/__test/control') {
-        acc.down = !!b.down;
-        return send(200, { down: acc.down });
-      }
-      if (p === '/__test/reset') {
-        reviews.clear();
-        answers.length = 0;
-        acc.down = false;
-        return send(200, { ok: true });
-      }
-      return send(404, { error: 'not found' });
-    })();
-    return true;
-  }
-  if (p.startsWith('/v1/')) {
-    if (req.headers.authorization !== `Bearer ${RD_TOKEN}`) {
-      send(401, { error: 'invalid token' });
-      return true;
+function rocketData(req: IncomingMessage, acc: Account, p: string, send: Send): boolean {
+  void (async () => {
+    const b = req.method === 'POST' ? await readJson(req) : {};
+    if (p === '/__test/answers') return send(200, acc.answers);
+    if (p === '/__test/control') {
+      acc.down = !!b.down;
+      return send(200, { down: acc.down });
     }
-    if (acc.down) {
-      send(503, { error: 'service unavailable' });
-      return true;
+    if (p === '/__test/reset') {
+      acc.answers.length = 0;
+      acc.down = false;
+      return send(200, { ok: true });
     }
-    if (p === '/v1/reviews' && req.method === 'GET') {
-      const since = Date.parse(url.searchParams.get('updated_since') ?? '1970-01-01T00:00:00Z');
-      if (Number.isNaN(since)) {
-        send(400, { error: 'updated_since' });
-        return true;
-      }
-      const limit = Math.min(Number(url.searchParams.get('limit') ?? 100) || 100, 100);
-      const offset = Number(url.searchParams.get('cursor') ?? 0) || 0;
-      const all = [...reviews.values()]
-        .filter((r) => Date.parse(r.updated_at) >= since)
-        .sort((a, b) => a.updated_at.localeCompare(b.updated_at) || a.id.localeCompare(b.id));
-      const items = all.slice(offset, offset + limit);
-      send(200, { items, next_cursor: offset + limit < all.length ? String(offset + limit) : null });
-      return true;
+    if (p === '/answer' && req.method === 'POST') {
+      if (acc.down) return send(503, { error: 'service unavailable' });
+      const reviewId = str(b.Review_id);
+      const text = String(b.Text ?? '').trim();
+      const date = String(b.DateAnswer ?? '');
+      if (!reviewId || !text || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/.test(date))
+        return send(400, { error: 'Review_id, DateAnswer (ГГГГ-ММ-ДДTчч:мм:сс) и Text обязательны' });
+      if (/ОТКЛОНИТЬ/i.test(text)) return send(422, { error: 'ответ не прошёл модерацию площадки' });
+      const key = str(req.headers['idempotency-key']);
+      const prev = key ? acc.answers.find((a) => a.key === key) : undefined;
+      if (prev) prev.requests++;
+      else
+        acc.answers.push({
+          reviewId,
+          text,
+          dateAnswer: date,
+          key,
+          at: new Date().toISOString(),
+          requests: 1,
+        });
+      return send(200, { result: 'ok' });
     }
-    const m = /^\/v1\/reviews\/([^/]+)\/answer$/.exec(p);
-    if (m && req.method === 'POST') {
-      void (async () => {
-        const b = await readJson(req);
-        const r = reviews.get(decodeURIComponent(m[1]!));
-        if (!r) return send(404, { error: 'review not found' });
-        const text = String(b.text ?? '').trim();
-        if (!text) return send(422, { error: 'text is required' });
-        const key = str(req.headers['idempotency-key']);
-        const prev = key ? answers.find((a) => a.key === key) : undefined;
-        if (prev) {
-          prev.requests++;
-          return send(200, { id: `ans-${prev.key}`, status: prev.status });
-        }
-        const status = /ОТКЛОНИТЬ/i.test(text) ? 'rejected' : 'published';
-        answers.push({ reviewId: r.id, text, key, at: nowIso(), requests: 1, status });
-        if (status === 'rejected') return send(200, { status, error: 'ответ не прошёл модерацию площадки' });
-        r.answer = { text, status, published_at: nowIso() };
-        r.updated_at = nowIso();
-        return send(200, { id: `ans-${key ?? answers.length}`, status });
-      })();
-      return true;
-    }
-    send(404, { error: 'not found' });
-    return true;
-  }
-  send(404, { error: 'not found' });
+    return send(404, { error: 'not found' });
+  })();
   return true;
 }
 
 function objects(req: IncomingMessage, p: string, send: Send, sendRaw: SendRaw): boolean {
+  if (p === '/objects/__test/asu' && req.method === 'POST') {
+    void (async () => {
+      const b = await readJson(req);
+      asu = b.reset ? structuredClone(INITIAL_ASU) : ((b.items as Record<string, unknown>[]) ?? []);
+      send(200, { items: asu.length });
+    })();
+    return true;
+  }
+  if (p === '/objects/asu') {
+    send(200, asu);
+    return true;
+  }
   if (p === '/objects/__test/feed' && req.method === 'POST') {
     void (async () => {
       const b = await readJson(req);

@@ -1,11 +1,18 @@
-import { type InboundMessage, ROCKETDATA_OBJECT_KEY, type ReviewMeta, ReviewMetaSchema } from '@cc/contracts';
+import {
+  type InboundMessage,
+  normalizeGuid,
+  OBJECT_GUID_KEY,
+  ROCKETDATA_OBJECT_KEY,
+  type ReviewMeta,
+  ReviewMetaSchema,
+} from '@cc/contracts';
 import type { PoolClient } from 'pg';
 
 /**
  * Отзывы с карт (Ф13, M-CH-10): отзыв из Rocket Data — обращение канала «Отзыв». Клиент обращения — автор
  * отзыва (идентификатор — id отзыва: у площадок нет устойчивого идентификатора автора), поэтому у каждого отзыва
  * своё обращение; изменённый автором отзыв — новое сообщение в том же открытом обращении (или новое обращение,
- * если прежнее закрыто). Точка Rocket Data сопоставляется объекту справочника (M-ORG-06) → предприятие.
+ * если прежнее закрыто). АЗС отзыва сопоставляется объекту справочника (M-ORG-06) → предприятие.
  */
 
 /** Сведения об отзыве из входящего сообщения канала «Отзыв»; null — не отзыв или некорректные данные. */
@@ -26,21 +33,24 @@ export async function reviewKnown(tx: PoolClient, channelId: string, reviewId: s
 }
 
 /**
- * Объект справочника точки Rocket Data: по внешнему идентификатору `external_ids.rocketdata`, иначе по коду
- * объекта (= код точки в Rocket Data). Деактивированный объект тоже подходит (отзывы о закрытой точке приходят).
+ * Объект справочника АЗС отзыва: по GUID объекта (`StationGuid` = `external_ids.objguid`, сравнение без дефисов и
+ * регистра), иначе по прежнему идентификатору точки `external_ids.rocketdata` или по коду объекта. Деактивированный
+ * объект тоже подходит (отзывы о закрытой АЗС приходят).
  */
 export async function reviewObject(
   tx: PoolClient,
   r: Pick<ReviewMeta, 'locationId' | 'locationCode'>,
 ): Promise<{ id: string; enterprise_id: string; name: string } | null> {
-  if (!r.locationId && !r.locationCode) return null;
+  if (!r.locationId) return null;
   const { rows } = await tx.query<{ id: string; enterprise_id: string; name: string }>(
     `SELECT id, enterprise_id, name FROM service_object
-      WHERE ($1::text IS NOT NULL AND external_ids ->> '${ROCKETDATA_OBJECT_KEY}' = $1)
-         OR ($2::text IS NOT NULL AND code = $2)
-      ORDER BY (external_ids ->> '${ROCKETDATA_OBJECT_KEY}' IS NOT DISTINCT FROM $1) DESC, is_active DESC
+      WHERE upper(replace(external_ids ->> '${OBJECT_GUID_KEY}', '-', '')) = $1
+         OR external_ids ->> '${ROCKETDATA_OBJECT_KEY}' = $2
+         OR code IN ($1, $2)
+      ORDER BY (upper(replace(external_ids ->> '${OBJECT_GUID_KEY}', '-', '')) IS NOT DISTINCT FROM $1) DESC,
+               is_active DESC
       LIMIT 1`,
-    [r.locationId, r.locationCode],
+    [normalizeGuid(r.locationId), r.locationId],
   );
   return rows[0] ?? null;
 }
@@ -63,12 +73,11 @@ export async function attachReview(
     [conversationId, JSON.stringify(stored(r)), obj?.id ?? null, obj?.enterprise_id ?? null, r.urgent],
   );
   if (obj) return null;
-  const where = [r.locationCode && `код «${r.locationCode}»`, r.locationId && `id «${r.locationId}»`]
-    .filter(Boolean)
-    .join(', ');
+  const station = [r.stationType, r.locationCode && `№${r.locationCode}`].filter(Boolean).join(' ');
+  const where = [station, r.emitent, r.locationId && `GUID ${r.locationId}`].filter(Boolean).join(', ');
   return where
-    ? `Точка Rocket Data (${where}) не найдена в справочнике объектов — укажите предприятие и объект вручную.`
-    : 'У отзыва не указана точка — укажите предприятие и объект вручную.';
+    ? `АЗС из отзыва (${where}) не найдена в справочнике объектов — укажите предприятие и объект вручную.`
+    : 'У отзыва не указана АЗС — укажите предприятие и объект вручную.';
 }
 
 /** Отзыв изменён автором: в открытом обращении — актуальные оценка и текст. */
@@ -90,5 +99,7 @@ function stored(r: ReviewMeta) {
     publishedAt: r.publishedAt,
     locationId: r.locationId,
     locationCode: r.locationCode,
+    stationType: r.stationType ?? null,
+    emitent: r.emitent ?? null,
   };
 }

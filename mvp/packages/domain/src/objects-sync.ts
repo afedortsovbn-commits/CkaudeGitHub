@@ -1,6 +1,9 @@
 import {
   makeEvent,
   newId,
+  normalizeGuid,
+  OBJECT_GUID_KEY,
+  OBJECT_SYNC_DEFAULT_ENTERPRISE,
   type ObjectFeedItem,
   ObjectFeedItemSchema,
   type ObjectSyncSettings,
@@ -15,11 +18,13 @@ import { localDate, localTime } from './ticket-time';
  * Ежедневная синхронизация справочника объектов из внешней системы заказчика (Ф13, M-ORG-06, В-42): новые объекты
  * добавляются, изменённые обновляются, исчезнувшие из выгрузки (или помеченные закрытыми) деактивируются; каждый
  * запуск — строка журнала `object_sync_run` с перечнем изменений. Синхронизируемые объекты (`source = 'sync'`)
- * вручную не правятся (api), объекты, заведённые вручную или импортом, с тем же кодом переходят под синхронизацию.
+ * вручную не правятся (api), объекты, заведённые вручную или импортом, с тем же ключом переходят под синхронизацию.
  *
- * Формат выгрузки — контракт-заглушка (описание источника от заказчика не получено): HTTP GET, JSON-массив объектов
- * (или `{items: [...]}`) либо CSV с колонками ручного импорта. Разбор — `parseObjectFeed`; при получении описания
- * меняется только он и загрузка (`fetchObjectFeed`).
+ * Источник у заказчика — выгрузка АЗС из АСУ НПО ЭК (Приложение 2, формат `asu`): HTTP GET, JSON-массив станций
+ * (`objguid`, `name1`, `status`, `unitcode`, `mailaddress` …). Объект справочника: ключ и код — GUID (`objguid`),
+ * название — «name1, town», предприятие — одно для всей выгрузки («ПОН», настройка) или по `unitcode` (исключения).
+ * Общие форматы (`json`, `csv`) — для других источников и ручной загрузки. Ключ сверки — GUID объекта
+ * (`external_ids.objguid`), если он есть, иначе код. Разбор — `parseObjectFeed`, загрузка — `fetchObjectFeed`.
  */
 
 export const OBJECT_SYNC_SETTING = 'objects.sync';
@@ -99,28 +104,81 @@ function normalize(raw: Record<string, unknown>): Record<string, unknown> {
       o[k] = v === null || v === undefined || String(v).trim() === '' ? null : String(v);
     } else o[k] = typeof v === 'number' ? String(v) : v;
   }
+  if (ext[OBJECT_GUID_KEY]) ext[OBJECT_GUID_KEY] = normalizeGuid(ext[OBJECT_GUID_KEY]);
   o.external_ids = ext;
   return o;
+}
+
+/** Список записей JSON: массив или первый массив в свойствах объекта (`items`, `stations`, …). */
+function jsonList(body: string): unknown[] {
+  let data: unknown;
+  try {
+    data = JSON.parse(body.replace(/^\uFEFF/, ''));
+  } catch (e) {
+    throw new Error(`выгрузка — не JSON: ${String(e).slice(0, 200)}`);
+  }
+  if (Array.isArray(data)) return data;
+  if (data && typeof data === 'object') {
+    const o = data as Record<string, unknown>;
+    const list = Array.isArray(o.items) ? o.items : Object.values(o).find(Array.isArray);
+    if (list) return list;
+  }
+  throw new Error('выгрузка JSON: ожидается массив объектов');
+}
+
+/** Статус АСУ НПО ЭК «действующий» (и пустой) — объект работает; любой другой — закрыт (деактивируется). */
+const asuActive = (status: unknown) => {
+  const s = String(status ?? '')
+    .trim()
+    .toLowerCase();
+  return s === '' || s.startsWith('действ');
+};
+
+/**
+ * Станция АСУ НПО ЭК → строка общего формата. Код и ключ — GUID; название — `name1` и населённый пункт (номера АЗС
+ * повторяются в разных областях); предприятие — по `unitcode` из исключений, иначе предприятие всей выгрузки.
+ */
+function fromAsu(
+  r: Record<string, unknown>,
+  ent: Pick<ObjectSyncSettings, 'enterpriseCode' | 'enterpriseMap'>,
+): Record<string, unknown> {
+  const s = (v: unknown) => (v === null || v === undefined ? '' : String(v).trim());
+  const guid = s(r.objguid) ? normalizeGuid(s(r.objguid)) : '';
+  const name1 = s(r.name1) || s(r.complexdesc);
+  const town = s(r.town);
+  const unit = s(r.unitcode ?? r.unotcode);
+  const ext: Record<string, string> = {};
+  if (guid) ext[OBJECT_GUID_KEY] = guid;
+  for (const k of ['azsnum', 'complex', 'unitcode'] as const) if (s(r[k])) ext[k] = s(r[k]);
+  if (!ext.unitcode && unit) ext.unitcode = unit;
+  return {
+    code: guid,
+    name: name1 && town && !name1.includes(town) ? `${name1}, ${town}` : name1,
+    address: s(r.mailaddress) || null,
+    enterprise_code:
+      (unit && ent.enterpriseMap?.[unit]) || ent.enterpriseCode || OBJECT_SYNC_DEFAULT_ENTERPRISE,
+    external_ids: ext,
+    is_active: asuActive(r.status),
+  };
 }
 
 /** Разбор выгрузки справочника: корректные строки и замечания по некорректным (они пропускаются). */
 export function parseObjectFeed(
   body: string,
-  format: 'json' | 'csv',
+  format: 'json' | 'csv' | 'asu',
+  ent: Pick<ObjectSyncSettings, 'enterpriseCode' | 'enterpriseMap'> = {
+    enterpriseCode: 'ПОН',
+    enterpriseMap: {},
+  },
 ): { items: (ObjectFeedItem & { line: number })[]; problems: ObjectSyncProblem[] } {
   let raw: unknown[];
   let lineOf = (i: number) => i + 1;
-  if (format === 'json') {
-    let data: unknown;
-    try {
-      data = JSON.parse(body);
-    } catch (e) {
-      throw new Error(`выгрузка — не JSON: ${String(e).slice(0, 200)}`);
-    }
-    const list = Array.isArray(data) ? data : (data as { items?: unknown })?.items;
-    if (!Array.isArray(list))
-      throw new Error('выгрузка JSON: ожидается массив объектов или {"items": [...]}');
-    raw = list;
+  if (format === 'asu') {
+    raw = jsonList(body).map((r) =>
+      r && typeof r === 'object' && !Array.isArray(r) ? fromAsu(r as Record<string, unknown>, ent) : r,
+    );
+  } else if (format === 'json') {
+    raw = jsonList(body);
   } else {
     const parsed = Papa.parse<Record<string, string>>(body.replace(/^\uFEFF/, '').trim(), {
       header: true,
@@ -143,7 +201,7 @@ export function parseObjectFeed(
     }
     const p = ObjectFeedItemSchema.safeParse(normalize(r as Record<string, unknown>));
     if (!p.success) {
-      const code = (r as Record<string, unknown>).code;
+      const code = (r as Record<string, unknown>).code || undefined;
       problems.push({
         line,
         ...(code ? { code: String(code) } : {}),
@@ -190,9 +248,19 @@ export async function fetchObjectFeed(
   if (!res.ok) throw new Error(`источник ответил HTTP ${res.status}`);
   const len = Number(res.headers.get('content-length') ?? 0);
   if (len > MAX_FEED_BYTES) throw new Error(`выгрузка больше ${MAX_FEED_BYTES / 1024 / 1024} МБ`);
-  const text = await res.text();
-  if (text.length > MAX_FEED_BYTES) throw new Error(`выгрузка больше ${MAX_FEED_BYTES / 1024 / 1024} МБ`);
-  return text;
+  const buf = Buffer.from(await res.arrayBuffer());
+  if (buf.length > MAX_FEED_BYTES) throw new Error(`выгрузка больше ${MAX_FEED_BYTES / 1024 / 1024} МБ`);
+  return decodeFeed(buf, res.headers.get('content-type'));
+}
+
+/** Текст выгрузки: кодировка из Content-Type (windows-1251 и т.п.), по умолчанию UTF-8. */
+export function decodeFeed(buf: Buffer, contentType: string | null): string {
+  const charset = /charset=["']?([\w-]+)/i.exec(contentType ?? '')?.[1]?.toLowerCase();
+  try {
+    return new TextDecoder(charset && charset !== 'utf8' ? charset : 'utf-8').decode(buf);
+  } catch {
+    return buf.toString('utf8');
+  }
 }
 
 // ------------------------------------------------------------------ сверка
@@ -277,7 +345,7 @@ async function runLocked(
   const result: ObjectSyncResult = { ...empty(dryRun), runId, status: 'ok' };
   try {
     const body = await (o.feed ? o.feed() : fetchObjectFeed(settings, o.secretsKey));
-    const { items, problems } = parseObjectFeed(body, settings.format);
+    const { items, problems } = parseObjectFeed(body, settings.format, settings);
     result.problems.push(...problems);
     result.total = items.length + problems.length;
     result.skipped = problems.length;
@@ -336,23 +404,56 @@ async function reconcile(
 ): Promise<void> {
   const ents = await db.query<{ id: string; code: string }>('SELECT id, code FROM enterprise');
   const entByCode = new Map(ents.rows.map((e) => [e.code.toLowerCase(), e.id]));
+  const asuEnterprise = settings.enterpriseCode || OBJECT_SYNC_DEFAULT_ENTERPRISE;
+  if (settings.format === 'asu' && items.length && !entByCode.has(asuEnterprise.toLowerCase()))
+    throw new Error(
+      `предприятие «${asuEnterprise}» (предприятие объектов выгрузки) не найдено в справочнике ` +
+        'предприятий — создайте его или укажите другое в настройках синхронизации; справочник не изменён',
+    );
   const existing = await db.query<ObjRow>(
     `SELECT id, code, name, address, enterprise_id, external_ids, source, is_active FROM service_object FOR UPDATE`,
   );
+  // Ключ сверки — GUID объекта (external_ids.objguid), если он есть, иначе код: объект, заведённый вручную с
+  // указанным GUID, переходит под синхронизацию без дубля (его код сохраняется).
+  const keyOf = (code: string, ext: Record<string, string> | null) => {
+    const g = ext?.[OBJECT_GUID_KEY];
+    return g ? `guid:${normalizeGuid(g)}` : `code:${code}`;
+  };
+  const byKey = new Map(existing.rows.map((x) => [keyOf(x.code, x.external_ids), x]));
   const byCode = new Map(existing.rows.map((x) => [x.code, x]));
   const seen = new Set<string>();
+  const matched = new Set<string>();
+
+  // Строки с ошибкой разбора (с кодом) — ошибка данных, а не закрытие объекта: такие объекты не деактивируются.
+  for (const p of r.problems) {
+    if (!p.code) continue;
+    const x = byCode.get(p.code) ?? byKey.get(`guid:${normalizeGuid(p.code)}`);
+    if (x) matched.add(x.id);
+  }
 
   for (const it of items) {
-    if (seen.has(it.code)) {
+    const key = keyOf(it.code, it.external_ids);
+    if (seen.has(key)) {
       r.problems.push({
         line: it.line,
         code: it.code,
-        message: 'код объекта повторяется в выгрузке — строка пропущена',
+        message: 'объект повторяется в выгрузке — строка пропущена',
       });
       r.skipped++;
       continue;
     }
-    seen.add(it.code);
+    seen.add(key);
+    const cur = byKey.get(key) ?? byCode.get(it.code);
+    if (cur && matched.has(cur.id)) {
+      r.problems.push({
+        line: it.line,
+        code: it.code,
+        message: 'объект справочника уже сопоставлен другой строке выгрузки — строка пропущена',
+      });
+      r.skipped++;
+      continue;
+    }
+    if (cur) matched.add(cur.id);
     const enterpriseId = entByCode.get(it.enterprise_code.toLowerCase());
     if (!enterpriseId) {
       // Объект остаётся как есть (не деактивируется): ошибка данных, а не закрытие объекта.
@@ -364,7 +465,6 @@ async function reconcile(
       r.skipped++;
       continue;
     }
-    const cur = byCode.get(it.code);
     if (!cur) {
       await db.query(
         `INSERT INTO service_object (id, enterprise_id, code, name, address, external_ids, source, is_active, synced_at)
@@ -411,17 +511,17 @@ async function reconcile(
     );
     if (Object.keys(fields).length) {
       r.updated++;
-      r.changes.push({ code: it.code, name: it.name, action: 'updated', fields });
+      r.changes.push({ code: cur.code, name: it.name, action: 'updated', fields });
     }
     if (activity) {
       r[activity]++;
-      r.changes.push({ code: it.code, name: it.name, action: activity });
+      r.changes.push({ code: cur.code, name: it.name, action: activity });
     }
   }
 
   // Исчезнувшие из выгрузки синхронизируемые объекты деактивируются (объекты, заведённые вручную, — нет).
   const syncActive = existing.rows.filter((x) => x.source === 'sync' && x.is_active);
-  const gone = syncActive.filter((x) => !seen.has(x.code));
+  const gone = syncActive.filter((x) => !matched.has(x.id));
   const closed = r.changes.filter((c) => c.action === 'deactivated').length;
   const willDeactivate = gone.length + closed;
   if (syncActive.length && !items.length)
