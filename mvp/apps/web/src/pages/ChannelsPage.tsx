@@ -167,32 +167,14 @@ const FIELDS: FormField[] = [
     show: isVoice,
   },
   { key: 'record', label: t.channels.zapisyvatRazgovory, type: 'switch', show: isVoice },
-  // Отзывы с карт через Rocket Data (Ф13)
+  // Отзывы с карт через Rocket Data (Ф13): отзывы Rocket Data присылает сама на адрес из списка каналов.
   {
-    key: 'rdApiUrl',
-    label: t.reviews.apiUrl,
-    required: true,
-    placeholder: 'https://api.rocketdata.io',
-    description: t.reviews.apiUrlHint,
+    key: 'rdAnswerUrl',
+    label: t.reviews.answerUrl,
+    placeholder: 'https://…',
+    description: t.reviews.answerUrlHint,
     show: isReview,
   },
-  {
-    key: 'rdApiToken',
-    label: t.reviews.apiToken,
-    type: 'password',
-    description: t.channels.khranitsyaVZashifrovannomVide(secretHint),
-    show: isReview,
-  },
-  { key: 'rdPollS', label: t.reviews.pollS, type: 'number', required: true, show: isReview },
-  { key: 'rdInitialDays', label: t.reviews.initialDays, type: 'number', show: isReview },
-  {
-    key: 'rdLowRating',
-    label: t.reviews.lowRating,
-    type: 'number',
-    description: t.reviews.lowRatingHint,
-    show: isReview,
-  },
-  { key: 'rdSkipAnswered', label: t.reviews.skipAnswered, type: 'switch', show: isReview },
   // Email
   { key: 'address', label: t.channels.adresYashchika, required: true, show: isMail },
   { key: 'displayName', label: t.channels.imyaOtpravitelyaVOtvetakh, show: isMail },
@@ -259,11 +241,7 @@ const toForm = (r: Row) => {
     tlsInsecure: c.tls_insecure,
     dids: ((c.dids as string[]) ?? []).join(', '),
     record: c.record ?? true,
-    rdApiUrl: c.api_url,
-    rdPollS: c.poll_interval_s ?? 300,
-    rdInitialDays: c.initial_days ?? 7,
-    rdLowRating: c.low_rating_max ?? 2,
-    rdSkipAnswered: c.skip_answered ?? true,
+    rdAnswerUrl: c.answer_url ?? '',
     // секреты не показываются: пустое поле — «не менять»
   };
 };
@@ -295,12 +273,8 @@ const fromForm = (v: Record<string, unknown>, editing: Row | null) => {
     return {
       ...base,
       config: {
-        api_url: v.rdApiUrl,
-        api_token: secret(v.rdApiToken, isCreate),
-        poll_interval_s: Number(v.rdPollS ?? 300),
-        initial_days: Number(v.rdInitialDays ?? 7),
-        low_rating_max: Number(v.rdLowRating ?? 2),
-        skip_answered: !!v.rdSkipAnswered,
+        ...(editing ? cfg(editing) : {}),
+        answer_url: str(v.rdAnswerUrl).trim() || null,
       },
     };
   if (k === 'voice')
@@ -361,10 +335,6 @@ const CREATE_DEFAULTS = {
   smtpPort: 465,
   smtpSecure: true,
   record: true,
-  rdPollS: 300,
-  rdInitialDays: 7,
-  rdLowRating: 2,
-  rdSkipAnswered: true,
 };
 
 /** Экземпляры каналов: веб-чат, чат в приложении, Telegram-боты, почтовые ящики (M-CH-07). */
@@ -393,7 +363,8 @@ export function ChannelsPage() {
               if (r.kind === 'voice') return ((c.dids as string[]) ?? []).join(', ');
               if (r.kind === 'telegram') return c.mode === 'webhook' ? 'webhook' : t.channels.opros;
               if (r.kind === 'api') return t.channels.poKlyuchuApi;
-              if (r.kind === 'review') return str(c.api_url);
+              if (r.kind === 'review')
+                return <Code data-testid="rd-endpoint">{`${window.location.origin}/rd/${str(r.id)}`}</Code>;
               return <Code>{str(c.public_key)}</Code>;
             },
           },

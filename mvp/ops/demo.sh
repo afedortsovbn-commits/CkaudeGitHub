@@ -6,6 +6,7 @@
 #   ops/demo.sh reset   — удалить данные стенда и запустить заново с чистыми демо-данными
 #   ops/demo.sh check   — автоматически пройти демо-сценарии в браузере (Playwright, e2e)
 #   ops/demo.sh down    — остановить стенд (данные сохраняются)
+#   ops/demo.sh review [текст] — «Rocket Data присылает отзыв» по АЗС №1 в демо-канал «Отзывы с карт»
 # Переменные: TAG (dev) — тег образов; BOOTSTRAP_ADMIN_PASSWORD (Admin12345!), DEMO_PASSWORD (Demo12345!).
 # Только для демонстрации и проверок: на рабочем сервере не запускать (SEED_DEMO, заглушки, известные пароли).
 set -euo pipefail
@@ -50,9 +51,8 @@ up() {
   Telegram (мок)          адрес Bot API в настройке бота: http://mock-telegram:3000
                           клиент пишет: curl -X POST http://127.0.0.1:8081/__test/<токен>/message \\
                             -H 'content-type: application/json' -d '{"chatId":1001,"text":"Здравствуйте","firstName":"Иван"}'
-  Отзыв с карт (мок       отзыв по АЗС №1 появится в очереди «Отзывы» в течение 10 с:
-  Rocket Data)            curl -X POST http://127.0.0.1:8082/rocketdata/demo/__test/reviews -H 'content-type: application/json' \\
-                            -d '{"location_id":"rd-azs-1","platform":"yandex","rating":2,"text":"Долго ждал на кассе","author_name":"Иван"}'
+  Отзыв с карт            ops/demo.sh review "Долго ждал на кассе" — отзыв по АЗС №1 в очереди «Отзывы»; ответы
+  (Rocket Data, мок)      оператора — в мок: curl http://127.0.0.1:8082/rocketdata/demo/__test/answers
   Выгрузка объектов (мок) «Администрирование → Синхронизация объектов» → «Проверить» / «Синхронизировать сейчас»
 
 Вход (пароль сотрудников — $DEMO_PASSWORD):
@@ -72,13 +72,29 @@ case "$CMD" in
     up
     ;;
   down) dc stop ;;
+  review)
+    # Как Rocket Data: POST на адрес приёма отзывов демо-канала (через Traefik, как снаружи).
+    ch=$(dc exec -T postgres psql -U cc -d cc -tAc \
+      "SELECT id FROM channel WHERE kind = 'review' AND is_active ORDER BY created_at LIMIT 1")
+    [ -n "$ch" ] || { echo "канал «Отзыв» не найден (демо-данные не загружены?)" >&2; exit 1; }
+    text="${2:-Долго ждал на кассе}"
+    text="${text//\\/\\\\}"
+    text="${text//\"/\\\"}"
+    curl -sk -X POST "https://localhost/rd/$ch" -H 'content-type: application/json' --data-binary @- <<JSON
+{"TicketMapId": "$(date +%s)", "DateReceipt": "$(TZ=Europe/Minsk date +%Y-%m-%dT%H:%M:%S)",
+ "StationGuid": "DE000000-0000-0000-0000-000000000001", "StationType": "АЗС", "StationNum": "1",
+ "EmitentName": "Предприятие «Север»", "ClientName": "Иван", "Message": "$text",
+ "Link": "https://yandex.by/maps/org/1/reviews", "Site": "yandex.ru"}
+JSON
+    echo
+    ;;
   check)
     cd e2e
     E2E_ADMIN_PASSWORD="$BOOTSTRAP_ADMIN_PASSWORD" E2E_DEMO_PASSWORD="$DEMO_PASSWORD" \
       pnpm exec playwright test --grep "демо-сценарий"
     ;;
   *)
-    echo "команды: up | reset | check | down" >&2
+    echo "команды: up | reset | check | down | review [текст]" >&2
     exit 1
     ;;
 esac

@@ -17,6 +17,13 @@ http:
       tls: {}
       service: connector-telegram@docker
       middlewares: [retry]
+    # Отзывы с карт: Rocket Data присылает отзыв POST-запросом на https://<адрес>/rd/<id канала> (Ф13).
+    rocketdata-reviews:
+      rule: PathPrefix(`/rd/`)
+      entryPoints: [websecure]
+      tls: {}
+      service: connector-rocketdata@docker
+      middlewares: [retry]
     realtime:
       rule: PathPrefix(`/ws`)
       entryPoints: [websecure]

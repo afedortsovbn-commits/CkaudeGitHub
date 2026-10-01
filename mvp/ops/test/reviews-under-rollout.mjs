@@ -1,6 +1,7 @@
 // Поток отзывов Rocket Data и ответов на них во время поэтапного обновления connector-rocketdata (Ф13, M-UPD-01):
-// каждый отзыв становится ровно одним обращением (без потерь и дублей), каждый ответ оператора доставлен в Rocket
-// Data ровно один раз и получил статус «отправлено».
+// отзывы приходят POST-запросами на адрес канала (/rd/<id канала>, как их присылает Rocket Data), каждый отзыв
+// становится ровно одним обращением (без потерь и дублей), каждый ответ оператора доставлен в сервис ответов Rocket
+// Data (мок) ровно один раз и получил статус «отправлено».
 // Использование: node ops/test/reviews-under-rollout.mjs <новый_тег> [секунд]
 // Предусловие: стек запущен с SEED_DEMO=true и профилем test (mock-selfservice — мок Rocket Data);
 // образ cc/connector-rocketdata:<тег> собран.
@@ -10,7 +11,7 @@ import { ADMIN, apiLogin, dbPool, MVP, req, setStatus, sleep } from './lib/stack
 const [newTag = 'next', seconds = '60'] = process.argv.slice(2);
 const MOCK = process.env.MOCK_SELFSERVICE_URL ?? 'http://127.0.0.1:8082';
 const stamp = Date.now().toString(36);
-// Своя «учётная запись» мока: отзывы проверки не попадают в демо-канал.
+// Своя «учётная запись» мока: ответы проверки не смешиваются с демо-каналом.
 const acc = `rollout-${stamp}`;
 const mock = async (method, path, body) => {
   const r = await fetch(`${MOCK}/rocketdata/${acc}${path}`, {
@@ -39,14 +40,7 @@ const ch = await req('POST', '/api/v1/dict/channels', {
     kind: 'review',
     name: `Rollout отзывы ${stamp}`,
     queueId: q.body.id,
-    config: {
-      api_url: `http://mock-selfservice:3000/rocketdata/${acc}`,
-      api_token: 'demo-rocketdata-token',
-      poll_interval_s: 10,
-      initial_days: 1,
-      low_rating_max: 2,
-      skip_answered: true,
-    },
+    config: { answer_url: `http://mock-selfservice:3000/rocketdata/${acc}/answer` },
   },
 });
 if (ch.status !== 201) throw new Error(`канал не создан: ${JSON.stringify(ch.body)}`);
@@ -59,18 +53,28 @@ for (let i = 0; ; i++) {
 }
 
 const pool = dbPool();
-const reviewsSent = new Map(); // id отзыва → текст последней редакции
+const reviewsSent = new Map(); // номер отзыва → текст
+const rejected = []; // отзывы, которые не удалось передать и после повторов (как Rocket Data, req повторяет 5xx и сбои)
 async function addReview(i) {
-  const id = `rv-${stamp}-${i}`;
+  const id = `${stamp}${String(i).padStart(5, '0')}`;
   const text = `отзыв ${stamp} ${i}`;
-  await mock('POST', '/__test/reviews', {
-    id,
-    text,
-    rating: 1 + (i % 5),
-    location_id: `rd-azs-${1 + (i % 6)}`,
-    author_name: `Автор ${i}`,
+  const r = await req('POST', `/rd/${channelId}`, {
+    retries: 8,
+    body: {
+      TicketMapId: id,
+      DateReceipt: new Date().toISOString().slice(0, 19),
+      StationGuid: `DE${'0'.repeat(26)}${String(1 + (i % 6)).padStart(4, '0')}`,
+      StationType: 'АЗС',
+      StationNum: String(1 + (i % 6)),
+      EmitentName: 'РУП «Условнефтепродукт»',
+      ClientName: `Автор ${i}`,
+      Message: text,
+      Link: `https://yandex.by/maps/org/1/reviews/${id}`,
+      Site: 'yandex.ru',
+    },
   });
-  reviewsSent.set(id, text);
+  if (r.status === 200) reviewsSent.set(id, text);
+  else rejected.push({ id, status: r.status, body: r.body });
 }
 async function conversationOfReview(id) {
   for (let i = 0; i < 60; i++) {
@@ -87,7 +91,7 @@ async function conversationOfReview(id) {
 for (let i = 0; i < 3; i++) await addReview(i);
 const convs = [];
 for (let i = 0; i < 3; i++) {
-  const id = await conversationOfReview(`rv-${stamp}-${i}`);
+  const id = await conversationOfReview(`${stamp}${String(i).padStart(5, '0')}`);
   const r = await req('POST', `/api/v1/conversations/${id}/take`, { token: op });
   if (r.status !== 200) throw new Error(`не удалось взять обращение: ${JSON.stringify(r.body)}`);
   convs.push(id);
@@ -130,7 +134,7 @@ while (Date.now() - started < Number(seconds) * 1000) await sleep(500);
 running = false;
 await Promise.all(loops);
 
-// --- проверка: ждём хвост (следующий опрос, повторы доставки), затем сверяем ---
+// --- проверка: ждём хвост (обработка worker, повторы доставки), затем сверяем ---
 let result;
 for (let attempt = 0; attempt < 30; attempt++) {
   await sleep(2000);
@@ -154,6 +158,7 @@ for (let attempt = 0; attempt < 30; attempt++) {
     rolloutExitCode: code,
     reviews: {
       sent: reviewsSent.size,
+      rejected: rejected.length,
       lost: [...reviewsSent.keys()].filter((id) => !perReview.has(id)).length,
       duplicates: [...perReview.values()].filter((list) => list.length > 1).length,
       conversations: (
@@ -171,13 +176,15 @@ for (let attempt = 0; attempt < 30; attempt++) {
   if (!result.reviews.lost && !result.answers.notDelivered && !result.deliveryStatus.pending) break;
 }
 await pool.end();
-// Канал проверки выключается — отзывы учётной записи проверки больше не опрашиваются.
+// Канал проверки выключается.
 await req('POST', `/api/v1/dict/channels/${channelId}/deactivate`, { token: admin });
 console.log(JSON.stringify(result, null, 2));
+if (rejected.length) console.log('не принятые отзывы:', JSON.stringify(rejected.slice(0, 5)));
 const { reviews: r, answers: a, deliveryStatus: d } = result;
 const ok =
   code === 0 &&
   r.sent > 0 &&
+  !r.rejected &&
   !r.lost &&
   !r.duplicates &&
   r.conversations === r.sent &&

@@ -7,10 +7,12 @@ import {
   NumberInput,
   PasswordInput,
   SegmentedControl,
+  Select,
   Stack,
   Switch,
   Table,
   Text,
+  Textarea,
   TextInput,
   Title,
 } from '@mantine/core';
@@ -26,11 +28,26 @@ const MASK = '********';
 interface Settings {
   enabled: boolean;
   url: string | null;
-  format: 'json' | 'csv';
+  format: 'json' | 'csv' | 'asu';
   token: string | null;
   time: string;
   maxDeactivateShare: number;
+  enterpriseCode?: string;
+  enterpriseMap?: Record<string, string>;
 }
+
+/** Исключения «код предприятия выгрузки = код предприятия справочника» — по одному в строке. */
+const mapToText = (m: Record<string, string>) =>
+  Object.entries(m)
+    .map(([k, v]) => `${k}=${v}`)
+    .join('\n');
+const textToMap = (s: string) =>
+  Object.fromEntries(
+    s
+      .split(/\n|;/)
+      .map((l) => l.split('=').map((x) => x.trim()))
+      .filter((p) => p.length === 2 && p[0] && p[1]),
+  ) as Record<string, string>;
 
 interface Change {
   code: string;
@@ -150,13 +167,18 @@ export function ObjectSyncPage() {
     queryFn: () => get<Settings>('/objects/sync/settings'),
   });
   const runs = useList('/objects/sync/runs');
+  const enterprises = useList('/dict/enterprises');
   const [v, setV] = useState<Settings | null>(null);
+  const [mapText, setMapText] = useState('');
   const [token, setToken] = useState('');
   const [result, setResult] = useState<RunResult | null>(null);
   const [busy, setBusy] = useState<'dry' | 'run' | null>(null);
   const [details, setDetails] = useState<RunResult | null>(null);
   useEffect(() => {
-    if (s.data) setV(s.data);
+    if (s.data) {
+      setV(s.data);
+      setMapText(mapToText(s.data.enterpriseMap ?? {}));
+    }
   }, [s.data]);
   const save = useAction(
     () =>
@@ -166,6 +188,8 @@ export function ObjectSyncPage() {
         format: v!.format,
         time: v!.time,
         maxDeactivateShare: v!.maxDeactivateShare,
+        enterpriseCode: v!.enterpriseCode || t.reviews.defaultEnterprise,
+        enterpriseMap: textToMap(mapText),
         ...(token ? { token } : {}),
       }).then(() => setToken('')),
     t.reviews.saved,
@@ -210,12 +234,40 @@ export function ObjectSyncPage() {
         />
         <SegmentedControl
           data={[
+            { value: 'asu', label: t.reviews.formatAsu },
             { value: 'json', label: 'JSON' },
             { value: 'csv', label: t.reviews.formatCsv },
           ]}
           value={v.format}
           onChange={(x) => setV({ ...v, format: x as Settings['format'] })}
+          data-testid="sync-format"
         />
+        {v.format === 'asu' && (
+          <>
+            <Select
+              label={t.reviews.enterpriseCode}
+              description={t.reviews.enterpriseCodeHint}
+              data={(enterprises.data ?? []).map((e: Row) => ({
+                value: String(e.code),
+                label: `${String(e.name)} (${String(e.code)})`,
+              }))}
+              value={v.enterpriseCode || t.reviews.defaultEnterprise}
+              onChange={(x) => setV({ ...v, enterpriseCode: x ?? '' })}
+              searchable
+              allowDeselect={false}
+              data-testid="sync-enterprise"
+            />
+            <Textarea
+              label={t.reviews.enterpriseMap}
+              description={t.reviews.enterpriseMapHint}
+              placeholder="20=MALANKA"
+              autosize
+              minRows={2}
+              value={mapText}
+              onChange={(e) => setMapText(e.currentTarget.value)}
+            />
+          </>
+        )}
         <PasswordInput
           label={t.reviews.token}
           description={v.token === MASK ? t.reviews.tokenSet : t.reviews.tokenNotSet}

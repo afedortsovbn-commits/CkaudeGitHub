@@ -216,9 +216,9 @@ export function ObjectsPage() {
             render: (r) => t.reviews.sources[String(r.source)] ?? String(r.source ?? ''),
           },
           {
-            key: 'rocketdata',
-            label: t.reviews.rocketdataPoint,
-            render: (r) => String((r.externalIds as Record<string, string> | undefined)?.rocketdata ?? ''),
+            key: 'objguid',
+            label: t.reviews.objectGuid,
+            render: (r) => String((r.externalIds as Record<string, string> | undefined)?.objguid ?? ''),
           },
         ]}
         fields={[
@@ -232,17 +232,17 @@ export function ObjectsPage() {
           { key: 'code', label: t.org.kod, required: true },
           { key: 'name', label: t.org.nazvanie, required: true },
           { key: 'address', label: t.org.adres },
-          { key: 'rocketdata', label: t.reviews.rocketdataId, description: t.reviews.rocketdataIdHint },
+          { key: 'objguid', label: t.reviews.objectGuid, description: t.reviews.objectGuidHint },
         ]}
         toForm={(r) => ({
           ...r,
-          rocketdata: (r.externalIds as Record<string, string> | undefined)?.rocketdata ?? '',
+          objguid: (r.externalIds as Record<string, string> | undefined)?.objguid ?? '',
         })}
         fromForm={(v, editing) => {
-          const { rocketdata, ...rest } = v;
+          const { objguid, ...rest } = v;
           const ext = { ...((editing?.externalIds ?? {}) as Record<string, string>) };
-          if (rocketdata) ext.rocketdata = String(rocketdata);
-          else delete ext.rocketdata;
+          if (objguid) ext.objguid = String(objguid).trim();
+          else delete ext.objguid;
           return { ...rest, externalIds: ext };
         }}
         toolbar={

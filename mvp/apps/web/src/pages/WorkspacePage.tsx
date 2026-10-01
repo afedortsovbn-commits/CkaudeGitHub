@@ -56,6 +56,8 @@ interface ReviewInfo {
   publishedAt: string | null;
   locationId: string | null;
   locationCode: string | null;
+  stationType?: string | null;
+  emitent?: string | null;
 }
 
 /** Отзыв с карт (Ф13, M-CH-10): площадка, оценка, объект, автор, ссылка на отзыв; ответ публикуется на площадке. */
@@ -68,14 +70,17 @@ function ReviewPanel({ conv }: { conv: Row }) {
       <Group justify="space-between" wrap="nowrap">
         <Group gap="xs">
           <Badge variant="light">{t.reviews.platforms[r.platform] ?? r.platform}</Badge>
-          <Text
-            c={low ? 'red' : 'yellow.7'}
-            fw={700}
-            data-testid="review-rating"
-            title={t.reviews.ratingTitle(r.rating ?? '—')}
-          >
-            {r.rating ? stars(r.rating) : t.reviews.noRating}
-          </Text>
+          {/* Оценку Rocket Data по описанию заказчика не передаёт — показывается, только если пришла. */}
+          {r.rating ? (
+            <Text
+              c={low ? 'red' : 'yellow.7'}
+              fw={700}
+              data-testid="review-rating"
+              title={t.reviews.ratingTitle(r.rating)}
+            >
+              {stars(r.rating)}
+            </Text>
+          ) : null}
         </Group>
         {r.url ? (
           <a href={r.url} target="_blank" rel="noreferrer" data-testid="review-link">
@@ -95,6 +100,14 @@ function ReviewPanel({ conv }: { conv: Row }) {
             : t.reviews.notMatched(r.locationCode ?? r.locationId ?? '—')}
         </span>
       </Text>
+      {r.stationType || r.emitent ? (
+        <Text size="xs" c="dimmed" data-testid="review-station">
+          {t.reviews.station(
+            [r.stationType, r.locationCode && `№${r.locationCode}`].filter(Boolean).join(' '),
+            r.emitent ?? '',
+          )}
+        </Text>
+      ) : null}
     </Paper>
   );
 }

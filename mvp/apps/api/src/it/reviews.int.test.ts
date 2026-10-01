@@ -1,6 +1,7 @@
 /**
- * Интеграционные тесты Ф13: отзывы с карт через Rocket Data (M-CH-10) — приём, объект → предприятие, дубли,
- * изменённый отзыв, ответ в Rocket Data и статус, отчёт по отзывам; синхронизация справочника объектов (M-ORG-06).
+ * Интеграционные тесты Ф13: отзывы с карт через Rocket Data (M-CH-10) — приём, АЗС по GUID → предприятие, дубли,
+ * изменённый отзыв, ответ в Rocket Data и статус, отчёт по отзывам; синхронизация справочника объектов (M-ORG-06),
+ * в т.ч. выгрузка АСУ НПО ЭК (описания заказчика 01.10).
  */
 import { type InboundMessage, newId, type ReviewMeta, SECRET_MASK } from '@cc/contracts';
 import {
@@ -12,7 +13,7 @@ import {
 } from '@cc/domain';
 import { openSecret } from '@cc/service-kit';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { seedReviewsDemo } from '../cli/reviews-demo-seed';
+import { demoObjectGuid, seedReviewsDemo } from '../cli/reviews-demo-seed';
 import { withTx } from '../lib/db';
 import { ADMIN_URL, createTestApp, DEMO_PW, TEST_SECRETS_KEY } from './setup';
 
@@ -49,8 +50,10 @@ describe.skipIf(!ADMIN_URL)('Отзывы с карт и синхронизац�
       author: 'Иван',
       url: 'https://yandex.by/maps/org/1/reviews',
       publishedAt: '2026-09-29T10:00:00.000Z',
-      locationId: 'rd-azs-1',
-      locationCode: null,
+      locationId: demoObjectGuid(1),
+      locationCode: '1',
+      stationType: 'АЗС',
+      emitent: 'РУП «Условнефтепродукт-10»',
       answered: false,
       urgent: (meta.rating ?? 2) <= 2,
       skipAnswered: true,
@@ -77,32 +80,31 @@ describe.skipIf(!ADMIN_URL)('Отзывы с карт и синхронизац�
       return r;
     });
 
-  it('канал «Отзыв»: настройки проверяются, токен Rocket Data шифруется и маскируется', async () => {
+  it('канал «Отзыв»: адрес сервиса ответов проверяется; без адреса — допустим (ответы не отправляются)', async () => {
     const bad = await t.call('POST', '/api/v1/dict/channels', admin, {
       kind: 'review',
-      name: 'Без адреса',
-      config: { api_token: 'x' },
+      name: 'Неверный адрес',
+      config: { answer_url: 'не адрес' },
     });
     expect(bad.status).toBe(400);
     // Канал «Отзыв» создаётся через справочник каналов (форма администратора).
     const created = await t.call('POST', '/api/v1/dict/channels', admin, {
       kind: 'review',
       name: 'Rocket Data (второе подключение)',
-      config: { api_url: 'http://rd.local', api_token: 'second-token' },
+      config: {},
     });
     expect(created.status, JSON.stringify(created.body)).toBe(201);
-    expect(created.body.config).toMatchObject({ api_token: SECRET_MASK, poll_interval_s: 300 });
+    expect(created.body.config).toMatchObject({ low_rating_max: 2 });
+    expect(created.body.config.answer_url ?? null).toBeNull();
     await t.call('POST', `/api/v1/dict/channels/${created.body.id}/deactivate`, admin);
     const ch = await t.call('GET', `/api/v1/dict/channels/${channelId}`, admin);
-    expect(ch.body.config).toMatchObject({ api_token: SECRET_MASK, poll_interval_s: 10, low_rating_max: 2 });
-    const raw = await one<{ config: { api_token: string } }>(`SELECT config FROM channel WHERE id = $1`, [
-      channelId,
-    ]);
-    expect(openSecret(raw.config.api_token, TEST_SECRETS_KEY)).toBe('demo-rocketdata-token');
+    expect(ch.body.config).toMatchObject({
+      answer_url: 'http://mock-selfservice:3000/rocketdata/demo/answer',
+    });
   });
 
   let convId = '';
-  it('отзыв → обращение предприятия объекта: объект по точке Rocket Data, срочность, сведения для карточки', async () => {
+  it('отзыв → обращение предприятия объекта: АЗС по GUID, срочность, сведения для карточки', async () => {
     const r = await ingest(review());
     expect(r.created).toBe(true);
     convId = r.conversationId;
@@ -194,8 +196,10 @@ describe.skipIf(!ADMIN_URL)('Отзывы с карт и синхронизац�
     expect(withFile.body.deliveryStatus).toBe('failed');
   });
 
-  it('точка без объекта — обращение без предприятия и служебная подсказка; отвеченный на площадке — пропускается', async () => {
-    const r = await ingest(review({ id: 'r-2', locationId: 'rd-unknown', locationCode: 'X-9', rating: 5 }));
+  it('АЗС не найдена — обращение без предприятия и подсказка с реквизитами АЗС; GUID с дефисами — найдена', async () => {
+    const r = await ingest(
+      review({ id: 'r-2', locationId: 'FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF', locationCode: '99', rating: 5 }),
+    );
     const c = await one<{ enterprise_id: string | null; object_id: string | null; is_urgent: boolean }>(
       `SELECT enterprise_id, object_id, is_urgent FROM conversation WHERE id = $1`,
       [r.conversationId],
@@ -205,12 +209,14 @@ describe.skipIf(!ADMIN_URL)('Отзывы с карт и синхронизац�
       `SELECT body FROM message WHERE conversation_id = $1 AND direction = 'system'`,
       [r.conversationId],
     );
-    expect(sys.body).toContain('код «X-9»');
-    // По коду объекта (без идентификатора Rocket Data).
-    const byCode = await ingest(review({ id: 'r-3', locationId: null, locationCode: 'AZS-3', rating: 3 }));
+    expect(sys.body).toContain('АЗС №99, РУП «Условнефтепродукт-10»');
+    // GUID в виде отзыва (с дефисами, строчными) находит объект с GUID без дефисов.
+    const g = demoObjectGuid(3).toLowerCase();
+    const dashed = `${g.slice(0, 8)}-${g.slice(8, 12)}-${g.slice(12, 16)}-${g.slice(16, 20)}-${g.slice(20)}`;
+    const byGuid = await ingest(review({ id: 'r-3', locationId: dashed, rating: 3 }));
     const e = await one<{ code: string }>(
       `SELECT e.code FROM conversation c JOIN enterprise e ON e.id = c.enterprise_id WHERE c.id = $1`,
-      [byCode.conversationId],
+      [byGuid.conversationId],
     );
     expect(e.code).toBe('E2');
     const skipped = await ingest(review({ id: 'r-4', answered: true }));
@@ -285,6 +291,8 @@ describe.skipIf(!ADMIN_URL)('Отзывы с карт и синхронизац�
         token: null,
         time: '03:00',
         maxDeactivateShare: 0.3,
+        enterpriseCode: 'ПОН',
+        enterpriseMap: {},
       },
       feed: async () => JSON.stringify(feed),
     });
@@ -365,6 +373,8 @@ describe.skipIf(!ADMIN_URL)('Отзывы с карт и синхронизац�
         token: null,
         time: '03:00',
         maxDeactivateShare: 0.3,
+        enterpriseCode: 'ПОН',
+        enterpriseMap: {},
       },
       feed: async () => '<html>',
     });
@@ -451,5 +461,69 @@ describe.skipIf(!ADMIN_URL)('Отзывы с карт и синхронизац�
     const manual = await t.call('POST', '/api/v1/objects/sync/run?dryRun=true', admin);
     expect(manual.status).toBe(200);
     expect(manual.body).toMatchObject({ status: 'error', dryRun: true });
+  });
+
+  it('выгрузка АСУ НПО ЭК: ключ — GUID, объект с GUID берётся под синхронизацию, предприятие ПОН и исключения', async () => {
+    const station = (n: number, unitcode: string, o: Record<string, unknown> = {}) => ({
+      objguid: demoObjectGuid(n),
+      azsnum: String(n),
+      name1: `АЗС №${n}`,
+      status: 'действующий',
+      unit: `РУП «Условнефтепродукт-${unitcode}»`,
+      unitcode,
+      mailaddress: `г. Условный, ул. Новая, ${n}`,
+      town: '',
+      ...o,
+    });
+    const feed = [
+      ...['10', '10', '20', '20', '30', '30'].map((u, i) => station(i + 1, u)),
+      station(8, '20', { town: 'Гродно' }),
+      station(9, '30', { status: 'закрыта' }),
+    ];
+    const asu = (enterpriseCode: string) =>
+      syncObjects(t.pool, {
+        trigger: 'manual',
+        settings: {
+          enabled: true,
+          url: 'http://x',
+          format: 'asu',
+          token: null,
+          time: '03:00',
+          maxDeactivateShare: 0.5,
+          enterpriseCode,
+          enterpriseMap: { '20': 'E2', '30': 'E3' },
+        },
+        feed: async () => JSON.stringify(feed),
+      });
+    // Предприятия «ПОН» в тестовом справочнике нет — ошибка с пояснением, справочник не меняется.
+    const noEnt = await asu('ПОН');
+    expect(noEnt.status).toBe('error');
+    expect(noEnt.error).toContain('«ПОН»');
+
+    const r = await asu('E1');
+    expect(r.status, r.error).toBe('ok');
+    // Демо-АЗС 1–6 (GUID задан заранее) — те же объекты, код сохраняется; новая АЗС №8 — код GUID, название с
+    // населённым пунктом; закрытая АЗС №9 — добавлена неактивной; AZS-7 и ЭЗС-1 нет в выгрузке — деактивированы.
+    expect(r).toMatchObject({ added: 2, deactivated: 2 });
+    expect(await obj('AZS-1')).toMatchObject({ enterprise: 'E1', source: 'sync', is_active: true });
+    expect(await obj('AZS-3')).toMatchObject({
+      enterprise: 'E2',
+      ext: { objguid: demoObjectGuid(3), unitcode: '20' },
+    });
+    expect(await obj(demoObjectGuid(8))).toMatchObject({
+      name: 'АЗС №8, Гродно',
+      enterprise: 'E2',
+      is_active: true,
+    });
+    expect(await obj(demoObjectGuid(9))).toMatchObject({ enterprise: 'E3', is_active: false });
+    expect((await obj('AZS-7')).is_active).toBe(false);
+    // Отзыв по новой АЗС (GUID из отзыва) — её предприятие.
+    const rv = await ingest(review({ id: 'r-8', locationId: demoObjectGuid(8), rating: 4 }));
+    const c = await one<{ code: string; ent: string }>(
+      `SELECT o.code, e.code AS ent FROM conversation c JOIN service_object o ON o.id = c.object_id
+         JOIN enterprise e ON e.id = c.enterprise_id WHERE c.id = $1`,
+      [rv.conversationId],
+    );
+    expect(c).toEqual({ code: demoObjectGuid(8), ent: 'E2' });
   });
 });
