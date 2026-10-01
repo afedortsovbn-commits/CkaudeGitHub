@@ -198,6 +198,7 @@ jobs:
           path: |
             mvp/out/zero-downtime-report.json
             mvp/out/releases/
+            mvp/out/zdt-operators/
           if-no-files-found: ignore
       - name: Итог автотеста и журналы (без журнала доступа Traefik)
         if: failure()

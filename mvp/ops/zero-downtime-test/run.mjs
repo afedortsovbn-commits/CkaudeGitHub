@@ -112,6 +112,15 @@ for (let i = 0; i < operators.length; i += 5) {
 }
 // Метка в окне: если вкладка перезагрузится (автообновление до новой версии вне звонка), метка исчезнет.
 for (const p of pages) await p.evaluate(() => (globalThis.__zdt = 1));
+// Диагностика: ошибки страницы и консоли каждого оператора (последние 10) — в отчёт; при «выпавшем» операторе
+// — скриншот и текст страницы в out/zdt-operators/ (артефакт CI).
+const pageErrors = pages.map(() => []);
+pages.forEach((p, i) => {
+  const keep = (e) => pageErrors[i].push(`${new Date().toISOString().slice(11, 19)} ${e}`.slice(0, 500));
+  p.on('pageerror', (e) => keep(`pageerror: ${e.message}`));
+  p.on('console', (m) => m.type() === 'error' && keep(`console: ${m.text()}`));
+  p.on('framenavigated', (f) => f === p.mainFrame() && keep(`navigated: ${f.url()}`));
+});
 log(`операторы в системе: ${pages.length}, софтфоны зарегистрированы`);
 
 // ---------------------------------------------------------------- приём сообщений «у оператора»
@@ -430,11 +439,21 @@ for (const [i, p] of pages.entries()) {
     /* не зарегистрирован */
   }
   const reloaded = await p.evaluate(() => globalThis.__zdt !== 1).catch(() => null);
+  if (!(loggedIn && !onLogin) || !registered) {
+    const dir = join(MVP, 'out/zdt-operators');
+    mkdirSync(dir, { recursive: true });
+    await p.screenshot({ path: join(dir, `operator-${i}.png`), fullPage: true }).catch(() => undefined);
+    const text = await p.evaluate(() => document.body?.innerText ?? '').catch((e) => `нет текста: ${e}`);
+    writeFileSync(join(dir, `operator-${i}.txt`), `${p.url()}\n\n${text}\n\n${pageErrors[i].join('\n')}\n`);
+  }
   ops.push({
     operator: operators[i],
     loggedIn: loggedIn && !onLogin,
+    onLoginScreen: onLogin,
     registered,
     reloadedToNewVersion: reloaded,
+    url: p.url(),
+    errors: pageErrors[i].slice(-10),
   });
 }
 const loggedOut = ops.filter((o) => !o.loggedIn).length;
@@ -470,6 +489,8 @@ const summary = {
     loggedOut,
     unregistered,
     reloadedToNewVersion: ops.filter((o) => o.reloadedToNewVersion).length,
+    // Подробности по «выпавшим» операторам (для разбора: экран входа, ошибки страницы, адрес).
+    problems: ops.filter((o) => !o.loggedIn || !o.registered),
   },
   examples: { lost: lost.slice(0, 5), duplicated: dupes.slice(0, 5), sendErrors: sendErrors.slice(0, 5) },
   timeline,
