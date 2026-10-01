@@ -443,7 +443,7 @@ for (const [i, p] of pages.entries()) {
     const dir = join(MVP, 'out/zdt-operators');
     mkdirSync(dir, { recursive: true });
     await p.screenshot({ path: join(dir, `operator-${i}.png`), fullPage: true }).catch(() => undefined);
-    const text = await p.evaluate(() => document.body?.innerText ?? '').catch((e) => `нет текста: ${e}`);
+    const text = await p.evaluate(() => globalThis.document?.body?.innerText ?? '').catch((e) => `нет текста: ${e}`);
     writeFileSync(join(dir, `operator-${i}.txt`), `${p.url()}\n\n${text}\n\n${pageErrors[i].join('\n')}\n`);
   }
   ops.push({
