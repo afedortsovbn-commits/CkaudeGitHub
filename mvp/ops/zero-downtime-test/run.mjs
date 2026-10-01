@@ -115,11 +115,23 @@ for (const p of pages) await p.evaluate(() => (globalThis.__zdt = 1));
 // Диагностика: ошибки страницы и консоли каждого оператора (последние 10) — в отчёт; при «выпавшем» операторе
 // — скриншот и текст страницы в out/zdt-operators/ (артефакт CI).
 const pageErrors = pages.map(() => []);
+// Неудачные запросы и ответы ≥ 400 по адресам (без query): какой ресурс страница запрашивает лавиной.
+const failedRequests = pages.map(() => new Map());
+const countFailed = (i, key) => failedRequests[i].set(key, (failedRequests[i].get(key) ?? 0) + 1);
 pages.forEach((p, i) => {
   const keep = (e) => pageErrors[i].push(`${new Date().toISOString().slice(11, 19)} ${e}`.slice(0, 500));
   p.on('pageerror', (e) => keep(`pageerror: ${e.message}`));
   p.on('console', (m) => m.type() === 'error' && keep(`console: ${m.text()}`));
   p.on('framenavigated', (f) => f === p.mainFrame() && keep(`navigated: ${f.url()}`));
+  p.on('requestfailed', (r) =>
+    countFailed(i, `${r.method()} ${r.url().split('?')[0]} — ${r.failure()?.errorText ?? '?'}`),
+  );
+  p.on(
+    'response',
+    (r) =>
+      r.status() >= 400 &&
+      countFailed(i, `${r.request().method()} ${r.url().split('?')[0]} — HTTP ${r.status()}`),
+  );
 });
 log(`операторы в системе: ${pages.length}, софтфоны зарегистрированы`);
 
@@ -446,7 +458,11 @@ for (const [i, p] of pages.entries()) {
     const text = await p
       .evaluate(() => globalThis.document?.body?.innerText ?? '')
       .catch((e) => `нет текста: ${e}`);
-    writeFileSync(join(dir, `operator-${i}.txt`), `${p.url()}\n\n${text}\n\n${pageErrors[i].join('\n')}\n`);
+    const failed = [...failedRequests[i].entries()].map(([k, n]) => `${n}× ${k}`).join('\n');
+    writeFileSync(
+      join(dir, `operator-${i}.txt`),
+      `${p.url()}\n\n${text}\n\n${pageErrors[i].join('\n')}\n\n${failed}\n`,
+    );
   }
   ops.push({
     operator: operators[i],
@@ -455,7 +471,8 @@ for (const [i, p] of pages.entries()) {
     registered,
     reloadedToNewVersion: reloaded,
     url: p.url(),
-    errors: pageErrors[i].slice(-10),
+    errors: pageErrors[i].slice(-30),
+    failedRequests: [...failedRequests[i].entries()].sort((a, b) => b[1] - a[1]).slice(0, 15),
   });
 }
 const loggedOut = ops.filter((o) => !o.loggedIn).length;
