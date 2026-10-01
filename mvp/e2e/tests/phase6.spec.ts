@@ -175,7 +175,8 @@ test.describe.serial('Ф6: IVR', () => {
 
     // Публикуем новую версию, пока клиент в IVR.
     const pub = await api.post<{ version: number }>(`/flows/${flow.id}/publish`, { comment: `e2e ${stamp}` });
-    expect(pub.version).toBe(before + 1);
+    // Номер новой версии — следующий после последней (после отката в прошлом прогоне он больше before + 1).
+    expect(pub.version).toBeGreaterThan(before);
     // Клиент продолжает по своей версии: меню работает, путь идёт дальше.
     await client.waitForTimeout(12_000);
     await dtmf(client, '1');
@@ -191,7 +192,7 @@ test.describe.serial('Ф6: IVR', () => {
     await login(admin, ADMIN.email, ADMIN.password);
     await nav(admin, 'Сценарии IVR');
     await admin.getByRole('link', { name: FLOW }).click();
-    await expect(admin.getByTestId('flow-published')).toHaveText(`опубликована версия ${before + 1}`);
+    await expect(admin.getByTestId('flow-published')).toHaveText(`опубликована версия ${pub.version}`);
     await admin.getByRole('button', { name: 'Версии' }).click();
     await admin.getByTestId(`rollback-${before}`).click();
     await expect(admin.getByTestId('flow-published')).toHaveText(`опубликована версия ${before}`, {
