@@ -7,7 +7,10 @@
 #   ops/demo.sh check   — автоматически пройти демо-сценарии в браузере (Playwright, e2e)
 #   ops/demo.sh down    — остановить стенд (данные сохраняются)
 #   ops/demo.sh review [текст] — «Rocket Data присылает отзыв» по АЗС №1 в демо-канал «Отзывы с карт»
-# Переменные: TAG (dev) — тег образов; BOOTSTRAP_ADMIN_PASSWORD (Admin12345!), DEMO_PASSWORD (Demo12345!).
+# Переменные: TAG (dev) — тег образов; BOOTSTRAP_ADMIN_PASSWORD (Admin12345!), DEMO_PASSWORD (Demo12345!);
+# DEMO_HOST — адрес стенда для браузеров на других компьютерах (стенд на сервере или виртуальной машине): звук
+# звонков идёт через TURN (coturn, порты 3478/3479), т.к. внутренняя сеть Docker видна только самому серверу.
+# Задавать при каждом up/reset (иначе api пересоздаётся без TURN).
 # Только для демонстрации и проверок: на рабочем сервере не запускать (SEED_DEMO, заглушки, известные пароли).
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -20,6 +23,10 @@ export BOOTSTRAP_ADMIN_PASSWORD="${BOOTSTRAP_ADMIN_PASSWORD:-Admin12345!}" DEMO_
 # письма 2-й линии — в GreenMail.
 export PUBLIC_BASE_URL="${PUBLIC_BASE_URL:-https://traefik}" TRUNK_HOST="${TRUNK_HOST:-trunk-sim:5060}"
 export TICKET_SMTP_HOST="${TICKET_SMTP_HOST:-mail}" TICKET_SMTP_PORT="${TICKET_SMTP_PORT:-3025}"
+DEMO_HOST="${DEMO_HOST:-localhost}"
+if [ "$DEMO_HOST" != localhost ] && [ "$DEMO_HOST" != 127.0.0.1 ]; then
+  export TURN_URLS="${TURN_URLS:-turn:$DEMO_HOST:3478,turn:$DEMO_HOST:3479}"
+fi
 COMPOSE_FILE="${COMPOSE_FILE:-infra/compose/docker-compose.yml}"
 dc() { docker compose -f "$COMPOSE_FILE" "$@"; }
 
@@ -42,11 +49,12 @@ up() {
   cat <<INFO
 
 Демо-стенд запущен (версия $TAG).
-  Интерфейс сотрудников   https://localhost          (самоподписанный сертификат — принять в браузере)
-  Софтфон (WSS)           https://localhost:8443     (открыть один раз и принять сертификат)
-  Сайт с чатом            https://localhost/widget/demo.html            — чат без бота
-                          https://localhost/widget/demo.html?key=demo-webchat-bot   — чат с ботом
-  «Клиент звонит»         https://localhost/demo-call  — номер 2000 (IVR «сеть АЗС»), 1000 (сразу в очередь)
+  Интерфейс сотрудников   https://$DEMO_HOST          (самоподписанный сертификат — принять в браузере)
+  Софтфон (WSS)           https://$DEMO_HOST:8443     (открыть один раз и принять сертификат)
+  Сайт с чатом            https://$DEMO_HOST/widget/demo.html            — чат без бота
+                          https://$DEMO_HOST/widget/demo.html?key=demo-webchat-bot   — чат с ботом
+  «Клиент звонит»         https://$DEMO_HOST/demo-call  — номер 2000 (IVR «сеть АЗС»), 1000 (сразу в очередь)
+  Команды ниже (почта, Telegram, отзыв) — на самом сервере стенда: порты заглушек открыты только на нём.
   Почта клиентов          GreenMail: SMTP 127.0.0.1:3025, IMAP 127.0.0.1:3143 (без TLS, пароль любой)
   Telegram (мок)          адрес Bot API в настройке бота: http://mock-telegram:3000
                           клиент пишет: curl -X POST http://127.0.0.1:8081/__test/<токен>/message \\
