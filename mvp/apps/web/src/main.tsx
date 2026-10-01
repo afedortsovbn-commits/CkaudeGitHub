@@ -32,6 +32,7 @@ import {
   WebhooksPage,
 } from './pages/IntegrationPages';
 import { AssistProvidersPage, AutoRepliesPage, KnowledgePage, TemplatesPage } from './pages/AutomationPages';
+import { ObjectSyncPage } from './pages/ObjectSyncPage';
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } },
@@ -80,6 +81,7 @@ function App() {
         <Route path="departments" element={<DepartmentsPage />} />
         <Route path="topics" element={<TopicsPage />} />
         <Route path="objects" element={<ObjectsPage />} />
+        <Route path="objects-sync" element={<ObjectSyncPage />} />
         <Route path="users" element={<UsersPage />} />
         <Route path="matrix" element={<MatrixPage />} />
         <Route path="dictionaries" element={<DictionariesPage />} />

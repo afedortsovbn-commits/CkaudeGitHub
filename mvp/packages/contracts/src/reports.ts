@@ -14,8 +14,8 @@ export interface AgentStatusEventData {
 }
 
 /**
- * Отчёты M-REP-03 (упрощённая аналитика, Ф10). Отчёт по отзывам с карт — в Ф13.
- * Все, кроме реестра просроченных, строятся по журналу `event` (M-REP-01).
+ * Отчёты M-REP-03 (упрощённая аналитика, Ф10). Отчёт по отзывам с карт — Ф13.
+ * Все, кроме реестра просроченных и отчёта по отзывам, строятся по журналу `event` (M-REP-01).
  */
 export const REPORT_KINDS = [
   'conversations',
@@ -26,6 +26,7 @@ export const REPORT_KINDS = [
   'csat',
   'second-line',
   'overdue',
+  'reviews',
 ] as const;
 export type ReportKind = (typeof REPORT_KINDS)[number];
 
@@ -41,6 +42,9 @@ export const REPORT_GROUPS = [
   'object',
   'day',
   'assignee',
+  // Ф13: разрезы отчёта по отзывам.
+  'rating',
+  'platform',
 ] as const;
 export type ReportGroup = (typeof REPORT_GROUPS)[number];
 
@@ -69,6 +73,10 @@ export const REPORT_CATALOG: Record<ReportKind, { title: string; groups: ReportG
     groups: ['department', 'enterprise', 'assignee'],
   },
   overdue: { title: 'Реестр просроченных тикетов', groups: [] },
+  reviews: {
+    title: 'Отзывы с карт: оценки и доля отвеченных',
+    groups: ['object', 'enterprise', 'rating', 'platform', 'day'],
+  },
 };
 
 const uuid = z.string().uuid();

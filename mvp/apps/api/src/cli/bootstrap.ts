@@ -15,6 +15,7 @@ import { seedDemo } from './demo-seed';
 import { seedBotDemo } from './bot-demo-seed';
 import { seedIvrDemo } from './ivr-demo-seed';
 import { seedIntegrationsDemo } from './integrations-demo-seed';
+import { seedReviewsDemo } from './reviews-demo-seed';
 
 const log = (msg: string, extra: Record<string, unknown> = {}) =>
   console.log(JSON.stringify({ level: 'info', service: 'bootstrap', msg, ...extra }));
@@ -88,6 +89,14 @@ async function main(): Promise<void> {
         }),
       );
       log(integ ? 'демо-интеграции загружены' : 'демо-интеграции уже есть — пропуск');
+      // Демо Ф13: отзывы с карт (мок Rocket Data) и источник справочника объектов (мок).
+      const reviews = await withTx(pool, (tx) =>
+        seedReviewsDemo(tx, {
+          mockUrl: process.env.SELFSERVICE_URL ?? 'http://mock-selfservice:3000',
+          secretsKey: process.env.SECRETS_KEY,
+        }),
+      );
+      log(reviews ? 'демо отзывов с карт загружено' : 'демо отзывов уже есть — пропуск');
     }
   } finally {
     await pool.end();

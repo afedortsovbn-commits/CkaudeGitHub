@@ -50,6 +50,23 @@ describe.skipIf(!ADMIN_URL)('Маршрутизация (ACD), Ф3', () => {
     expect(offers.rows.every((r) => r.n === 1)).toBe(true);
   });
 
+  it('очередь без готовых операторов с длинным хвостом не задерживает обращения других очередей (Ф13)', async () => {
+    // Очередь «Отзывы» без операторов набрала больше обращений, чем пакет router; в «Чатах» оператор готов.
+    const reviews = await t.queue({ name: 'Отзывы без операторов' });
+    const chats = await t.queue({ name: 'Чаты' });
+    const rch = await t.channel(reviews);
+    const cch = await t.channel(chats);
+    const contact = await t.contact();
+    for (let i = 0; i < 30; i++) await t.queuedConversation(reviews, rch, contact);
+    const op = await t.operator(chats);
+    const chat = await t.queuedConversation(chats, cch, contact);
+
+    const n = await assignQueued(t.pool, { maxChatsFallback: 5, batchSize: 20 }, noopOnOffer);
+    expect(n).toBe(1);
+    const r = await t.pool.query(`SELECT status, assignee_id FROM conversation WHERE id = $1`, [chat]);
+    expect(r.rows[0]).toMatchObject({ status: 'offered', assignee_id: op });
+  });
+
   it('отказ от предложения: обращение не предлагается повторно тому же оператору', async () => {
     const q = await t.queue({ name: 'Отказ' });
     const ch = await t.channel(q);

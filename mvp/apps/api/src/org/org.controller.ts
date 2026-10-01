@@ -386,7 +386,10 @@ export class OrgController {
 
   // ---------- Импорт объектов (до интеграции Ф13) ----------
 
-  /** CSV (разделитель ; или ,): code, name, address, enterprise_code. Обновление по коду объекта. */
+  /**
+   * CSV (разделитель ; или ,): code, name, address, enterprise_code. Обновление по коду объекта; объекты, которые
+   * ведёт синхронизация (Ф13), импорт не меняет.
+   */
   @Post('objects/import')
   @HttpCode(200)
   @RequirePerm('admin.directories')
@@ -421,10 +424,14 @@ export class OrgController {
            VALUES ($1, $2, $3, $4, $5, 'import')
            ON CONFLICT (code) DO UPDATE SET enterprise_id = EXCLUDED.enterprise_id, name = EXCLUDED.name,
              address = EXCLUDED.address, is_active = true, updated_at = now()
+           WHERE service_object.source <> 'sync'
            RETURNING (xmax = 0) AS inserted`,
           [newId(), enterpriseId, r.code.trim(), r.name.trim(), r.address?.trim() || null],
         );
-        if (res?.inserted) created++;
+        // Ф13: объекты из внешней системы ведёт только синхронизация (M-ORG-06).
+        if (!res)
+          errors.push({ line, message: `объект «${r.code.trim()}» синхронизируется из внешней системы` });
+        else if (res.inserted) created++;
         else updated++;
       }
       await audit(tx, p, 'import', 'service_object', null, null, { created, updated, errors: errors.length });
@@ -438,7 +445,8 @@ export class OrgController {
   async settings() {
     const list = await rows<{ key: string; value: unknown }>(
       this.ctx.pool,
-      'SELECT key, value FROM system_setting ORDER BY key',
+      // Ф13: настройки синхронизации объектов (с токеном источника) — только через /objects/sync/settings.
+      `SELECT key, value FROM system_setting WHERE key <> 'objects.sync' ORDER BY key`,
     );
     return Object.fromEntries(list.map((r) => [r.key, r.value]));
   }

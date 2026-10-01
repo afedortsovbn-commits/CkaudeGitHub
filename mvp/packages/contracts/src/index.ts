@@ -7,3 +7,4 @@ export * from './tickets';
 export * from './public-api';
 export * from './reports';
 export * from './release';
+export * from './reviews';

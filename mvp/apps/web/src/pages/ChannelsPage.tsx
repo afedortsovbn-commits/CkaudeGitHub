@@ -18,6 +18,7 @@ const KINDS = [
   { value: 'email', label: t.channels.elektronnayaPochta },
   { value: 'voice', label: t.channels.telefon },
   { value: 'api', label: t.channels.vneshnyayaSistemaApi },
+  { value: 'review', label: t.reviews.kindLabel },
 ];
 const kindLabel = (k: unknown) => KINDS.find((x) => x.value === k)?.label ?? String(k ?? '');
 
@@ -25,6 +26,9 @@ const isChat = (v: Record<string, unknown>) => v.kind === 'webchat' || v.kind ==
 const isTg = (v: Record<string, unknown>) => v.kind === 'telegram';
 const isMail = (v: Record<string, unknown>) => v.kind === 'email';
 const isVoice = (v: Record<string, unknown>) => v.kind === 'voice';
+const isReview = (v: Record<string, unknown>) => v.kind === 'review';
+/** Каналы, которые обслуживает коннектор: у них есть состояние подключения и журнал обмена. */
+const hasConnector = (k: unknown) => k === 'telegram' || k === 'email' || k === 'review';
 
 const STATUS: Record<string, { color: string; label: string }> = {
   connected: { color: 'green', label: t.channels.podklyuchen },
@@ -39,7 +43,7 @@ const secret = (v: unknown, isCreate: boolean) => (v ? String(v) : isCreate ? un
 const secretHint = t.channels.priIzmeneniiOstavtePustym;
 
 function ChannelStatus({ row }: { row: Row }) {
-  if (row.kind !== 'telegram' && row.kind !== 'email') return null;
+  if (!hasConnector(row.kind)) return null;
   const s = STATUS[str(row.status)] ?? { color: 'gray', label: t.channels.netDannykh };
   return (
     <Tooltip label={str(row.statusDetail) || s.label} multiline maw={400} disabled={!row.statusDetail}>
@@ -163,6 +167,32 @@ const FIELDS: FormField[] = [
     show: isVoice,
   },
   { key: 'record', label: t.channels.zapisyvatRazgovory, type: 'switch', show: isVoice },
+  // Отзывы с карт через Rocket Data (Ф13)
+  {
+    key: 'rdApiUrl',
+    label: t.reviews.apiUrl,
+    required: true,
+    placeholder: 'https://api.rocketdata.io',
+    description: t.reviews.apiUrlHint,
+    show: isReview,
+  },
+  {
+    key: 'rdApiToken',
+    label: t.reviews.apiToken,
+    type: 'password',
+    description: t.channels.khranitsyaVZashifrovannomVide(secretHint),
+    show: isReview,
+  },
+  { key: 'rdPollS', label: t.reviews.pollS, type: 'number', required: true, show: isReview },
+  { key: 'rdInitialDays', label: t.reviews.initialDays, type: 'number', show: isReview },
+  {
+    key: 'rdLowRating',
+    label: t.reviews.lowRating,
+    type: 'number',
+    description: t.reviews.lowRatingHint,
+    show: isReview,
+  },
+  { key: 'rdSkipAnswered', label: t.reviews.skipAnswered, type: 'switch', show: isReview },
   // Email
   { key: 'address', label: t.channels.adresYashchika, required: true, show: isMail },
   { key: 'displayName', label: t.channels.imyaOtpravitelyaVOtvetakh, show: isMail },
@@ -229,6 +259,11 @@ const toForm = (r: Row) => {
     tlsInsecure: c.tls_insecure,
     dids: ((c.dids as string[]) ?? []).join(', '),
     record: c.record ?? true,
+    rdApiUrl: c.api_url,
+    rdPollS: c.poll_interval_s ?? 300,
+    rdInitialDays: c.initial_days ?? 7,
+    rdLowRating: c.low_rating_max ?? 2,
+    rdSkipAnswered: c.skip_answered ?? true,
     // секреты не показываются: пустое поле — «не менять»
   };
 };
@@ -254,6 +289,18 @@ const fromForm = (v: Record<string, unknown>, editing: Row | null) => {
         bot_token: secret(v.botToken, isCreate),
         mode: v.tgMode ?? 'polling',
         ...(v.apiRoot ? { api_root: v.apiRoot } : {}),
+      },
+    };
+  if (k === 'review')
+    return {
+      ...base,
+      config: {
+        api_url: v.rdApiUrl,
+        api_token: secret(v.rdApiToken, isCreate),
+        poll_interval_s: Number(v.rdPollS ?? 300),
+        initial_days: Number(v.rdInitialDays ?? 7),
+        low_rating_max: Number(v.rdLowRating ?? 2),
+        skip_answered: !!v.rdSkipAnswered,
       },
     };
   if (k === 'voice')
@@ -314,6 +361,10 @@ const CREATE_DEFAULTS = {
   smtpPort: 465,
   smtpSecure: true,
   record: true,
+  rdPollS: 300,
+  rdInitialDays: 7,
+  rdLowRating: 2,
+  rdSkipAnswered: true,
 };
 
 /** Экземпляры каналов: веб-чат, чат в приложении, Telegram-боты, почтовые ящики (M-CH-07). */
@@ -342,6 +393,7 @@ export function ChannelsPage() {
               if (r.kind === 'voice') return ((c.dids as string[]) ?? []).join(', ');
               if (r.kind === 'telegram') return c.mode === 'webhook' ? 'webhook' : t.channels.opros;
               if (r.kind === 'api') return t.channels.poKlyuchuApi;
+              if (r.kind === 'review') return str(c.api_url);
               return <Code>{str(c.public_key)}</Code>;
             },
           },
@@ -358,7 +410,7 @@ export function ChannelsPage() {
           { key: 'conn', label: t.channels.podklyuchenie, render: (r) => <ChannelStatus row={r} /> },
         ]}
         rowActions={(r) =>
-          r.kind === 'telegram' || r.kind === 'email' ? (
+          hasConnector(r.kind) ? (
             <Button size="xs" variant="subtle" onClick={() => setLogOf(r)}>
               {t.channels.zhurnal}
             </Button>
@@ -381,7 +433,7 @@ export function ChannelsPage() {
             type: 'select',
             options: options(bots.data),
             description: t.channels.novyeObrashcheniyaSnachalaVedet,
-            show: (v) => v.kind !== 'voice',
+            show: (v) => v.kind !== 'voice' && v.kind !== 'review',
           },
           {
             key: 'botWebhookId',
@@ -389,7 +441,7 @@ export function ChannelsPage() {
             type: 'select',
             options: options(extBots.data),
             description: t.channels.botVneshneySistemyBot,
-            show: (v) => v.kind !== 'voice' && !v.botFlowId,
+            show: (v) => v.kind !== 'voice' && v.kind !== 'review' && !v.botFlowId,
           },
           ...FIELDS.slice(2),
         ]}
@@ -404,6 +456,7 @@ export function ChannelsPage() {
         {t.channels.dlyaWebviewPrilozheniya}
         <Code>{t.channels.widgetMobileHtmlKey}</Code>
         {t.channels.telegramBotIPochtovyy}
+        {t.reviews.channelsNote}
       </Text>
     </>
   );

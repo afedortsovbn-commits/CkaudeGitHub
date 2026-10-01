@@ -16,7 +16,7 @@
 
 ## Текущее состояние (30.09.2026)
 
-- **Выполнены Ф0–Ф12 и Ф12b** (PR #1–#3, #5–#13, #15, #16 и PR Ф12b, см. `mvp/docs/PROGRESS.md`). Код — в `mvp/`, как запустить —
+- **Выполнены Ф0–Ф13 и Ф12b** (PR #1–#3, #5–#13, #15–#18, см. `mvp/docs/PROGRESS.md`). Код — в `mvp/`, как запустить —
   `mvp/README.md`.
 - **Ф5a** добавила телефонию: `infra/asterisk` (2 узла, образ на `andrius/asterisk:22`), `infra/kamailio` (Kamailio 6
   из RPM на AlmaLinux 9, WSS 8443, auth_ephemeral, dispatcher), coturn ×2, сервис `call-control` (ARI, активный/
@@ -78,10 +78,17 @@
   `merged_into_id` подставляется в api/worker/realtime), обязательный тег (`queue.require_tag`), консультативный
   перевод (call-control: `consult`/`consult_complete`/`consult_cancel`, состояние — `call.consult_*`), все строки web
   и виджета — в `src/lib/i18n` (`pnpm i18n:check`). Отчёт о соответствии: «частично» — 0.
-- **Следующая — Ф13** (Rocket Data, синхронизация объектов) — после получения описаний API от заказчика (В-32, В-42),
-  задание — в 03.
-- Ждём от заказчика: параметры SIP-транка МТС (подключается переменной `TRUNKS`, основной и резервный), описание API Rocket Data и
-  источника справочника объектов (к Ф13). Их отсутствие работу не блокирует — см. соответствующие фазы в плане.
+- **Ф13** (по контрактам-заглушкам — описаний API от заказчика нет, `mvp/docs/интеграции-rocketdata-и-объекты.md`)
+  добавила `apps/connector-rocketdata` (2 экз.: опрос отзывов владельцем аренды `rd.<канал>`, отметка в NATS KV
+  `cc_rd_state`, ответы с `Idempotency-Key`; прокси — `ROCKETDATA_PROXY`), канал «Отзыв» (отзыв → обращение
+  предприятия объекта по `external_ids.rocketdata` или коду; `packages/domain/src/reviews.ts`), синхронизацию объектов
+  (`packages/domain/src/objects-sync.ts`: JSON/CSV по HTTP, журнал `object_sync_run`, защита от ошибочной выгрузки;
+  плановый запуск — worker, вручную — `/api/v1/objects/sync/*`, страница «Синхронизация объектов»), отчёт `reviews`,
+  мок Rocket Data и выгрузки в `mock-selfservice`, миграцию `0015`. Демо-отзыв — см. `ops/demo.sh up`.
+- **Следующая фаза не запланирована**: все фазы плана выполнены. Ждём от заказчика: параметры SIP-транка МТС
+  (подключается переменной `TRUNKS`, основной и резервный), описание API Rocket Data (В-32) и источника справочника
+  объектов (В-42) — при получении заменить только адаптеры (`apps/connector-rocketdata/src/rocketdata-api.ts`;
+  `fetchObjectFeed`/`parseObjectFeed` в `packages/domain/src/objects-sync.ts`) и проверить на стенде заказчика.
 
 ## Порядок работы по фазе
 
@@ -175,6 +182,11 @@
   Kamailio: `dispatcher` — только узлы Asterisk (`flags=2` — без него `ds_next_dst` не работал); транки — список
   `__TRUNK_LIST__` из entrypoint. Встроенный `-sn uas` SIPp не возвращает Record-Route — для транка в тестах свой
   сценарий. MultiSelect Mantine в e2e — `getByRole('textbox', { name }).click({ force: true })`.
+- Ф13: мок Rocket Data многоаккаунтный — `/rocketdata/<акк>/…` (демо-канал — `demo`); проверки заводят свою учётную
+  запись и очередь без операторов, иначе их отзывы попадут в демо-очередь «Отзывы» и router предложит их в следующих
+  проверках. Ответ на отзыв публичен — автоответы на канал «Отзыв» только по явно выбранным правилам (`rulesFor`).
+  Синхронизируемые объекты (`source = sync`) вручную не правятся (`guard` в `dictionaries.ts`). Новый сервис при
+  выпуске — `START_SERVICES=<сервис> ops/release.sh <тег>`. После перезапуска Docker-демона — пересоздать Kamailio.
 - JetStream при старте кластера отвечает не сразу: сервисы подключаются через `connectNats` (ждёт готовности), новые
   потоки/потребители/KV создавать через `ensureStream` или обёртку `retryJs` из `service-kit`.
 - Стек для e2e Ф4/Ф5 и проверок: `COMPOSE_PROFILES=test MOCK_TELEGRAM_TAG=<тег> PUBLIC_BASE_URL=https://traefik TRUNK_HOST=trunk-sim:5060`,

@@ -44,6 +44,7 @@ const MENU: { to: string; label: string; perms?: string[] }[] = [
   { to: '/departments', label: t.nav.departments, perms: ['admin.directories'] },
   { to: '/topics', label: t.nav.topics, perms: ['admin.directories'] },
   { to: '/objects', label: t.nav.objects, perms: ['admin.directories', 'supervisor.monitor'] },
+  { to: '/objects-sync', label: t.reviews.syncNav, perms: ['admin.directories'] },
   { to: '/users', label: t.nav.users, perms: ['admin.users'] },
   { to: '/matrix', label: t.nav.matrix, perms: ['admin.matrix', 'matrix.view'] },
   { to: '/dictionaries', label: t.nav.dictionaries, perms: ['admin.directories'] },

@@ -19,6 +19,7 @@ import { org } from './i18n/org';
 import { privacy } from './i18n/privacy';
 import { profilePage } from './i18n/profilePage';
 import { reports } from './i18n/reports';
+import { reviews } from './i18n/reviews';
 import { settingsPage } from './i18n/settingsPage';
 import { softphoneLib } from './i18n/softphoneLib';
 import { softphoneUi } from './i18n/softphoneUi';
@@ -141,6 +142,7 @@ const ru = {
   updateBannerUi,
   users,
   workspace,
+  reviews,
 };
 
 export const t = ru;

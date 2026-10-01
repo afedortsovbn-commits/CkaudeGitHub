@@ -55,6 +55,8 @@ const GROUP_TITLES: Record<ReportGroup, string> = {
   object: 'Объект',
   day: 'Дата',
   assignee: 'Ответственный / куратор',
+  rating: 'Оценка',
+  platform: 'Площадка',
 };
 
 async function settingNum(db: Db, key: string, def: number): Promise<number> {
@@ -109,6 +111,8 @@ const GROUP_EMPTY: Record<ReportGroup, string> = {
   object: 'Без объекта',
   day: '—',
   assignee: '—',
+  rating: 'Без оценки',
+  platform: 'Не указана',
 };
 
 function pickGroup(kind: ReportKind, g: ReportGroup | undefined): ReportGroup | null {
@@ -156,6 +160,9 @@ export async function buildReport(kind: ReportKind, ctx: ReportCtx): Promise<Rep
       break;
     case 'overdue':
       r = await overdueReport(ctx, period);
+      break;
+    case 'reviews':
+      r = await reviewsReport(ctx, period, group!);
       break;
   }
   return { ...base, ...r, columns: [...labelCol, ...r.columns] };
@@ -1111,6 +1118,116 @@ async function overdueReport(ctx: ReportCtx, period: Period) {
     totals: null,
     notes: [
       `На ${period.today}: тикеты «Новый», «В работе» и «На доработке» с истёкшим сроком. Период отчёта не применяется.`,
+    ],
+  };
+}
+
+// ------------------------------------------------------------------ отзывы с карт (Ф13)
+
+/**
+ * Отзывы с карт (M-CH-10, M-REP-03): по объектам, предприятиям, оценкам, площадкам и дням — число отзывов, средняя
+ * оценка, доля отвеченных (ответ из системы доставлен в Rocket Data) и среднее время до ответа. Строится по
+ * обращениям канала «Отзыв»: у изменённого автором отзыва может быть несколько обращений — отзыв считается один раз
+ * (последнее состояние), отвеченным — если ответили в любом из них. Период — по дате публикации отзыва.
+ */
+async function reviewsReport(ctx: ReportCtx, period: Period, group: ReportGroup) {
+  const q = new Params();
+  const t0 = q.p(period.t0);
+  const t1 = q.p(period.t1);
+  const tz = q.lazy(period.timezone);
+  const where = dimWhere(
+    q,
+    {
+      channel: 'rv.channel_kind',
+      queue: 'rv.queue_id',
+      enterprise: 'rv.enterprise_id',
+      department: 'rv.department_id',
+      topicPath: 'rv.topic_path',
+      object: 'rv.object_id',
+      important: 'rv.is_important',
+      operator: 'rv.assignee_id',
+      conversationId: 'rv.id::text',
+    },
+    ctx.filter,
+    ctx.principal,
+  );
+  const gexpr: Record<string, () => string> = {
+    object: () => 'rv.object_id::text',
+    enterprise: () => 'rv.enterprise_id::text',
+    rating: () => 'rv.rating::text',
+    platform: () => 'rv.platform',
+    day: () => localDay('rv.at', tz),
+  };
+  const sql = `WITH rv AS (
+      SELECT DISTINCT ON (c.channel_id, c.channel_meta #>> '{review,id}')
+             c.id, c.channel_id, c.channel_kind, c.queue_id, c.assignee_id, c.enterprise_id, c.department_id,
+             c.topic_path, c.object_id, c.is_important, c.created_at,
+             c.channel_meta #>> '{review,id}' AS rid,
+             (c.channel_meta #>> '{review,rating}')::int AS rating,
+             c.channel_meta #>> '{review,platform}' AS platform,
+             COALESCE((c.channel_meta #>> '{review,publishedAt}')::timestamptz, c.created_at) AS at
+        FROM conversation c
+       WHERE c.channel_kind = 'review' AND c.channel_meta #>> '{review,id}' IS NOT NULL
+       ORDER BY c.channel_id, c.channel_meta #>> '{review,id}', c.created_at DESC),
+    first AS (
+      SELECT c.channel_id, c.channel_meta #>> '{review,id}' AS rid, min(c.created_at) AS received_at
+        FROM conversation c WHERE c.channel_kind = 'review' GROUP BY 1, 2),
+    ans AS (
+      SELECT c.channel_id, c.channel_meta #>> '{review,id}' AS rid, min(m.delivered_at) AS answered_at
+        FROM conversation c
+        JOIN message m ON m.conversation_id = c.id AND m.direction = 'out' AND m.delivery_status = 'sent'
+       WHERE c.channel_kind = 'review' GROUP BY 1, 2),
+    b AS (
+      SELECT ${gexpr[group]!()} AS gkey, rv.rating, ans.answered_at,
+             EXTRACT(EPOCH FROM ans.answered_at - first.received_at)::float8 AS answer_s
+        FROM rv
+        JOIN first ON first.channel_id = rv.channel_id AND first.rid = rv.rid
+        LEFT JOIN ans ON ans.channel_id = rv.channel_id AND ans.rid = rv.rid
+       WHERE rv.at >= ${t0} AND rv.at < ${t1} AND ${where.join(' AND ')})
+    SELECT GROUPING(gkey) = 1 AS is_total, gkey,
+           count(*) AS n, round(avg(rating), 2) AS avg_rating,
+           count(*) FILTER (WHERE rating <= 2) AS negative,
+           count(answered_at) AS answered,
+           round(100.0 * count(answered_at) / NULLIF(count(*), 0), 1) AS answered_pct,
+           round(avg(answer_s)) AS answer_s,
+           count(*) FILTER (WHERE rating = 5) AS s5, count(*) FILTER (WHERE rating = 4) AS s4,
+           count(*) FILTER (WHERE rating = 3) AS s3, count(*) FILTER (WHERE rating = 2) AS s2,
+           count(*) FILTER (WHERE rating = 1) AS s1
+      FROM b GROUP BY GROUPING SETS ((gkey), ())`;
+  const raw = (await ctx.db.query(sql, q.list)).rows;
+  const { rows, totals } = await finish(ctx.db, group, raw, [
+    'n',
+    'avg_rating',
+    'negative',
+    'answered',
+    'answered_pct',
+    'answer_s',
+    's5',
+    's4',
+    's3',
+    's2',
+    's1',
+  ]);
+  if (group === 'rating') rows.sort((a, b) => String(b.key).localeCompare(String(a.key)));
+  return {
+    columns: [
+      col('n', 'Отзывов'),
+      col('avg_rating', 'Средняя оценка', 'num'),
+      col('negative', 'С оценкой 1–2'),
+      col('answered', 'Отвечено'),
+      col('answered_pct', 'Доля отвеченных, %', 'pct'),
+      col('answer_s', 'Среднее время до ответа', 'dur'),
+      col('s5', '«5»'),
+      col('s4', '«4»'),
+      col('s3', '«3»'),
+      col('s2', '«2»'),
+      col('s1', '«1»'),
+    ],
+    rows,
+    totals,
+    notes: [
+      'Отзывы с карт из Rocket Data по дате публикации; изменённый автором отзыв считается один раз (с последней оценкой).',
+      'Отвеченный — ответ из системы доставлен в Rocket Data; время до ответа — от поступления отзыва в систему.',
     ],
   };
 }

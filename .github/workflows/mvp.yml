@@ -88,7 +88,7 @@ jobs:
             cache: pnpm,
             cache-dependency-path: mvp/pnpm-lock.yaml,
           }
-      - run: APPS="api worker router realtime call-control connector-telegram connector-email web mock-telegram mock-selfservice" ops/build-images.sh v1 && SKIP_MEDIA=1 ops/build-images.sh v2
+      - run: APPS="api worker router realtime call-control connector-telegram connector-email connector-rocketdata web mock-telegram mock-selfservice" ops/build-images.sh v1 && SKIP_MEDIA=1 ops/build-images.sh v2
       - run: API_TAG=v1 docker compose -f infra/compose/docker-compose.yml up -d --wait
       - name: Сквозные тесты в браузере (Playwright)
         run: |
@@ -103,6 +103,8 @@ jobs:
         run: API_TAG=v2 node ops/test/webhooks-under-rollout.mjs v2 60
       - name: Поток Telegram и email во время обновления коннекторов — без потерь и дублей
         run: API_TAG=v2 node ops/test/connectors-under-rollout.mjs v2 60
+      - name: Поток отзывов Rocket Data и ответов во время обновления connector-rocketdata — без потерь и дублей
+        run: API_TAG=v2 node ops/test/reviews-under-rollout.mjs v2 60
       - name: Обновление Asterisk осушением узлов во время ~10 разговоров SIPp — 0 обрывов
         run: API_TAG=v2 node ops/test/calls-under-update.mjs media
       - name: Переключение call-control (активный → резервный) во время разговоров — 0 обрывов
@@ -162,21 +164,24 @@ jobs:
           git fetch --no-tags --depth=1 origin "${BASE#origin/}"
           git worktree add /tmp/base FETCH_HEAD
           cd /tmp/base/mvp && pnpm install --frozen-lockfile
-          APPS="api worker router realtime call-control connector-telegram connector-email web mock-telegram mock-selfservice" \
+          # connector-rocketdata — с Ф13 (в более ранней базовой ветке его нет).
+          APPS="api worker router realtime call-control connector-telegram connector-email $([ -d apps/connector-rocketdata ] && echo connector-rocketdata) web mock-telegram mock-selfservice" \
             MEDIA_TAG=n ops/build-images.sh n
       - name: Версия N+1 — этот PR (с тестовой миграцией под нагрузкой)
         run: |
           pnpm install --frozen-lockfile
-          APPS="api worker router realtime call-control connector-telegram connector-email web" MEDIA_TAG=n1 \
+          APPS="api worker router realtime call-control connector-telegram connector-email connector-rocketdata web" MEDIA_TAG=n1 \
             EXTRA_MIGRATIONS_DIR=ops/zero-downtime-test/probe PREV_WEB_IMAGE=cc/web:n ops/build-images.sh n1
       # Компоненты, чьи известные дефекты версии N исправлены в Ф11, стартуют сразу версией N+1 — только пока базовая
       # ветка их не содержит (условие само перестаёт срабатывать после слияния):
       #  - Kamailio (класс C, обновляется отдельно в окно): dispatcher без DNS-кэша — иначе осушение Asterisk даёт 503;
-      #  - worker: последовательная обработка входящих не держит 17 сообщ./с — хвост копится ещё до замены.
+      #  - worker: последовательная обработка входящих не держит 17 сообщ./с — хвост копится ещё до замены;
+      #  - connector-rocketdata (Ф13): новый сервис — в версии N его нет.
       - name: Стек версии N
         run: |
           grep -q use_dns_cache /tmp/base/mvp/infra/kamailio/kamailio.cfg || export KAMAILIO_TAG=n1
           grep -q INBOUND_CONCURRENCY /tmp/base/mvp/apps/worker/src/main.ts || export WORKER_TAG=n1
+          [ -d /tmp/base/mvp/apps/connector-rocketdata ] || export CONNECTOR_ROCKETDATA_TAG=n1
           echo "KAMAILIO_TAG=${KAMAILIO_TAG:-n}, WORKER_TAG=${WORKER_TAG:-n}"
           API_TAG=n MEDIA_TAG=n MOCK_TELEGRAM_TAG=n docker compose -f infra/compose/docker-compose.yml up -d --wait
       - run: cd e2e && pnpm exec playwright install --with-deps chromium
@@ -193,6 +198,7 @@ jobs:
           path: |
             mvp/out/zero-downtime-report.json
             mvp/out/releases/
+            mvp/out/zdt-operators/
           if-no-files-found: ignore
       - name: Итог автотеста и журналы (без журнала доступа Traefik)
         if: failure()

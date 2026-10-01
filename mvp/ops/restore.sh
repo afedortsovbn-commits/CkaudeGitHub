@@ -17,7 +17,7 @@ if [ "${1:-}" = --verify ]; then MODE=verify; shift; fi
 DIR="${1:?укажите каталог копии: ops/restore.sh [--verify] <каталог>}"
 [ -f "$DIR/db.dump" ] && [ -f "$DIR/s3/manifest.json" ] || { echo "в $DIR нет db.dump или s3/manifest.json" >&2; exit 1; }
 ABS="$(cd "$DIR" && pwd)"
-SERVICES="${SERVICES:-connector-telegram connector-email worker router realtime api call-control web}"
+SERVICES="${SERVICES:-connector-telegram connector-email connector-rocketdata worker router realtime api call-control web}"
 cid="$(dc ps -q api 2>/dev/null | head -1 || true)"
 TAG="${API_TAG:-$( [ -n "$cid" ] && docker inspect -f '{{.Config.Image}}' "$cid" | sed 's/.*://' || echo dev)}"
 s3cli() { API_TAG="$TAG" dc run --rm --no-deps -T --user "$(id -u):$(id -g)" -v "$ABS/s3:/backup:ro" migrate node dist/cli/storage-backup.js "$@"; }

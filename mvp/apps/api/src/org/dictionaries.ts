@@ -39,6 +39,31 @@ export interface DictSpec {
   ) => Record<string, unknown>;
   /** Представление строки в ответах и журнале аудита (маскирование секретов). */
   present?: <T extends Record<string, unknown> | null>(row: T) => T;
+  /** Проверка изменения существующей строки (update/activate/deactivate): исключение — отказ. */
+  guard?: (action: string, data: Record<string, unknown>, before: Record<string, unknown>) => void;
+}
+
+/** Поля объекта, которые ведёт синхронизация со внешней системой (Ф13, M-ORG-06): вручную не меняются. */
+const SYNCED_OBJECT_FIELDS: [api: string, col: string][] = [
+  ['code', 'code'],
+  ['name', 'name'],
+  ['address', 'address'],
+  ['enterpriseId', 'enterprise_id'],
+  ['externalIds', 'external_ids'],
+];
+const same = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+
+function guardSyncedObject(action: string, data: Record<string, unknown>, before: Record<string, unknown>) {
+  if (before.source !== 'sync') return;
+  const msg = 'Объект синхронизируется из внешней системы';
+  if (action === 'activate' || action === 'deactivate')
+    throw badRequest(`${msg}: активность меняет ежедневная синхронизация`);
+  const changed = SYNCED_OBJECT_FIELDS.filter(([api, col]) => api in data && !same(data[api], before[col]));
+  if (changed.length)
+    throw badRequest(
+      `${msg}: поля ${changed.map(([api]) => api).join(', ')} меняются только в источнике`,
+      changed.map(([api]) => ({ path: api, message: 'синхронизируемое поле' })),
+    );
 }
 
 const code = z.string().trim().min(1).max(64);
@@ -95,6 +120,7 @@ export const DICTIONARIES: Record<string, DictSpec> = {
     search: ['code', 'name', 'address'],
     scope: { enterprise: 't.enterprise_id' },
     writePerm: 'admin.directories',
+    guard: guardSyncedObject,
   },
   dispositions: {
     table: 'disposition',
@@ -211,7 +237,7 @@ export const DICTIONARIES: Record<string, DictSpec> = {
     table: 'channel',
     title: 'Канал',
     fields: [
-      f('kind', z.enum(['webchat', 'app', 'telegram', 'email', 'api', 'voice'])),
+      f('kind', z.enum(['webchat', 'app', 'telegram', 'email', 'api', 'voice', 'review'])),
       f('name', name),
       f('queueId', uuid.nullable().optional()),
       // Ф7: бот канала (текстовый сценарий flow-engine) — ведёт новые обращения до перевода на оператора.

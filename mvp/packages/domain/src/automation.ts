@@ -90,7 +90,10 @@ async function loadConv(tx: PoolClient, id: string): Promise<ConvRow> {
   return rows[0];
 }
 
-/** Активные правила вида kind для канала обращения (пустые списки каналов — все текстовые каналы). */
+/**
+ * Активные правила вида kind для канала обращения (пустые списки каналов — все текстовые каналы). Ответ на отзыв
+ * публичен (Ф13), поэтому для канала «Отзыв» действуют только правила, где он выбран явно.
+ */
 export async function rulesFor(
   tx: PoolClient | Pool,
   kind: RuleKind,
@@ -102,6 +105,7 @@ export async function rulesFor(
       WHERE is_active AND kind = $1
         AND ($2::uuid IS NULL OR cardinality(channel_ids) = 0 OR $2 = ANY (channel_ids))
         AND ($3::text IS NULL OR cardinality(channel_kinds) = 0 OR $3 = ANY (channel_kinds))
+        AND ($3::text IS DISTINCT FROM 'review' OR $2 = ANY (channel_ids) OR $3 = ANY (channel_kinds))
       ORDER BY sort_order, name`,
     [kind, channelId, channelKind],
   );
@@ -536,6 +540,7 @@ export async function sweepInactivity(tx: PoolClient, now = new Date()): Promise
         WHERE c.status IN ('active', 'bot') AND c.channel_kind <> 'voice'
           AND (cardinality($1::uuid[]) = 0 OR c.channel_id = ANY ($1))
           AND (cardinality($2::text[]) = 0 OR c.channel_kind = ANY ($2))
+          AND (c.channel_kind <> 'review' OR c.channel_id = ANY ($1) OR c.channel_kind = ANY ($2))
           AND c.last_message_at < $3::timestamptz - make_interval(secs => $4)
           AND (SELECT m.direction FROM message m WHERE m.conversation_id = c.id AND m.direction IN ('in', 'out')
                 ORDER BY m.sent_at DESC, m.seq DESC LIMIT 1) = 'out'

@@ -4,6 +4,7 @@ import { t } from './i18n'; /**
  */
 let accessToken: string | null = null;
 let refreshing: Promise<boolean> | null = null;
+const REFRESH_RETRIES = 4;
 const listeners = new Set<() => void>();
 
 export class ApiError extends Error {
@@ -72,15 +73,26 @@ export async function authBlobUrl(path: string): Promise<string> {
 /** Аудио записи разговора как blob-URL для <audio> (авторизация через Bearer). */
 export const recordingUrl = (id: string) => authBlobUrl(`/recordings/${id}`);
 
+/**
+ * Обновление сессии. Сбой сети или 5xx (смена сети браузером, замена экземпляров при выпуске) — не выход из системы:
+ * повторяем с паузой. Если ответ с новым токеном потерялся, сервер ещё 2 минуты принимает предыдущий.
+ */
 export async function refreshSession(): Promise<boolean> {
   refreshing ??= (async () => {
     try {
-      const r = await fetch('/api/v1/auth/refresh', { method: 'POST', credentials: 'same-origin' });
-      if (!r.ok) return false;
-      accessToken = ((await r.json()) as { accessToken: string }).accessToken;
-      return true;
-    } catch {
-      return false;
+      for (let attempt = 0; ; attempt++) {
+        try {
+          const r = await fetch('/api/v1/auth/refresh', { method: 'POST', credentials: 'same-origin' });
+          if (r.ok) {
+            accessToken = ((await r.json()) as { accessToken: string }).accessToken;
+            return true;
+          }
+          if (r.status < 500 || attempt >= REFRESH_RETRIES) return false;
+        } catch {
+          if (attempt >= REFRESH_RETRIES) return false;
+        }
+        await new Promise((ok) => setTimeout(ok, 1000 * (attempt + 1)));
+      }
     } finally {
       setTimeout(() => (refreshing = null), 0);
     }

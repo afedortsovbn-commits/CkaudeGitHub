@@ -15,6 +15,7 @@ import { IvrController } from './ivr/ivr.controller';
 import { ChannelsController } from './org/channels.controller';
 import { DictController } from './org/dict.controller';
 import { MatrixController } from './org/matrix.controller';
+import { ObjectSyncController } from './org/objects-sync.controller';
 import { OrgController } from './org/org.controller';
 import { UsersController } from './org/users.controller';
 import { PingController } from './ping.controller';
@@ -59,6 +60,7 @@ export class AppModule {
         ReportsController,
         ReleaseController,
         PrivacyController,
+        ObjectSyncController,
       ],
       providers: [
         { provide: APP_CONTEXT, useValue: ctx },

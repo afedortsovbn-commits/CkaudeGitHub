@@ -6,7 +6,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 TAG="${1:-${API_TAG:-dev}}"
-APPS="${APPS:-api worker router realtime call-control connector-telegram connector-email web mock-selfservice}"
+APPS="${APPS:-api worker router realtime call-control connector-telegram connector-email connector-rocketdata web mock-selfservice}"
 pnpm install --frozen-lockfile ${PNPM_OFFLINE:+--offline} ${PNPM_STORE:+--store-dir "$PNPM_STORE"}
 pnpm build
 # Медиа (Asterisk, Kamailio) — свои образы из шаблонов конфигурации; обновляются осушением (ops/update-media.sh),

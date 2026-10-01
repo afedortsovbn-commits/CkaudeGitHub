@@ -146,6 +146,7 @@ export class DictController {
     return withTx(this.ctx.pool, async (tx) => {
       const before = await one(tx, `SELECT * FROM ${s.table} WHERE id = $1 FOR UPDATE`, [id]);
       if (!before) throw notFound(s.title);
+      s.guard?.(action, data, before);
       const { isActive, ...rest } = data;
       const prepared =
         s.prepare && action === 'update' ? s.prepare(rest, before, this.ctx.config.SECRETS_KEY) : rest;

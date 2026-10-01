@@ -210,7 +210,16 @@ export function ObjectsPage() {
             label: t.org.predpriyatie,
             render: (r) => entName.get(String(r.enterpriseId)) ?? '',
           },
-          { key: 'source', label: t.org.istochnik },
+          {
+            key: 'source',
+            label: t.org.istochnik,
+            render: (r) => t.reviews.sources[String(r.source)] ?? String(r.source ?? ''),
+          },
+          {
+            key: 'rocketdata',
+            label: t.reviews.rocketdataPoint,
+            render: (r) => String((r.externalIds as Record<string, string> | undefined)?.rocketdata ?? ''),
+          },
         ]}
         fields={[
           {
@@ -223,7 +232,19 @@ export function ObjectsPage() {
           { key: 'code', label: t.org.kod, required: true },
           { key: 'name', label: t.org.nazvanie, required: true },
           { key: 'address', label: t.org.adres },
+          { key: 'rocketdata', label: t.reviews.rocketdataId, description: t.reviews.rocketdataIdHint },
         ]}
+        toForm={(r) => ({
+          ...r,
+          rocketdata: (r.externalIds as Record<string, string> | undefined)?.rocketdata ?? '',
+        })}
+        fromForm={(v, editing) => {
+          const { rocketdata, ...rest } = v;
+          const ext = { ...((editing?.externalIds ?? {}) as Record<string, string>) };
+          if (rocketdata) ext.rocketdata = String(rocketdata);
+          else delete ext.rocketdata;
+          return { ...rest, externalIds: ext };
+        }}
         toolbar={
           <Button variant="outline" onClick={() => setImportOpen(true)}>
             {t.org.importCsv}

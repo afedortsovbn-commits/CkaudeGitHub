@@ -121,7 +121,12 @@ async function assignOne(pool: Pool, conversationId: string, maxChats: number): 
   });
 }
 
-/** Один проход распределения: перебирает ожидающие обращения по приоритету и пытается их назначить. */
+/**
+ * Один проход распределения: перебирает ожидающие обращения по приоритету и пытается их назначить.
+ * Пакет берётся из головы **каждой** очереди (до `batchSize` на очередь), а не из общей головы: очередь без
+ * готовых операторов с длинным хвостом (например, отзывы с карт после первой загрузки, Ф13) иначе занимала
+ * весь пакет, и обращения других очередей не распределялись.
+ */
 export async function assignQueued(
   pool: Pool,
   cfg: AssignConfig,
@@ -130,9 +135,11 @@ export async function assignQueued(
 ): Promise<number> {
   const waiting = await one<{ ids: string[] }>(
     pool,
-    `SELECT coalesce(array_agg(id), '{}') AS ids FROM (
-       SELECT id FROM conversation WHERE status = 'queued' ORDER BY priority DESC, queued_at ASC LIMIT $1
-     ) x`,
+    `SELECT coalesce(array_agg(id ORDER BY priority DESC, queued_at ASC), '{}') AS ids FROM (
+       SELECT id, priority, queued_at,
+              row_number() OVER (PARTITION BY queue_id ORDER BY priority DESC, queued_at ASC) AS rn
+         FROM conversation WHERE status = 'queued'
+     ) x WHERE rn <= $1`,
     [cfg.batchSize],
   );
   const maxChats = await currentMaxChats(pool, cfg.maxChatsFallback);

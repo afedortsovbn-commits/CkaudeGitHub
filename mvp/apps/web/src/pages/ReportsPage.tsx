@@ -63,6 +63,8 @@ const GROUP_LABELS: Record<string, string> = {
   object: t.reports.poObektam,
   day: t.reports.poDnyam,
   assignee: t.reports.poOtvetstvennymIKuratoram,
+  rating: t.reviews.byRating,
+  platform: t.reviews.byPlatform,
 };
 
 /** Сегодняшняя дата по Минску (единый часовой пояс отчётов, M-REP-03). */

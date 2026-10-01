@@ -9,6 +9,8 @@
 #   MEDIA_NODES="…"       — какие узлы (по умолчанию asterisk-1 asterisk-2; также coturn-N)
 #   SERVICES="…"          — состав и порядок (по умолчанию коннекторы → worker → router → realtime → api →
 #                           call-control → web)
+#   START_SERVICES="…"    — новые сервисы релиза, которые запустить, если они ещё не работают (например,
+#                           connector-rocketdata при выпуске Ф13); прочие незапущенные сервисы пропускаются
 #   COMPAT_BASE=<ref>     — ревизия предыдущего релиза для проверки совместимости (по умолчанию — последний
 #                           тег release-*, иначе origin/main); SKIP_COMPAT=1 — не проверять (сервер без git)
 #   MIGRATION_LOCK_TIMEOUT_MS (5000) — сколько миграция ждёт блокировку, прежде чем повторить (не выстраивает
@@ -29,7 +31,7 @@ ENV_FILE="$(dirname "$COMPOSE_FILE")/.env"
 MODE=release
 if [ "${1:-}" = --rollback ]; then MODE=rollback; shift; fi
 TAG="${1:?укажите тег образов: ops/release.sh <тег>}"
-SERVICES="${SERVICES:-connector-telegram connector-email worker router realtime api call-control web}"
+SERVICES="${SERVICES:-connector-telegram connector-email connector-rocketdata worker router realtime api call-control web}"
 REPORT_DIR="${REPORT_DIR:-out/releases}"
 export MIGRATION_LOCK_TIMEOUT_MS="${MIGRATION_LOCK_TIMEOUT_MS:-5000}"
 dc() { docker compose -f "$COMPOSE_FILE" "$@"; }
@@ -122,7 +124,7 @@ finish() {
 
 # ---------------------------------------------------------------- 3. поэтапная замена
 for s in $SERVICES; do
-  if [ -z "$(dc ps -q "$s" 2>/dev/null)" ]; then
+  if [ -z "$(dc ps -q "$s" 2>/dev/null)" ] && [[ " ${START_SERVICES:-} " != *" $s "* ]]; then
     log "$s не запущен — пропуск"
     step "rollout:$s" skipped 0
     continue
@@ -170,7 +172,7 @@ fi
 if [ "${PERSIST_TAGS:-1}" = 1 ]; then
   touch "$ENV_FILE"
   # Теги отдельных сервисов перекрыли бы общий — удаляем их, общий тег — новый.
-  sed -i -E '/^(API|WORKER|ROUTER|REALTIME|WEB|CONNECTOR_TELEGRAM|CONNECTOR_EMAIL|CALL_CONTROL)_TAG=/d' "$ENV_FILE"
+  sed -i -E '/^(API|WORKER|ROUTER|REALTIME|WEB|CONNECTOR_TELEGRAM|CONNECTOR_EMAIL|CONNECTOR_ROCKETDATA|CALL_CONTROL)_TAG=/d' "$ENV_FILE"
   echo "API_TAG=$TAG" >>"$ENV_FILE"
   if [ -n "${MEDIA_TAG:-}" ] && [ "$MODE" = release ]; then
     sed -i -E '/^MEDIA_TAG=/d' "$ENV_FILE"

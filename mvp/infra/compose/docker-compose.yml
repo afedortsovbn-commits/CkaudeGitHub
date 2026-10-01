@@ -344,6 +344,28 @@ services:
       nats-3: { condition: service_healthy }
       s3: { condition: service_healthy }
 
+  # Ф13: отзывы с карт через Rocket Data (M-CH-10). Опрос ведёт владелец аренды, ответы доставляют оба экземпляра.
+  connector-rocketdata:
+    image: cc/connector-rocketdata:${CONNECTOR_ROCKETDATA_TAG:-${API_TAG:-dev}}
+    restart: unless-stopped
+    deploy:
+      replicas: ${CONNECTOR_ROCKETDATA_REPLICAS:-2}
+    environment:
+      <<: *app-env
+      SERVICE_NAME: connector-rocketdata
+      # Выход в интернет из контура — только к API Rocket Data, через прокси (пусто — напрямую).
+      HTTPS_PROXY: ${ROCKETDATA_PROXY:-}
+      HTTP_PROXY: ${ROCKETDATA_PROXY:-}
+      NO_PROXY: ${ROCKETDATA_NO_PROXY:-localhost,127.0.0.1,mock-selfservice}
+      NODE_USE_ENV_PROXY: '1'
+    networks: [cc]
+    stop_grace_period: 35s
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      nats-1: { condition: service_healthy }
+      nats-2: { condition: service_healthy }
+      nats-3: { condition: service_healthy }
+
   # --- телефония (Ф5): Kamailio (SIP-периметр), Asterisk ×2 (медиа), coturn ×2 (TURN) ---
   kamailio:
     image: cc/kamailio:${KAMAILIO_TAG:-${MEDIA_TAG:-dev}}

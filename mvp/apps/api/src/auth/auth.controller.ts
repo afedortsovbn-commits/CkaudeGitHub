@@ -16,6 +16,8 @@ import type { Pool, PoolClient } from 'pg';
 
 const COOKIE = 'cc_rt';
 const COOKIE_PATH = '/api/v1/auth';
+/** Сколько секунд после ротации ещё принимается предыдущий refresh-токен (ответ с новым мог потеряться). */
+const REFRESH_GRACE_S = 120;
 
 const LoginBody = z.object({ email: z.string().trim().min(3), password: z.string().min(1) });
 const TotpLoginBody = z.object({ mfaToken: z.string().min(10), code: z.string().trim().min(6).max(8) });
@@ -251,12 +253,19 @@ export class AuthController {
     const next = newRefreshToken();
     const session = await one<{ id: string; user_id: string }>(
       this.ctx.pool,
-      `UPDATE auth_session s SET refresh_hash = $2, expires_at = now() + make_interval(days => $3)
+      // Ротация при каждом обновлении. Предыдущий токен ещё REFRESH_GRACE_S принимается: ответ с новым мог не дойти
+      // до браузера (смена сети, обрыв соединения при замене экземпляров) — иначе оператора выбросит на вход.
+      `UPDATE auth_session s
+          SET refresh_hash = $2, expires_at = now() + make_interval(days => $3),
+              prev_refresh_hash = CASE WHEN s.refresh_hash = $1 THEN s.refresh_hash ELSE s.prev_refresh_hash END,
+              rotated_at = CASE WHEN s.refresh_hash = $1 THEN now() ELSE s.rotated_at END
          FROM app_user u
-        WHERE s.refresh_hash = $1 AND s.revoked_at IS NULL AND s.expires_at > now()
+        WHERE (s.refresh_hash = $1
+               OR (s.prev_refresh_hash = $1 AND s.rotated_at > now() - make_interval(secs => $4)))
+          AND s.revoked_at IS NULL AND s.expires_at > now()
           AND u.id = s.user_id AND u.is_active AND u.can_login
         RETURNING s.id, s.user_id`,
-      [hashToken(token), hashToken(next), this.ctx.config.REFRESH_TOKEN_TTL_DAYS],
+      [hashToken(token), hashToken(next), this.ctx.config.REFRESH_TOKEN_TTL_DAYS, REFRESH_GRACE_S],
     );
     if (!session) {
       res.clearCookie(COOKIE, { path: COOKIE_PATH });
@@ -272,9 +281,10 @@ export class AuthController {
   async logout(@Req() req: FastifyRequest & Cookies, @Res({ passthrough: true }) res: CookieReply) {
     const token = req.cookies?.[COOKIE];
     if (token) {
-      await this.ctx.pool.query('UPDATE auth_session SET revoked_at = now() WHERE refresh_hash = $1', [
-        hashToken(token),
-      ]);
+      await this.ctx.pool.query(
+        'UPDATE auth_session SET revoked_at = now() WHERE refresh_hash = $1 OR prev_refresh_hash = $1',
+        [hashToken(token)],
+      );
       this.ctx.principals.invalidate();
     }
     res.clearCookie(COOKIE, { path: COOKIE_PATH });

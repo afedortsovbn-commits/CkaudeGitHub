@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 import {
   CHANNEL_SECRET_KEYS,
   EmailChannelConfigSchema,
+  RocketDataChannelConfigSchema,
   SECRET_MASK,
   TelegramChannelConfigSchema,
   VoiceChannelConfigSchema,
@@ -32,6 +33,8 @@ const SCHEMAS: Record<string, ZodTypeAny> = {
   telegram: TelegramChannelConfigSchema,
   email: EmailChannelConfigSchema,
   voice: VoiceChannelConfigSchema,
+  // Ф13: отзывы с карт — подключение к API Rocket Data.
+  review: RocketDataChannelConfigSchema,
 };
 
 const SECRETS: readonly string[] = CHANNEL_SECRET_KEYS;

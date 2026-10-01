@@ -43,7 +43,61 @@ const CHANNEL: Record<string, string> = {
   email: 'Email',
   voice: t.workspace.zvonok,
   api: t.workspace.vneshnyayaSistema,
+  review: t.reviews.channel,
 };
+const stars = (n: number) => `${'★'.repeat(n)}${'☆'.repeat(Math.max(0, 5 - n))}`;
+
+interface ReviewInfo {
+  id: string;
+  platform: string;
+  rating: number | null;
+  author: string | null;
+  url: string | null;
+  publishedAt: string | null;
+  locationId: string | null;
+  locationCode: string | null;
+}
+
+/** Отзыв с карт (Ф13, M-CH-10): площадка, оценка, объект, автор, ссылка на отзыв; ответ публикуется на площадке. */
+function ReviewPanel({ conv }: { conv: Row }) {
+  const r = conv.review as ReviewInfo | null;
+  if (!r) return null;
+  const low = r.rating !== null && r.rating <= 2;
+  return (
+    <Paper withBorder p="xs" data-testid="review-panel">
+      <Group justify="space-between" wrap="nowrap">
+        <Group gap="xs">
+          <Badge variant="light">{t.reviews.platforms[r.platform] ?? r.platform}</Badge>
+          <Text
+            c={low ? 'red' : 'yellow.7'}
+            fw={700}
+            data-testid="review-rating"
+            title={t.reviews.ratingTitle(r.rating ?? '—')}
+          >
+            {r.rating ? stars(r.rating) : t.reviews.noRating}
+          </Text>
+        </Group>
+        {r.url ? (
+          <a href={r.url} target="_blank" rel="noreferrer" data-testid="review-link">
+            {t.reviews.openOnPlatform}
+          </a>
+        ) : null}
+      </Group>
+      <Text size="xs" c="dimmed" mt={4}>
+        {r.author ?? t.reviews.noAuthor}
+        {r.publishedAt
+          ? ` · ${new Date(r.publishedAt).toLocaleString('ru-RU', { timeZone: 'Europe/Minsk' })}`
+          : ''}
+        {t.reviews.objectLabel}
+        <span data-testid="review-object">
+          {conv.objectName
+            ? String(conv.objectName)
+            : t.reviews.notMatched(r.locationCode ?? r.locationId ?? '—')}
+        </span>
+      </Text>
+    </Paper>
+  );
+}
 const STATUS: Record<string, string> = {
   bot: t.workspace.uBotaVIvr,
   offered: t.workspace.predlozheno,
@@ -220,6 +274,11 @@ function List({
             <Badge size="xs" variant="light">
               {CHANNEL[String(c.channelKind)] ?? String(c.channelKind)}
             </Badge>
+            {c.reviewRating ? (
+              <Badge size="xs" variant="outline" color={Number(c.reviewRating) <= 2 ? 'red' : 'yellow'}>
+                {stars(Number(c.reviewRating))}
+              </Badge>
+            ) : null}
             {c.isImportant ? (
               <Badge size="xs" color="red">
                 {t.workspace.osoboVazhnoe}
@@ -303,6 +362,13 @@ function autoLabel(m: Row): string {
   if (!meta?.auto) return '';
   if (meta.auto === 'bot') return meta.external ? t.workspace.vneshniyBot(meta.external) : t.workspace.bot;
   return t.workspace.avtootvet;
+}
+
+/** Отзыв (Ф13): оценка этой редакции и отметка «изменён автором». */
+function reviewNote(m: Row): string {
+  const r = (m.meta as { review?: { rating: number | null; edited?: boolean } } | undefined)?.review;
+  if (!r) return '';
+  return `${r.rating ? ` · ${stars(r.rating)}` : ''}${r.edited ? t.reviews.edited : ''}`;
 }
 
 /** Автор заметки: сотрудник, внешняя система (ключ API, Ф9) или система. */
@@ -406,7 +472,7 @@ function Messages({ conv, typing, onTyping }: { conv: Row; typing: boolean; onTy
                 {dir !== 'system' && (
                   <Text size="xs" c="dimmed">
                     {dir === 'in'
-                      ? String(conv.contactName)
+                      ? `${String(conv.contactName)}${reviewNote(m)}`
                       : dir === 'note'
                         ? t.workspace.zametka(noteAuthor(m))
                         : autoLabel(m) || String(m.authorName ?? '')}{' '}
@@ -502,7 +568,13 @@ function Messages({ conv, typing, onTyping }: { conv: Row; typing: boolean; onTy
           autosize
           minRows={2}
           maxRows={6}
-          placeholder={note ? t.workspace.vnutrennyayaZametkaKlientEe : t.workspace.otvetKlientuShablonyEnter}
+          placeholder={
+            note
+              ? t.workspace.vnutrennyayaZametkaKlientEe
+              : conv.channelKind === 'review'
+                ? t.reviews.replyPlaceholder
+                : t.workspace.otvetKlientuShablonyEnter
+          }
           value={text}
           data-testid="reply"
           onChange={(e) => {
@@ -533,7 +605,13 @@ function Messages({ conv, typing, onTyping }: { conv: Row; typing: boolean; onTy
             }}
           >
             {(props) => (
-              <Button {...props} variant="default" size="xs" data-testid="attach">
+              <Button
+                {...props}
+                variant="default"
+                size="xs"
+                data-testid="attach"
+                disabled={!note && conv.channelKind === 'review'}
+              >
                 {t.workspace.fayl}
               </Button>
             )}
@@ -1316,6 +1394,7 @@ export function WorkspacePage() {
                 </Group>
               )}
             </Group>
+            {conv.data.channelKind === 'review' && <ReviewPanel conv={conv.data} />}
             <Messages
               conv={conv.data}
               typing={typingContact === conv.data.contactId}

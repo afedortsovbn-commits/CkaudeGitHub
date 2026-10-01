@@ -1,5 +1,5 @@
 import { type Principal, scopeFilter } from '@cc/auth';
-import type { ReportFilter, ReportGroup } from '@cc/contracts';
+import { type ReportFilter, type ReportGroup, reviewPlatformName } from '@cc/contracts';
 import type { Db } from '../lib/db';
 import { badRequest } from '../lib/errors';
 
@@ -255,6 +255,12 @@ export async function groupLabels(db: Db, group: ReportGroup, keys: string[]): P
       if (ids.length)
         await q(`SELECT t.id::text, string_agg(p.name, ' / ' ORDER BY array_position(t.path, p.id)) AS name
                    FROM topic t JOIN topic p ON p.id = ANY(t.path) WHERE t.id = ANY($1::uuid[]) GROUP BY t.id`);
+      break;
+    case 'rating':
+      keys.forEach((k) => out.set(k, `${'★'.repeat(Number(k))}${'☆'.repeat(5 - Number(k))} (${k})`));
+      break;
+    case 'platform':
+      keys.forEach((k) => out.set(k, reviewPlatformName(k)));
       break;
     case 'assignee':
       break;
