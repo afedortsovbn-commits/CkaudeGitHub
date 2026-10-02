@@ -38,7 +38,14 @@ export interface CallView {
   consult: { state: 'dialing' | 'talking'; label: string } | null;
   /** Входящий — консультация коллеги: звонок станет своим, когда коллега соединит клиента. */
   consultOf: boolean;
+  /**
+   * Ф14: у оператора — супервизор суфлирует или вмешался (при прослушивании — null, оператор его не видит); у
+   * супервизора на прослушивании — текущий режим подключения.
+   */
+  supervisorMode: SupervisorMode | null;
 }
+
+export type SupervisorMode = 'listen' | 'whisper' | 'barge';
 
 export interface SoftphoneState {
   reg: RegState;
@@ -83,6 +90,7 @@ interface CallStateEvent {
   onHold: boolean;
   agentUserId: string | null;
   consult?: { state: 'dialing' | 'talking'; label: string; userId: string | null } | null;
+  supervisor?: { userId: string; mode: SupervisorMode } | null;
 }
 
 /** Ограничения микрофона по умолчанию (демо-страница); софтфон берёт выбранное устройство и обработку. */
@@ -187,6 +195,13 @@ class Softphone {
       if (d.agentUserId !== this.userId && this.state.call?.callId !== d.callId) return;
       if (!this.state.call || this.state.call.state === 'ended') return;
       if (this.state.call.callId && this.state.call.callId !== d.callId) return;
+      // Супервизор на прослушивании (Ф14): режим подключения; перехват — звонок становится своим.
+      if (this.state.call.listen) {
+        if (d.agentUserId === this.userId)
+          this.setCall({ listen: false, supervisorMode: null, callId: d.callId, onHold: d.onHold });
+        else if (d.supervisor?.userId === this.userId) this.setCall({ supervisorMode: d.supervisor.mode });
+        return;
+      }
       // Адресат консультации: звонок станет своим, когда коллега соединит клиента (ведущий — этот оператор).
       if (this.state.call.consultOf) {
         if (d.agentUserId === this.userId) this.setCall({ consultOf: false, onHold: d.onHold });
@@ -197,6 +212,8 @@ class Softphone {
         conversationId: d.conversationId,
         onHold: d.onHold,
         consult: d.consult ? { state: d.consult.state, label: d.consult.label } : null,
+        // Плашка оператору — только суфлирование и вмешательство; прослушивание оператор не видит.
+        supervisorMode: d.supervisor && d.supervisor.mode !== 'listen' ? d.supervisor.mode : null,
       });
     });
   }
@@ -245,8 +262,12 @@ class Softphone {
         remote: remote?.uri?.user ?? '',
         remoteName: remote?.display_name ?? '',
         conversationId: header('X-CC-Conversation') ?? this.pendingConversation,
-        callId: header('X-CC-Call'),
+        // Прослушивание: X-CC-Listen — вызов, к которому подключается супервизор (смена режима, перехват — Ф14).
+        callId: header('X-CC-Call') ?? header('X-CC-Listen'),
         listen: !!header('X-CC-Listen'),
+        supervisorMode: header('X-CC-Listen')
+          ? ((header('X-CC-Listen-Mode') as SupervisorMode | null) ?? 'listen')
+          : null,
         consult: null,
         consultOf: !!header('X-CC-Consult'),
         startedAt: null,

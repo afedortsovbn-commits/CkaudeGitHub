@@ -48,6 +48,33 @@ describe('deliver', () => {
     // Классифицированное чужое по-прежнему не видно.
     expect(deliver({ kind: 'operator', principal: p }, ev('conversation.created'))).toBeNull();
   });
+  it('подсказка супервизора (Ф14): назначенному оператору и супервизору — да, другому оператору области — нет', () => {
+    const hint = ev('conversation.message_created', {
+      assigneeId: 'u9',
+      message: { id: 'm', direction: 'note', body: 'подсказка', meta: { hint: true } },
+    });
+    expect(deliver({ kind: 'operator', principal: op([], true) }, hint)).toBeNull();
+    expect(
+      deliver(
+        { kind: 'operator', principal: op([], true, ['conversations.work', 'supervisor.monitor']) },
+        hint,
+      ),
+    ).not.toBeNull();
+    const mine = ev('conversation.message_created', {
+      assigneeId: 'u1',
+      message: { id: 'm', direction: 'note', body: 'подсказка', meta: { hint: true } },
+    });
+    expect(deliver({ kind: 'operator', principal: op([]) }, mine)).not.toBeNull();
+    expect(deliver({ kind: 'client', contactId: 'k1', channelId: 'ch' }, mine)).toBeNull();
+  });
+  it('перехват (Ф14): оператор, у которого забрали обращение, получает событие и вне своей области', () => {
+    const p = op([{ enterpriseIds: ['e2'], departmentIds: null, topicIds: null }]);
+    const e = ev('conversation.updated', { assigneeId: 'sup', action: 'transferred', notifyUserIds: ['u1'] });
+    expect(deliver({ kind: 'operator', principal: p }, e)).not.toBeNull();
+    expect(
+      deliver({ kind: 'operator', principal: p }, ev('conversation.updated', { assigneeId: 'sup' })),
+    ).toBeNull();
+  });
   it('сотрудник без права работы с обращениями ничего не получает', () => {
     expect(
       deliver({ kind: 'operator', principal: op([], true, ['tickets.work']) }, ev('conversation.created')),

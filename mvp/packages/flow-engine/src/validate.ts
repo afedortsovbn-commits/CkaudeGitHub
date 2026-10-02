@@ -58,6 +58,16 @@ export function parseGraph(input: unknown): FlowGraph | string {
   return { version: 1, kind: g.kind, nodes, edges };
 }
 
+function checkWait(p: Record<string, unknown>, err: (m: string) => void) {
+  if (p.waitSec !== undefined && p.waitSec !== null && p.waitSec !== 0 && !isNum(p.waitSec, 10, 86_400))
+    err('ждать ответа — от 10 с до 24 ч');
+  if (p.reminders !== undefined && p.reminders !== null && !isNum(p.reminders, 0, 5))
+    err('напоминаний — от 0 до 5');
+  if (p.remindText !== undefined && typeof p.remindText !== 'string') err('некорректный текст напоминания');
+  else if (typeof p.remindText === 'string' && p.remindText.length > 4000)
+    err('Напоминание длиннее 4000 символов');
+}
+
 function checkParams(n: FlowNode, err: (m: string) => void) {
   const p = n.params;
   const audioList = (key: string, required: boolean, what: string) => {
@@ -162,6 +172,7 @@ function checkParams(n: FlowNode, err: (m: string) => void) {
       if (!isNum(p.retries, 0, 10)) err('повторов — от 0 до 10');
       if (p.variable !== undefined && p.variable !== '' && !/^[\p{L}\p{N}_.-]+$/u.test(String(p.variable)))
         err('Имя переменной — буквы, цифры, _ . -');
+      checkWait(p, err);
       return;
     }
     case 'ask':
@@ -176,6 +187,7 @@ function checkParams(n: FlowNode, err: (m: string) => void) {
         !['phone', 'email', 'name'].includes(String(p.saveTo))
       )
         err('Неизвестное поле карточки');
+      checkWait(p, err);
       return;
     case 'handoff':
       if (p.text !== undefined && typeof p.text !== 'string') err('некорректный текст сообщения');

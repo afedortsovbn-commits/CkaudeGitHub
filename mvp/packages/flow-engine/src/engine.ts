@@ -16,6 +16,7 @@ import {
   type MessageParams,
   type MenuParams,
   nextNode,
+  NO_ANSWER_EXIT,
   nodeById,
   type QueueParams,
   type SayNumberParams,
@@ -23,6 +24,8 @@ import {
   type SetVariableParams,
   type TransferParams,
   type VoicemailParams,
+  type WaitParams,
+  waitSecOf,
 } from './graph';
 import { numberKeys, parseAmount, plural } from './numbers';
 import { isOpen, type Schedule } from './schedule';
@@ -65,8 +68,11 @@ export type Action =
   // ---- текстовые сценарии (боты, Ф7)
   /** Отправить сообщение клиенту и сразу продолжить (событие done). */
   | { type: 'say'; text: string }
-  /** Отправить вопрос (с кнопками или без) и ждать ответа клиента (событие text). */
-  | { type: 'prompt'; text: string; buttons: BotButton[] }
+  /**
+   * Отправить вопрос (с кнопками или без) и ждать ответа клиента (событие text). waitSec — клиент молчит столько
+   * секунд → событие timeout (напоминание или выход «нет ответа», Ф14); нет — ждать без ограничения.
+   */
+  | { type: 'prompt'; text: string; buttons: BotButton[]; waitSec?: number }
   /** Перевести диалог на оператора: очередь (null — очередь канала), тема, надбавка приоритета. */
   | { type: 'handoff'; queueId: string | null; topicId: string | null; priority: number; text: string };
 
@@ -93,8 +99,13 @@ export interface FlowState {
   menuStack: string[];
   /** Номер попытки ввода в текущем узле (меню, оценка). */
   attempt: number;
-  /** Подшаг узла: 'invalid' — у меню перед повтором звучит фраза о неверном вводе; 'thanks' — благодарность CSAT. */
+  /**
+   * Подшаг узла: 'invalid' — у меню перед повтором звучит фраза о неверном вводе; 'thanks' — благодарность CSAT;
+   * 'remind' — бот напоминает о вопросе (клиент молчит).
+   */
   sub?: string;
+  /** Сколько раз бот уже напомнил о вопросе текущего узла (Ф14). */
+  reminded?: number;
 }
 
 export interface PathStep {
@@ -173,6 +184,7 @@ class Run {
         node: node.id,
         attempt: 0,
         sub: undefined,
+        reminded: undefined,
         menuStack: stackAt >= 0 ? this.state.menuStack.slice(0, stackAt) : this.state.menuStack,
       };
       this.path.push({ nodeId: node.id, type: node.type, ...(node.name ? { name: node.name } : {}) });
@@ -302,10 +314,14 @@ class Run {
         const bp = p as unknown as ButtonsParams | AskParams;
         const question = render(bp.text ?? '', this.state.vars);
         const retry = this.state.sub === 'invalid' ? render(bp.retryText ?? '', this.state.vars) : '';
+        const remind = this.state.sub === 'remind' ? render(bp.remindText ?? '', this.state.vars) : '';
+        const waitSec = waitSecOf(node);
         return {
           type: 'prompt',
-          text: [retry, question].filter(Boolean).join('\n\n'),
+          // Напоминание без своего текста — повтор вопроса.
+          text: remind || [retry, question].filter(Boolean).join('\n\n'),
           buttons: node.type === 'buttons' ? buttonsOf(node) : [],
+          ...(waitSec ? { waitSec } : {}),
         };
       }
       case 'handoff': {
@@ -323,6 +339,17 @@ class Run {
     }
   }
 
+  /** Клиент молчит на шаге бота (Ф14): напоминание, пока не исчерпаны, затем выход «нет ответа». */
+  silence(node: FlowNode): StepResult | null {
+    if (!waitSecOf(node)) return null;
+    const reminded = this.state.reminded ?? 0;
+    const reminders = Number((node.params as WaitParams).reminders ?? 0) || 0;
+    if (reminded >= reminders) return this.exit(NO_ANSWER_EXIT.id);
+    this.state = { ...this.state, reminded: reminded + 1, sub: 'remind' };
+    this.path.push({ nodeId: node.id, type: node.type, ...(node.name ? { name: node.name } : {}) });
+    return this.result(this.actionFor(node));
+  }
+
   /** Неверный ввод или тишина в меню/оценке: повтор или выход «нет ввода». */
   retry(node: FlowNode, invalid: boolean): StepResult {
     const retries = Number((node.params as { retries?: number }).retries ?? 0);
@@ -330,7 +357,13 @@ class Run {
     if (attempt > retries) return this.exit(RETRY_EXIT[node.type] ?? 'next');
     const withInvalidPhrase =
       invalid && (node.type === 'menu' || node.type === 'buttons' || node.type === 'ask');
-    this.state = { ...this.state, attempt, sub: withInvalidPhrase ? 'invalid' : undefined };
+    // Клиент ответил (пусть и неверно) — напоминания о молчании начинаются заново.
+    this.state = {
+      ...this.state,
+      attempt,
+      sub: withInvalidPhrase ? 'invalid' : undefined,
+      reminded: undefined,
+    };
     this.path.push({ nodeId: node.id, type: node.type, ...(node.name ? { name: node.name } : {}) });
     return this.result(this.actionFor(node));
   }
@@ -505,6 +538,7 @@ export function resumeFlow(
     case 'message':
       return event.type === 'done' ? run.exit('next') : null;
     case 'buttons': {
+      if (event.type === 'timeout') return run.silence(node);
       if (event.type !== 'text') return null;
       const b = matchButton(buttonsOf(node), event.text);
       if (!b) return run.retry(node, true);
@@ -513,6 +547,7 @@ export function resumeFlow(
       return run.exit(buttonExit(b.id));
     }
     case 'ask': {
+      if (event.type === 'timeout') return run.silence(node);
       if (event.type !== 'text') return null;
       const ap = node.params as unknown as AskParams;
       const value = validateAnswer(ap.validation ?? 'text', event.text);

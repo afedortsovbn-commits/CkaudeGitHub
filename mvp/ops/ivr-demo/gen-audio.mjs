@@ -2,15 +2,18 @@
 // в продукт не входит; сгенерированные файлы — данные, лицензия инструмента на них не распространяется).
 // На реальном стенде фразы записывает диктор и загружает администратор в «Аудиобиблиотеку».
 // Запуск: node ops/ivr-demo/gen-audio.mjs  (нужен espeak-ng) → apps/api/assets/ivr-demo/*.wav
+// Ф14: ONLY=position — только фрагменты позиции в очереди (прежние файлы не перезаписываются).
 import { Buffer } from 'node:buffer';
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 
 const OUT = new URL('../../apps/api/assets/ivr-demo/', import.meta.url).pathname;
 mkdirSync(OUT, { recursive: true });
-const { prompts, fragments } = JSON.parse(
-  readFileSync(new URL('../../apps/api/assets/ivr-demo/phrases.json', import.meta.url), 'utf8'),
-);
+const {
+  prompts,
+  fragments,
+  position = {},
+} = JSON.parse(readFileSync(new URL('../../apps/api/assets/ivr-demo/phrases.json', import.meta.url), 'utf8'));
 
 function wav8k(src) {
   // Разбор WAV espeak-ng (PCM 16 бит моно 22050 Гц) и передискретизация в 8 кГц с простым ФНЧ.
@@ -56,7 +59,10 @@ const say = (file, text, speed = 150) => {
   const raw = execFileSync('espeak-ng', ['-v', 'ru', '-s', String(speed), '--stdout', text]);
   writeFileSync(`${OUT}${file}.wav`, wav8k(raw));
 };
-for (const [key, text] of Object.entries(prompts)) say(key, text);
-for (const [key, text] of Object.entries(fragments)) say(`n_${key}`, text, 165);
-writeFileSync(`${OUT}phrases.json`, JSON.stringify({ prompts, fragments }, null, 2) + '\n');
+const only = process.env.ONLY;
+if (!only) for (const [key, text] of Object.entries(prompts)) say(key, text);
+if (!only) for (const [key, text] of Object.entries(fragments)) say(`n_${key}`, text, 165);
+// Ф14: фраза позиции в очереди «Вы второй в очереди» (фрагменты p_<ключ>).
+for (const [key, text] of Object.entries(position)) say(`p_${key}`, text, 165);
+writeFileSync(`${OUT}phrases.json`, JSON.stringify({ prompts, fragments, position }, null, 2) + '\n');
 console.log(`готово: ${Object.keys(prompts).length} фраз, ${Object.keys(fragments).length} фрагментов`);

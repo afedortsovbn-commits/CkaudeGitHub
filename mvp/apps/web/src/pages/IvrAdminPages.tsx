@@ -61,7 +61,9 @@ export function AudioLibraryPage() {
   const { can } = useAuth();
   const [all, setAll] = useState(false);
   const list = useList(`/ivr/audio?active=${all ? 'all' : 'true'}`);
-  const fragments = useList<{ key: string; label: string; audioId: string | null }>('/ivr/fragments');
+  const fragments = useList<{ key: string; label: string; group?: string; audioId: string | null }>(
+    '/ivr/fragments',
+  );
   const [busy, setBusy] = useState(false);
   const [rename, setRename] = useState<Row | null>(null);
   const [name, setName] = useState('');
@@ -106,6 +108,7 @@ export function AudioLibraryPage() {
         <Tabs.List mb="sm">
           <Tabs.Tab value="prompts">{t.ivr.frazy}</Tabs.Tab>
           <Tabs.Tab value="fragments">{t.ivr.fragmentyChisel}</Tabs.Tab>
+          <Tabs.Tab value="position">{t.ivr.pozitsiyaVOcheredi}</Tabs.Tab>
         </Tabs.List>
         <Tabs.Panel value="prompts">
           <Table striped data-testid="audio-list">
@@ -170,40 +173,87 @@ export function AudioLibraryPage() {
           </Text>
           <Table striped>
             <Table.Tbody>
-              {(fragments.data ?? []).map((f) => (
-                <Table.Tr key={f.key}>
-                  <Table.Td w={200}>{f.label}</Table.Td>
-                  <Table.Td>
-                    <Code>{f.key}</Code>
-                  </Table.Td>
-                  <Table.Td>
-                    {f.audioId ? (
-                      <Badge color="green">{t.ivr.zagruzhen}</Badge>
-                    ) : (
-                      <Badge color="orange">{t.ivr.net}</Badge>
-                    )}
-                  </Table.Td>
-                  <Table.Td>
-                    <Group gap="xs" justify="flex-end">
-                      {f.audioId && <AudioPreview id={f.audioId} />}
-                      {writable && (
-                        <FileButton
-                          onChange={(file) =>
-                            void doUpload(file, `kind=fragment&fragmentKey=${encodeURIComponent(f.key)}`)
-                          }
-                          accept="audio/*"
-                        >
-                          {(props) => (
-                            <Button {...props} size="xs" variant="light" loading={busy}>
-                              {t.ivr.zagruzit}
-                            </Button>
-                          )}
-                        </FileButton>
+              {(fragments.data ?? [])
+                .filter((f) => f.group !== 'position')
+                .map((f) => (
+                  <Table.Tr key={f.key}>
+                    <Table.Td w={200}>{f.label}</Table.Td>
+                    <Table.Td>
+                      <Code>{f.key}</Code>
+                    </Table.Td>
+                    <Table.Td>
+                      {f.audioId ? (
+                        <Badge color="green">{t.ivr.zagruzhen}</Badge>
+                      ) : (
+                        <Badge color="orange">{t.ivr.net}</Badge>
                       )}
-                    </Group>
-                  </Table.Td>
-                </Table.Tr>
-              ))}
+                    </Table.Td>
+                    <Table.Td>
+                      <Group gap="xs" justify="flex-end">
+                        {f.audioId && <AudioPreview id={f.audioId} />}
+                        {writable && (
+                          <FileButton
+                            onChange={(file) =>
+                              void doUpload(file, `kind=fragment&fragmentKey=${encodeURIComponent(f.key)}`)
+                            }
+                            accept="audio/*"
+                          >
+                            {(props) => (
+                              <Button {...props} size="xs" variant="light" loading={busy}>
+                                {t.ivr.zagruzit}
+                              </Button>
+                            )}
+                          </FileButton>
+                        )}
+                      </Group>
+                    </Table.Td>
+                  </Table.Tr>
+                ))}
+            </Table.Tbody>
+          </Table>
+        </Tabs.Panel>
+        <Tabs.Panel value="position">
+          <Text size="sm" c="dimmed" mb="sm">
+            {t.ivr.pozitsiyaVOcherediOpisanie}
+          </Text>
+          <Table striped>
+            <Table.Tbody>
+              {(fragments.data ?? [])
+                .filter((f) => f.group === 'position')
+                .map((f) => (
+                  <Table.Tr key={f.key}>
+                    <Table.Td w={200}>{f.label}</Table.Td>
+                    <Table.Td>
+                      <Code>{f.key}</Code>
+                    </Table.Td>
+                    <Table.Td>
+                      {f.audioId ? (
+                        <Badge color="green">{t.ivr.zagruzhen}</Badge>
+                      ) : (
+                        <Badge color="orange">{t.ivr.net}</Badge>
+                      )}
+                    </Table.Td>
+                    <Table.Td>
+                      <Group gap="xs" justify="flex-end">
+                        {f.audioId && <AudioPreview id={f.audioId} />}
+                        {writable && (
+                          <FileButton
+                            onChange={(file) =>
+                              void doUpload(file, `kind=fragment&fragmentKey=${encodeURIComponent(f.key)}`)
+                            }
+                            accept="audio/*"
+                          >
+                            {(props) => (
+                              <Button {...props} size="xs" variant="light" loading={busy}>
+                                {t.ivr.zagruzit}
+                              </Button>
+                            )}
+                          </FileButton>
+                        )}
+                      </Group>
+                    </Table.Td>
+                  </Table.Tr>
+                ))}
             </Table.Tbody>
           </Table>
         </Tabs.Panel>

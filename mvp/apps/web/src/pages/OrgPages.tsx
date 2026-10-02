@@ -389,6 +389,13 @@ export function DictionariesPage() {
               { key: 'offerTimeoutS', label: t.org.taymautPrinyatiyaOperatoromS, type: 'number' },
               { key: 'wrapUpS', label: t.org.postobrabotkaS, type: 'number' },
               { key: 'requireTag', label: t.org.obyazatelnyyTegPriZakrytii, type: 'switch' },
+              {
+                key: 'announcePosition',
+                label: t.org.soobshchatPozitsiyu,
+                description: t.org.soobshchatPozitsiyuOpisanie,
+                type: 'switch',
+              },
+              { key: 'announcePositionEveryS', label: t.org.pozitsiyaKazhdyeS, type: 'number' },
             ]}
           />
         </Tabs.Panel>

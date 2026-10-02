@@ -113,6 +113,8 @@ jobs:
         run: node ops/test/ivr-under-switch.mjs graceful
       - name: Аварийная смена активного call-control (kill) во время IVR — сценарии продолжаются, пауза ≤ 8 с
         run: node ops/test/ivr-under-switch.mjs kill
+      - name: Смена активного call-control во время суфлирования — подключение супервизора снято, разговор продолжается (Ф14)
+        run: node ops/test/supervisor-under-switch.mjs graceful
       - name: Распределение обращений во время обновления router — без потерь
         run: API_TAG=v2 node ops/test/route-under-rollout.mjs v2
       - name: Перезапуск узла NATS — без потерь

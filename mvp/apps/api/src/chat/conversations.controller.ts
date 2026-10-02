@@ -1,7 +1,14 @@
 import { Body, Controller, Get, HttpCode, Inject, Param, Patch, Post, Query, Req, Res } from '@nestjs/common';
 import { CONVERSATION_EVENTS } from '@cc/contracts';
 import { scopeFilter, type Principal } from '@cc/auth';
-import { appendMessage, emitConversation, loadRef, setAgentStatus } from '@cc/domain';
+import {
+  addHint,
+  appendMessage,
+  emitConversation,
+  loadRef,
+  setAgentStatus,
+  takeoverConversation,
+} from '@cc/domain';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { PoolClient } from 'pg';
 import { z } from 'zod';
@@ -10,6 +17,7 @@ import { APP_CONTEXT, type AppContext } from '../context';
 import { ownAttachments, saveUpload, sendAttachment } from '../lib/attachments';
 import { one, rows, toApi, withTx } from '../lib/db';
 import { ApiError, badRequest, notFound, parse } from '../lib/errors';
+import { audit } from '../lib/audit';
 import { ensureRequiredTag } from './required-tag';
 
 const uuid = z.string().uuid();
@@ -27,6 +35,7 @@ const SendBody = z
   })
   .strict()
   .refine((m) => m.body.trim() || m.attachmentIds.length, 'Пустое сообщение');
+const HintBody = z.object({ body: z.string().trim().min(1, 'Пустая подсказка').max(4000) }).strict();
 const PatchBody = z
   .object({
     topicId: uuid.nullable().optional(),
@@ -250,14 +259,56 @@ export class ConversationsController {
 
   @Get('conversations/:id/messages')
   async messages(@CurrentUser() p: Principal, @Param('id') id: string, @Query('afterSeq') afterSeq?: string) {
-    await this.visible(p, id);
+    const c = await this.visible(p, id);
+    // Подсказки супервизора (Ф14) видят назначенный оператор и супервизоры, остальные сотрудники — нет.
+    const hints = c.assignee_id === p.id || hasPerm(p, 'supervisor.monitor');
     const list = await rows(
       this.ctx.pool,
       `SELECT m.*, u.full_name AS author_name FROM message m LEFT JOIN app_user u ON u.id = m.author_user_id
-        WHERE m.conversation_id = $1 AND m.seq > $2 ORDER BY m.sent_at, m.seq`,
-      [id, Number(afterSeq) || 0],
+        WHERE m.conversation_id = $1 AND m.seq > $2 AND ($3 OR NOT (m.meta ? 'hint'))
+        ORDER BY m.sent_at, m.seq`,
+      [id, Number(afterSeq) || 0, hints],
     );
     return list.map((r) => toApi(r));
+  }
+
+  /**
+   * Перехват обращения супервизором (Ф14, M-TEL-10): обращение переназначается ему с записью в истории, оператору —
+   * уведомление. Идущий звонок перехватывается из прослушивания (`POST /calls/:id/takeover`).
+   */
+  @Post('conversations/:id/takeover')
+  @HttpCode(200)
+  @RequirePerm('conversations.takeover')
+  async takeover(@CurrentUser() p: Principal, @Param('id') id: string) {
+    await withTx(this.ctx.pool, async (tx) => {
+      await this.visible(p, id, tx, true);
+      const r = await takeoverConversation(tx, id, { userId: p.id, userName: p.fullName });
+      await audit(
+        tx,
+        p,
+        'conversation.takeover',
+        'conversation',
+        id,
+        { assigneeId: r.fromUserId },
+        {
+          assigneeId: p.id,
+        },
+        { configChanged: false },
+      );
+    });
+    return this.get(p, id);
+  }
+
+  /** Подсказка оператору в чате (Ф14): скрытое сообщение — клиенту не уходит, оператору — уведомление. */
+  @Post('conversations/:id/hint')
+  @RequirePerm('conversations.hint')
+  async hint(@CurrentUser() p: Principal, @Param('id') id: string, @Body() body: unknown) {
+    const b = parse(HintBody, body);
+    return withTx(this.ctx.pool, async (tx) => {
+      await this.visible(p, id, tx, true);
+      const m = await addHint(tx, id, { userId: p.id, body: b.body });
+      return { ...m, authorName: p.fullName };
+    });
   }
 
   /**

@@ -15,6 +15,7 @@ export interface AriChannel {
 
 export interface AriBridge {
   id: string;
+  name?: string;
   channels: string[];
 }
 
@@ -131,10 +132,23 @@ export class Ari {
         maxDurationSeconds: maxSec,
         maxSilenceSeconds: 5,
       }),
-    snoop: (id: string, o: { snoopId: string; app: string; appArgs: string }) =>
+    /**
+     * Snoop-канал: spy — что слышит подключённый (in — голос владельца канала, out — что он слышит), whisper — кому
+     * подмешивается звук подключённого (out — владелец канала слышит его, суфлирование Ф14).
+     */
+    snoop: (
+      id: string,
+      o: {
+        snoopId: string;
+        app: string;
+        appArgs: string;
+        spy?: 'none' | 'in' | 'out' | 'both';
+        whisper?: 'none' | 'in' | 'out' | 'both';
+      },
+    ) =>
       this.req<AriChannel>('POST', `/channels/${id}/snoop`, {
-        spy: 'both',
-        whisper: 'none',
+        spy: o.spy ?? 'both',
+        whisper: o.whisper ?? 'none',
         app: o.app,
         appArgs: o.appArgs,
         snoopId: o.snoopId,
@@ -142,6 +156,7 @@ export class Ari {
   };
 
   bridges = {
+    list: () => this.req<AriBridge[]>('GET', '/bridges'),
     get: (id: string) => this.req<AriBridge>('GET', `/bridges/${id}`),
     create: (id: string, name: string) =>
       this.req<AriBridge>('POST', `/bridges/${id}`, { type: 'mixing', name }),

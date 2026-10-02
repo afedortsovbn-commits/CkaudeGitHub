@@ -152,7 +152,8 @@ export class ExtController {
       `SELECT m.id, m.seq, m.direction, m.body AS text, m.attachments, m.sent_at, m.meta,
               u.full_name AS author_name, m.delivery_status
          FROM message m LEFT JOIN app_user u ON u.id = m.author_user_id
-        WHERE m.conversation_id = $1 AND ($2 OR m.direction <> 'note') ORDER BY m.sent_at, m.seq`,
+        WHERE m.conversation_id = $1 AND ($2 OR m.direction <> 'note') AND NOT (m.meta ? 'hint')
+        ORDER BY m.sent_at, m.seq`,
       [id, includeNotes === 'true'],
     );
     return list.map((r) => toApi(r));

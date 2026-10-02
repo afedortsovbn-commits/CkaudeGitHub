@@ -13,7 +13,7 @@ import { join } from 'node:path';
 import { createS3Storage } from '../lib/storage';
 import { seedDemo } from './demo-seed';
 import { seedBotDemo } from './bot-demo-seed';
-import { seedIvrDemo } from './ivr-demo-seed';
+import { seedIvrDemo, seedPositionDemo } from './ivr-demo-seed';
 import { seedIntegrationsDemo } from './integrations-demo-seed';
 import { seedReviewsDemo } from './reviews-demo-seed';
 
@@ -69,6 +69,11 @@ async function main(): Promise<void> {
         }),
       );
       log(ivr ? 'демо-сценарий IVR загружен' : 'демо-сценарий IVR уже есть — пропуск');
+      // Демо Ф14: фрагменты фразы позиции в очереди (опция очереди по умолчанию выключена).
+      const pos = await withTx(pool, (tx) =>
+        seedPositionDemo(tx, storage, { assetsDir: join(__dirname, '../../assets/ivr-demo') }),
+      );
+      if (pos) log('демо-фрагменты позиции в очереди загружены', { n: pos });
       // Демо Ф7: бот сайта, автоответы, шаблоны, база знаний, провайдер LLM (выключен).
       const bot = await withTx(pool, (tx) =>
         seedBotDemo(tx, {

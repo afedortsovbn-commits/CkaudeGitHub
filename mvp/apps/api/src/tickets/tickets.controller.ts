@@ -349,8 +349,9 @@ export class TicketsController {
     const t = await this.visible(p, id);
     const list = await rows(
       this.ctx.pool,
+      // Подсказки супервизора оператору (Ф14) — не для 2-й линии.
       `SELECT m.*, u.full_name AS author_name FROM message m LEFT JOIN app_user u ON u.id = m.author_user_id
-        WHERE m.conversation_id = $1 ORDER BY m.sent_at, m.seq`,
+        WHERE m.conversation_id = $1 AND NOT (m.meta ? 'hint') ORDER BY m.sent_at, m.seq`,
       [t.conversation_id],
     );
     return list.map((r) => toApi(r));

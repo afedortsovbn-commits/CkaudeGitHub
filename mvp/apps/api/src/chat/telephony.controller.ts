@@ -8,6 +8,8 @@ import {
   parseTurnUrls,
   sipUserOf,
   type SoftphoneConfig,
+  SUPERVISOR_MODES,
+  type SupervisorMode,
   TURN_DISABLED_SETTING,
 } from '@cc/contracts';
 import { scopeFilter, type Principal } from '@cc/auth';
@@ -37,6 +39,13 @@ const TransferBody = z
     comment: z.string().trim().max(1000).optional(),
   })
   .strict();
+const SuperviseBody = z.object({ mode: z.enum(SUPERVISOR_MODES).optional() }).strict();
+/** Право на режим подключения супервизора (Ф14): прослушивание — supervisor.monitor, остальные — свои права. */
+const MODE_PERM: Record<SupervisorMode, string> = {
+  listen: 'supervisor.monitor',
+  whisper: 'calls.whisper',
+  barge: 'calls.barge',
+};
 const DemoBody = z
   .object({ phone: z.string().trim().max(32).optional(), name: z.string().trim().max(100).optional() })
   .strict();
@@ -236,8 +245,14 @@ export class TelephonyController {
     else if (op === 'consult')
       cmd = { op, callId: id, userId: p.id, target: parse(TransferBody, body).target };
     else if (op === 'consult_complete' || op === 'consult_cancel') cmd = { op, callId: id, userId: p.id };
-    else if (op === 'listen') {
-      if (!hasPerm(p, 'supervisor.monitor')) throw new ApiError(403, 'forbidden', 'Недостаточно прав');
+    else if (op === 'listen' || op === 'supervise') {
+      // Прослушивание (Ф5a); суфлирование и вмешательство (Ф14) — сразу при подключении или сменой режима.
+      const mode = parse(SuperviseBody, body ?? {}).mode ?? 'listen';
+      if (!hasPerm(p, 'supervisor.monitor') || !hasPerm(p, MODE_PERM[mode]))
+        throw new ApiError(403, 'forbidden', 'Недостаточно прав');
+      cmd = op === 'listen' ? { op, callId: id, userId: p.id, mode } : { op, callId: id, userId: p.id, mode };
+    } else if (op === 'takeover') {
+      if (!hasPerm(p, 'conversations.takeover')) throw new ApiError(403, 'forbidden', 'Недостаточно прав');
       cmd = { op, callId: id, userId: p.id };
     } else throw notFound('Действие');
     if (!this.ctx.nc) throw new ApiError(503, 'call_control_down', 'Управление звонками недоступно');
@@ -255,10 +270,29 @@ export class TelephonyController {
       );
     }
     if (!reply.ok) throw new ApiError(409, 'call_command', reply.error ?? 'Команда не выполнена');
-    if (op === 'listen')
+    // Аудит каждого подключения супервизора, смены режима и перехвата (Ф14).
+    if (cmd.op === 'listen' || cmd.op === 'supervise' || cmd.op === 'takeover') {
+      const action =
+        cmd.op === 'takeover'
+          ? 'call.takeover'
+          : cmd.mode === 'listen'
+            ? 'call.listen'
+            : cmd.mode === 'whisper'
+              ? 'call.whisper'
+              : 'call.barge';
       await withTx(this.ctx.pool, (tx) =>
-        audit(tx, p, 'call.listen', 'call', id, null, null, { configChanged: false }),
+        audit(
+          tx,
+          p,
+          action,
+          'call',
+          id,
+          null,
+          { conversationId: call.conversation_id },
+          { configChanged: false },
+        ),
       );
+    }
     return { ok: true };
   }
 }

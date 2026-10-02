@@ -53,6 +53,10 @@ export const org = {
   taymautPrinyatiyaOperatoromS: 'Таймаут принятия оператором, с',
   postobrabotkaS: 'Постобработка, с',
   obyazatelnyyTegPriZakrytii: 'Обязательный тег при закрытии',
+  soobshchatPozitsiyu: 'Сообщать позицию в очереди',
+  soobshchatPozitsiyuOpisanie:
+    'Звонящему — «Вы второй в очереди» (фрагменты «Позиция в очереди» в аудиобиблиотеке), в автоответе «в очереди» — {{позиция}}',
+  pozitsiyaKazhdyeS: 'Повторять позицию каждые, с (15–3600)',
   praviloMarshrutizatsii: 'Правило маршрутизации',
   kanal: 'Канал',
   lyuboy: 'любой',

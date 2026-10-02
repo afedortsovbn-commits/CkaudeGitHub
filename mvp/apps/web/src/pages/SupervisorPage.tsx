@@ -1,6 +1,7 @@
-import { Badge, Button, Card, Group, SimpleGrid, Table, Text, Title } from '@mantine/core';
+import { Badge, Button, Card, Group, Menu, SimpleGrid, Table, Text, Title } from '@mantine/core';
 import { useQuery } from '@tanstack/react-query';
 import { get, post } from '../lib/api';
+import { useAuth } from '../lib/auth';
 import { useAction } from '../lib/data';
 import { t } from '../lib/i18n';
 
@@ -100,10 +101,14 @@ function Tile({
  */
 export function SupervisorPage() {
   // Прослушивание (M-TEL-10): звонок приходит в софтфон супервизора и отвечается автоматически.
+  // Ф14: сразу в режиме суфлирования или вмешательства; перехват — звонок переходит к супервизору.
+  const { can } = useAuth();
   const listen = useAction(
-    (id: string) => post(`/calls/${id}/listen`),
+    (a: { id: string; mode?: 'listen' | 'whisper' | 'barge' }) =>
+      post(`/calls/${a.id}/listen`, { mode: a.mode ?? 'listen' }),
     t.supervisor.podklyuchaemProslushivanie,
   );
+  const takeover = useAction((id: string) => post(`/calls/${id}/takeover`), t.supervisor.perekhvatZvonka);
   const overview = useQuery({
     queryKey: ['/supervisor/overview'],
     queryFn: () => get<Overview>('/supervisor/overview'),
@@ -273,11 +278,47 @@ export function SupervisorPage() {
                       <Button
                         size="xs"
                         variant="light"
-                        onClick={() => listen.mutate(String(o.callId))}
+                        onClick={() => listen.mutate({ id: String(o.callId) })}
                         data-testid="supervisor-listen"
                       >
                         {t.supervisor.proslushat}
                       </Button>
+                      {(can('calls.whisper') || can('calls.barge') || can('conversations.takeover')) && (
+                        <Menu position="bottom-end" withinPortal>
+                          <Menu.Target>
+                            <Button size="xs" variant="subtle" px={6} data-testid="supervisor-more">
+                              ⋯
+                            </Button>
+                          </Menu.Target>
+                          <Menu.Dropdown>
+                            {can('calls.whisper') && (
+                              <Menu.Item
+                                onClick={() => listen.mutate({ id: String(o.callId), mode: 'whisper' })}
+                                data-testid="supervisor-whisper"
+                              >
+                                {t.supervisor.suflirovat}
+                              </Menu.Item>
+                            )}
+                            {can('calls.barge') && (
+                              <Menu.Item
+                                onClick={() => listen.mutate({ id: String(o.callId), mode: 'barge' })}
+                                data-testid="supervisor-barge"
+                              >
+                                {t.supervisor.vmeshatsya}
+                              </Menu.Item>
+                            )}
+                            {can('conversations.takeover') && (
+                              <Menu.Item
+                                color="orange"
+                                onClick={() => takeover.mutate(String(o.callId))}
+                                data-testid="supervisor-takeover-call"
+                              >
+                                {t.supervisor.perekhvatit}
+                              </Menu.Item>
+                            )}
+                          </Menu.Dropdown>
+                        </Menu>
+                      )}
                     </Group>
                   )}
                 </Table.Td>

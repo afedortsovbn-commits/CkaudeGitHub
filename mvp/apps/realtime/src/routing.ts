@@ -12,12 +12,13 @@ export type Peer =
   | { kind: 'client'; contactId: string; channelId: string };
 
 type ConvEvent = Omit<EventEnvelope, 'data'> & {
-  data: ConversationRef & { message?: MessageDto; action?: string };
+  data: ConversationRef & { message?: MessageDto; action?: string; notifyUserIds?: string[] };
 };
 
 /**
  * Что получает подключённый участник по событию обращения (чистая функция — покрыта тестами).
- * Оператор: обращения в своей области видимости или назначенные ему (M-ORG-07).
+ * Оператор: обращения в своей области видимости или назначенные ему (M-ORG-07); подсказки супервизора (Ф14) —
+ * только назначенному оператору и супервизорам; уведомление о перехвате — оператору, у которого забрали обращение.
  * Клиент: только свои диалоги и только исходящие/системные сообщения — внутренние заметки не уходят клиенту.
  */
 export function deliver(peer: Peer, e: ConvEvent): Record<string, unknown> | null {
@@ -25,14 +26,19 @@ export function deliver(peer: Peer, e: ConvEvent): Record<string, unknown> | nul
   if (peer.kind === 'operator') {
     const p = peer.principal;
     if (!p.permissions.has('conversations.work')) return null;
-    const visible =
+    const inArea =
       d.assigneeId === p.id ||
       inScope(p.scope, {
         enterpriseId: d.enterpriseId,
         departmentId: d.departmentId,
         topicPath: d.topicPath,
       });
-    return visible ? { type: 'event', event: e.type, data: d } : null;
+    // Подсказка супервизора (Ф14) — только назначенному оператору и супервизорам в области.
+    if (d.message?.meta?.hint && d.assigneeId !== p.id && !p.permissions.has('supervisor.monitor'))
+      return null;
+    // Перехват (Ф14): оператор, у которого забрали обращение, получает уведомление, даже если оно вне его области.
+    const notified = !!d.notifyUserIds?.includes(p.id);
+    return inArea || notified ? { type: 'event', event: e.type, data: d } : null;
   }
   if (d.contactId !== peer.contactId) return null;
   if (e.type === 'conversation.message_created') {

@@ -151,7 +151,7 @@ export interface BotButton {
   id: string;
   label: string;
 }
-export interface ButtonsParams {
+export interface ButtonsParams extends WaitParams {
   text: string;
   buttons: BotButton[];
   /** Ответ клиента не совпал ни с одной кнопкой: текст перед повтором вопроса. */
@@ -161,8 +161,20 @@ export interface ButtonsParams {
   /** Переменная, в которую сохраняется текст выбранной кнопки (необязательно). */
   variable?: string;
 }
+/**
+ * Ожидание ответа клиента у шагов «Меню кнопками» и «Сбор поля» (Ф14, M-AUTO-04 «клиент молчит»): клиент молчит
+ * waitSec — напоминание (до reminders раз), затем выход «нет ответа». Не задано — бот ждёт без ограничения.
+ */
+export interface WaitParams {
+  /** Ждать ответа, с; пусто или 0 — без ограничения (выхода «нет ответа» нет). */
+  waitSec?: number | null;
+  /** Сколько раз напомнить, прежде чем уйти по выходу «нет ответа». */
+  reminders?: number;
+  /** Текст напоминания; пусто — повторяется вопрос узла. */
+  remindText?: string;
+}
 export type AskValidation = 'text' | 'phone' | 'email' | 'number';
-export interface AskParams {
+export interface AskParams extends WaitParams {
   text: string;
   /** Переменная, в которую сохраняется ответ. */
   variable: string;
@@ -389,6 +401,15 @@ export const NODE_SPECS: Record<NodeType, NodeSpec> = {
 export const MENU_DIGITS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '*', '#'];
 export const digitExit = (d: string) => `digit:${d}`;
 export const buttonExit = (id: string) => `btn:${id}`;
+/** Выход «нет ответа» шагов, ждущих ответа клиента (Ф14). */
+export const NO_ANSWER_EXIT = { id: 'noanswer', label: 'нет ответа' };
+
+/** Сколько ждать ответа клиента в узле (с); 0 — без ограничения. */
+export function waitSecOf(node: Pick<FlowNode, 'type' | 'params'>): number {
+  if (node.type !== 'buttons' && node.type !== 'ask') return 0;
+  const v = Number(node.params.waitSec ?? 0);
+  return Number.isFinite(v) && v > 0 ? v : 0;
+}
 
 /** Кнопки узла «Меню кнопками» (некорректные записи отбрасываются). */
 export function buttonsOf(node: Pick<FlowNode, 'params'>): BotButton[] {
@@ -401,7 +422,10 @@ export function buttonsOf(node: Pick<FlowNode, 'params'>): BotButton[] {
     : [];
 }
 
-/** Выходы узла (у меню — по цифре на пункт + «нет ввода», у кнопок — по кнопке + «другое»). */
+/**
+ * Выходы узла (у меню — по цифре на пункт + «нет ввода», у кнопок — по кнопке + «другое»; у шагов бота с
+ * ожиданием ответа — ещё «нет ответа»).
+ */
 export function exitsOf(node: FlowNode): { id: string; label: string }[] {
   const spec = NODE_SPECS[node.type];
   if (!spec) return [];
@@ -409,9 +433,14 @@ export function exitsOf(node: FlowNode): { id: string; label: string }[] {
     const digits = Array.isArray(node.params.digits) ? (node.params.digits as string[]) : [];
     return [...digits.map((d) => ({ id: digitExit(d), label: d })), ...spec.exits];
   }
+  const wait = waitSecOf(node) ? [NO_ANSWER_EXIT] : [];
   if (node.type === 'buttons')
-    return [...buttonsOf(node).map((b) => ({ id: buttonExit(b.id), label: b.label })), ...spec.exits];
-  return spec.exits;
+    return [
+      ...buttonsOf(node).map((b) => ({ id: buttonExit(b.id), label: b.label })),
+      ...spec.exits,
+      ...wait,
+    ];
+  return [...spec.exits, ...wait];
 }
 
 export function nodeById(graph: FlowGraph, id: string): FlowNode | undefined {

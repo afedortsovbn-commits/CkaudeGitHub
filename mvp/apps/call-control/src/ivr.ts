@@ -474,6 +474,13 @@ export class IvrRunner {
     }
     const n = (st.announceN ?? 0) + 1;
     const due = a.announceEverySec && (st.queuedAt ?? now) + a.announceEverySec * 1000 * n <= now;
+    if (due && !st.announcing && (await this.positionPlaying(c.id))) {
+      // Звучит позиция в очереди (Ф14) — сообщение сценария прозвучит следом.
+      await this.d.pool.query(`UPDATE call SET ivr_wake_at = now() + interval '2 seconds' WHERE id = $1`, [
+        c.id,
+      ]);
+      return;
+    }
     if (due && !st.announcing) {
       const next = { ...st, announceN: n, announcing: true };
       const played = await this.play(
@@ -492,6 +499,14 @@ export class IvrRunner {
       return;
     }
     await this.save(c.id, st, this.nextQueueWake({ ...st, announceN: due ? n : st.announceN }));
+  }
+
+  private async positionPlaying(callId: string): Promise<boolean> {
+    const { rows } = await this.d.pool.query<{ p: string | null }>(
+      `SELECT position_playback AS p FROM call WHERE id = $1`,
+      [callId],
+    );
+    return !!rows[0]?.p;
   }
 
   /** Оператор ответил: сообщение в очереди прерывается, таймеры очереди больше не действуют. */

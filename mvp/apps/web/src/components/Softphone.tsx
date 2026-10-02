@@ -2,10 +2,12 @@ import {
   ActionIcon,
   Badge,
   Button,
+  Alert,
   Group,
   Modal,
   Paper,
   Popover,
+  SegmentedControl,
   Select,
   SimpleGrid,
   Stack,
@@ -19,7 +21,8 @@ import { audioDevices, type DeviceNotice } from '../lib/audio-devices';
 import { AudioSettings } from './AudioSettings';
 import { errorText, post } from '../lib/api';
 import { options, type Row, useList } from '../lib/data';
-import { softphone, useSoftphone } from '../lib/softphone';
+import { useAuth } from '../lib/auth';
+import { softphone, type SupervisorMode, useSoftphone } from '../lib/softphone';
 import { t } from '../lib/i18n';
 
 const REG = {
@@ -241,9 +244,67 @@ function Transfer({
   );
 }
 
+/**
+ * Супервизор в разговоре (Ф14, M-TEL-10): прослушивание → суфлирование (слышит только оператор) → вмешательство
+ * (слышат оба) и обратно без переподключения; перехват — звонок переходит к супервизору.
+ */
+function SupervisorControls({
+  callId,
+  mode,
+  can,
+}: {
+  callId: string | null;
+  mode: SupervisorMode;
+  can(...perms: string[]): boolean;
+}) {
+  const modes = [
+    { value: 'listen', label: t.softphoneUi.rezhimProslushivanie },
+    ...(can('calls.whisper') ? [{ value: 'whisper', label: t.softphoneUi.rezhimSuflirovanie }] : []),
+    ...(can('calls.barge') ? [{ value: 'barge', label: t.softphoneUi.rezhimVmeshatelstvo }] : []),
+  ];
+  return (
+    <Stack gap={4} data-testid="supervisor-controls" data-mode={mode}>
+      {modes.length > 1 && (
+        <SegmentedControl
+          size="xs"
+          fullWidth
+          data={modes}
+          value={mode}
+          onChange={(v) => void command(callId, 'supervise', { mode: v })}
+          data-testid="supervisor-mode"
+        />
+      )}
+      <Text size="xs" c="dimmed">
+        {mode === 'whisper'
+          ? t.softphoneUi.vasSlyshitTolkoOperator
+          : mode === 'barge'
+            ? t.softphoneUi.vasSlyshatOba
+            : t.softphoneUi.vasNiktoNeSlyshit}
+      </Text>
+      {mode !== 'listen' && (
+        <Button size="xs" variant="light" onClick={() => softphone.toggleMute()} data-testid="call-mute">
+          {softphone.getSnapshot().call?.muted ? t.softphoneUi.mikrofonVykl : t.softphoneUi.mikrofon}
+        </Button>
+      )}
+      {can('conversations.takeover') && (
+        <Button
+          size="xs"
+          color="orange"
+          variant="light"
+          onClick={() => void command(callId, 'takeover')}
+          data-testid="supervisor-takeover"
+        >
+          {t.softphoneUi.perekhvatitZvonok}
+        </Button>
+      )}
+    </Stack>
+  );
+}
+
 /** Панель текущего звонка (M-OP-05): ответ/отбой, удержание с музыкой, микрофон, тональный набор, перевод. */
 export function SoftphoneCall() {
   const { call } = useSoftphone();
+  const { can } = useAuth();
   const [now, setNow] = useState(Date.now());
   const [transfer, setTransfer] = useState<false | 'transfer' | 'consult'>(false);
   useEffect(() => {
@@ -253,7 +314,11 @@ export function SoftphoneCall() {
   if (!call) return null;
   const talking = call.state === 'active';
   const title = call.listen
-    ? t.softphoneUi.proslushivanieRazgovora
+    ? call.supervisorMode === 'whisper'
+      ? t.softphoneUi.suflirovanie
+      : call.supervisorMode === 'barge'
+        ? t.softphoneUi.vmeshatelstvo
+        : t.softphoneUi.proslushivanieRazgovora
     : call.consultOf
       ? t.softphoneUi.konsultatsiyaKollegi
       : call.direction === 'incoming'
@@ -313,6 +378,23 @@ export function SoftphoneCall() {
           {call.remoteName || call.remote}
           {call.remoteName && call.remote && call.remoteName !== call.remote ? ` · ${call.remote}` : ''}
         </Text>
+        {talking && !call.listen && call.supervisorMode && (
+          <Alert
+            p={6}
+            color={call.supervisorMode === 'barge' ? 'orange' : 'grape'}
+            data-testid="supervisor-banner"
+            data-mode={call.supervisorMode}
+          >
+            <Text size="sm">
+              {call.supervisorMode === 'barge'
+                ? t.softphoneUi.supervizorVRazgovore
+                : t.softphoneUi.supervizorPodskazyvaet}
+            </Text>
+          </Alert>
+        )}
+        {talking && call.listen && (
+          <SupervisorControls callId={call.callId} mode={call.supervisorMode ?? 'listen'} can={can} />
+        )}
         {call.state === 'ringing' && call.direction === 'incoming' && (
           <Group grow>
             <Button color="green" onClick={() => void softphone.answer()} data-testid="call-answer">

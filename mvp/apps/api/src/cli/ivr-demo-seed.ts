@@ -321,3 +321,36 @@ export async function seedIvrDemo(
   );
   return true;
 }
+
+/**
+ * Демо-фрагменты фразы «Вы второй в очереди» (Ф14, позиция в очереди): загружаются недостающие — в т.ч. на стендах,
+ * засеянных прежними версиями. Сама опция у очередей остаётся выключенной (по указанию заказчика).
+ */
+export async function seedPositionDemo(
+  tx: PoolClient,
+  storage: Storage,
+  o: { assetsDir: string },
+): Promise<number> {
+  const phrases = JSON.parse(readFileSync(join(o.assetsDir, 'phrases.json'), 'utf8')) as Phrases & {
+    position?: Record<string, string>;
+  };
+  const have = await tx.query<{ fragment_key: string }>(
+    `SELECT fragment_key FROM audio_file WHERE kind = 'fragment' AND is_active`,
+  );
+  const present = new Set(have.rows.map((r) => r.fragment_key));
+  let n = 0;
+  for (const [key, text] of Object.entries(phrases.position ?? {})) {
+    if (present.has(key)) continue;
+    const body = readFileSync(join(o.assetsDir, `p_${key}.wav`));
+    const id = newId();
+    const storageKey = `ivr-audio/${id}.wav`;
+    await storage.put(storageKey, body, 'audio/wav');
+    await tx.query(
+      `INSERT INTO audio_file (id, name, kind, fragment_key, storage_key, size_bytes, duration_ms)
+       VALUES ($1, $2, 'fragment', $3, $4, $5, $6)`,
+      [id, `Позиция: ${text}`, key, storageKey, body.length, Math.round(((body.length - 44) / 16000) * 1000)],
+    );
+    n++;
+  }
+  return n;
+}
