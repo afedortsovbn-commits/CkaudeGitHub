@@ -6,6 +6,7 @@ import { get } from './api';
 import { applySink, audioDevices, toneUrl } from './audio-devices';
 import { connectHeadset, type HeadsetAction, type HidHeadset, onHeadsetDisconnect } from './headset';
 import { onRealtime } from './realtime';
+import { fastIceReady } from './ice-ready';
 import { t } from './i18n';
 
 /**
@@ -490,6 +491,7 @@ class Softphone {
     if (!s || this.state.call?.state !== 'ringing') return;
     this.stopRinging();
     this.setCall({ state: 'connecting' });
+    s.on('icecandidate', fastIceReady());
     s.answer({
       mediaConstraints: { audio: audioDevices.micConstraints(), video: false },
       pcConfig: { iceServers: await this.iceServers() },
@@ -527,6 +529,7 @@ class Softphone {
       mediaConstraints: { audio: audioDevices.micConstraints(), video: false },
       pcConfig: { iceServers: await this.iceServers() },
       extraHeaders: conversationId ? [`X-CC-Conversation: ${conversationId}`] : [],
+      eventHandlers: { icecandidate: fastIceReady() },
     });
   }
 }
