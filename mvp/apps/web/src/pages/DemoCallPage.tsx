@@ -4,6 +4,7 @@ import type { RTCSession } from 'jssip/lib/RTCSession';
 import type { UA } from 'jssip/lib/UA';
 import { useEffect, useRef, useState } from 'react';
 import { errorText, post } from '../lib/api';
+import { fastIceReady } from '../lib/ice-ready';
 import { AUDIO_CONSTRAINTS } from '../lib/softphone';
 import { t } from '../lib/i18n';
 
@@ -62,6 +63,7 @@ export function DemoCallPage() {
       const s = u.call(`sip:${did.trim() || c.did}@${c.domain}`, {
         mediaConstraints: { audio: AUDIO_CONSTRAINTS, video: false },
         pcConfig: { iceServers: c.iceServers },
+        eventHandlers: { icecandidate: fastIceReady() },
       });
       session.current = s;
       s.connection?.addEventListener('track', (t: RTCTrackEvent) => {

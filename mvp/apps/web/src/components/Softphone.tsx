@@ -108,7 +108,13 @@ export function SoftphoneStatus() {
   );
   return (
     <Group gap="xs">
-      <Button size="xs" variant="subtle" onClick={() => setSettings(true)} data-testid="audio-settings">
+      <Button
+        size="xs"
+        variant="subtle"
+        onClick={() => setSettings(true)}
+        data-testid="audio-settings"
+        visibleFrom="xs"
+      >
         {t.softphoneUi.zvuk}
         {s.headset ? t.softphoneUi.garnitura : ''}
       </Button>
@@ -333,7 +339,13 @@ export function SoftphoneCall() {
       withBorder
       data-testid="softphone-call"
       data-state={call.state}
-      style={{ position: 'fixed', right: 16, bottom: 16, zIndex: 300, width: 330 }}
+      style={{
+        position: 'fixed',
+        right: 16,
+        bottom: 16,
+        zIndex: 300,
+        width: 'min(330px, calc(100vw - 32px))',
+      }}
     >
       <Stack gap={6}>
         <Group justify="space-between">

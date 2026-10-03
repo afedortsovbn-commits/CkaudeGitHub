@@ -431,7 +431,10 @@ function Messages({ conv, typing, onTyping }: { conv: Row; typing: boolean; onTy
   const [busy, setBusy] = useState(false);
   const viewport = useRef<HTMLDivElement>(null);
   const qc = useQueryClient();
-  useEffect(() => viewport.current?.scrollTo({ top: viewport.current.scrollHeight }), [msgs.data, typing]);
+  useEffect(() => {
+    // scrollTo в новых браузерах возвращает Promise — из эффекта его возвращать нельзя (React ждёт функцию очистки).
+    viewport.current?.scrollTo({ top: viewport.current.scrollHeight });
+  }, [msgs.data, typing]);
   // Неотправленный ответ откладывает автообновление интерфейса до новой версии (Ф11, M-OP-11).
   const dirty = !!text.trim() || files.length > 0;
   useEffect(() => {
