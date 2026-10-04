@@ -6,6 +6,7 @@ import {
   createCallbackTask,
   enqueueFromIvr,
   emitCallState,
+  freeAgents,
   leaveQueueToIvr,
   saveCsat,
   transferCallExternal,
@@ -267,6 +268,8 @@ export class IvrRunner {
       case 'queue': {
         if (a.checkAgents && (await agentsOnShift(this.d.pool, a.queueId)) === 0)
           return this.resume(c, st, { type: 'queue', result: 'noAgents' });
+        // «Все операторы заняты» — проверяем до постановки: после неё router может сразу занять свободного.
+        const busy = a.busyAudio.length > 0 && (await freeAgents(this.d.pool, a.queueId, 'voice')) === 0;
         const ok = await this.d.tx((tx) =>
           enqueueFromIvr(tx, c.id, { queueId: a.queueId, topicId: a.topicId, priority: a.priority }),
         );
@@ -275,8 +278,25 @@ export class IvrRunner {
           return this.resume(c, st, { type: 'queue', result: 'noAgents' });
         }
         const next = { ...st, queuedAt: Date.now(), announceN: 0 };
-        await this.save(c.id, next, this.nextQueueWake(next));
-        await this.d.ari.channels.mohStart(ch);
+        // Фраза звучит вместо музыки; когда отзвучит — музыка (как у периодического сообщения очереди).
+        const played =
+          busy &&
+          (await this.play(
+            c,
+            next,
+            a.busyAudio.map((id) => ({ kind: 'audio', id })),
+            { announcing: true },
+          ));
+        if (played) {
+          // play() уже сохранил состояние с идентификатором проигрывания — ставим только будильник таймеров.
+          await this.d.pool.query(`UPDATE call SET ivr_wake_at = $2 WHERE id = $1`, [
+            c.id,
+            this.nextQueueWake(next),
+          ]);
+        } else {
+          await this.save(c.id, next, this.nextQueueWake(next));
+          await this.d.ari.channels.mohStart(ch);
+        }
         return;
       }
       case 'voicemail':

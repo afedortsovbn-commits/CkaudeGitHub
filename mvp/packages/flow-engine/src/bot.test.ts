@@ -269,3 +269,65 @@ describe('текстовый бот (flow-engine, Ф7)', () => {
     ]);
   });
 });
+
+describe('навигация по меню бота: «Назад» и «В главное меню» (п.2 требований)', () => {
+  const nav = { backLabel: 'Назад', homeLabel: 'В главное меню', retries: 1 };
+  const g: FlowGraph = {
+    version: 1,
+    kind: 'text',
+    nodes: [
+      node('start', 'start'),
+      node('m1', 'buttons', { ...nav, text: 'Главное меню', buttons: [{ id: 'azs', label: 'АЗС' }] }),
+      node('m2', 'buttons', { ...nav, text: 'АЗС', buttons: [{ id: 'fuel', label: 'Топливо' }] }),
+      node('m3', 'buttons', { ...nav, text: 'Топливо', buttons: [{ id: 'q', label: 'Качество' }] }),
+      node('op', 'handoff', { queueId: 'q1', text: '' }),
+    ],
+    edges: [
+      edge('start', 'next', 'm1'),
+      edge('m1', 'btn:azs', 'm2'),
+      edge('m2', 'btn:fuel', 'm3'),
+      edge('m3', 'btn:q', 'op'),
+      edge('m1', 'other', 'op'),
+      edge('m2', 'other', 'op'),
+      edge('m3', 'other', 'op'),
+    ],
+  };
+  const labels = (r: StepResult) => (r.action.type === 'prompt' ? r.action.buttons.map((b) => b.label) : []);
+
+  it('в первом меню навигации нет, во втором — только «Назад», в третьем — обе кнопки', () => {
+    let r = startFlow(g, {}, ctx);
+    expect(labels(r)).toEqual(['АЗС']);
+    r = step(resumeFlow(g, r.state, { type: 'text', text: 'АЗС' }, ctx));
+    expect(labels(r)).toEqual(['Топливо', 'Назад']);
+    r = step(resumeFlow(g, r.state, { type: 'text', text: 'Топливо' }, ctx));
+    expect(labels(r)).toEqual(['Качество', 'Назад', 'В главное меню']);
+  });
+
+  it('«Назад» возвращает в предыдущее меню, «В главное меню» — в первое; номер кнопки тоже работает', () => {
+    let r = startFlow(g, {}, ctx);
+    r = step(resumeFlow(g, r.state, { type: 'text', text: 'АЗС' }, ctx));
+    r = step(resumeFlow(g, r.state, { type: 'text', text: 'Топливо' }, ctx));
+    r = step(resumeFlow(g, r.state, { type: 'text', text: 'назад' }, ctx));
+    expect(r.state.node).toBe('m2');
+    expect(labels(r)).toEqual(['Топливо', 'Назад']);
+    r = step(resumeFlow(g, r.state, { type: 'text', text: 'Топливо' }, ctx));
+    r = step(resumeFlow(g, r.state, { type: 'text', text: '3' }, ctx));
+    expect(r.state.node).toBe('m1');
+    expect(r.state.menuStack).toEqual([]);
+    expect(labels(r)).toEqual(['АЗС']);
+  });
+
+  it('без подписей кнопок навигации нет (прежние сценарии не меняются)', () => {
+    const plain: FlowGraph = {
+      ...g,
+      nodes: g.nodes.map((n) =>
+        n.type === 'buttons' ? { ...n, params: { ...n.params, backLabel: '', homeLabel: '' } } : n,
+      ),
+    };
+    let r = startFlow(plain, {}, ctx);
+    r = step(resumeFlow(plain, r.state, { type: 'text', text: 'АЗС' }, ctx));
+    expect(labels(r)).toEqual(['Топливо']);
+    r = step(resumeFlow(plain, r.state, { type: 'text', text: 'Назад' }, ctx));
+    expect(r.state.node).toBe('m2'); // неверный ответ — повтор вопроса
+  });
+});

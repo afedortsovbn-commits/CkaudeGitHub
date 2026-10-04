@@ -60,6 +60,8 @@ export type Action =
       maxWaitSec: number | null;
       /** Проверять наличие операторов на смене (подключён выход «нет операторов»). */
       checkAgents: boolean;
+      /** Фраза «все операторы заняты» — один раз при постановке, если свободных операторов нет. */
+      busyAudio: string[];
     }
   | { type: 'voicemail'; mode: 'voicemail' | 'callback'; media: Media[]; maxSec: number; queueId: string }
   | { type: 'transfer'; number: string }
@@ -284,6 +286,7 @@ class Run {
           announceEverySec: qp.announceAudio?.length ? Number(qp.announceEverySec ?? 30) : null,
           maxWaitSec: qp.maxWaitSec && has('timeout') ? Number(qp.maxWaitSec) : null,
           checkAgents: !!qp.checkAgents && has('noAgents'),
+          busyAudio: (qp.busyAudio ?? []).filter(Boolean),
         };
       }
       case 'voicemail': {
@@ -320,7 +323,7 @@ class Run {
           type: 'prompt',
           // Напоминание без своего текста — повтор вопроса.
           text: remind || [retry, question].filter(Boolean).join('\n\n'),
-          buttons: node.type === 'buttons' ? buttonsOf(node) : [],
+          buttons: node.type === 'buttons' ? this.menuButtons(node) : [],
           ...(waitSec ? { waitSec } : {}),
         };
       }
@@ -337,6 +340,19 @@ class Run {
       default:
         return END;
     }
+  }
+
+  /** Кнопки меню бота с навигацией: «Назад» и «В главное меню» — только во вложенном меню (есть куда вернуться). */
+  menuButtons(node: FlowNode): BotButton[] {
+    const bp = node.params as unknown as ButtonsParams;
+    const out = buttonsOf(node);
+    if (!this.state.menuStack.length) return out;
+    const back = String(bp.backLabel ?? '').trim();
+    const home = String(bp.homeLabel ?? '').trim();
+    if (back) out.push({ id: NAV_BACK, label: back });
+    // «В главное меню» из меню второго уровня совпадает с «Назад» — показываем одну кнопку.
+    if (home && (!back || this.state.menuStack.length > 1)) out.push({ id: NAV_HOME, label: home });
+    return out;
   }
 
   /** Клиент молчит на шаге бота (Ф14): напоминание, пока не исчерпаны, затем выход «нет ответа». */
@@ -368,6 +384,10 @@ class Run {
     return this.result(this.actionFor(node));
   }
 }
+
+/** Служебные кнопки навигации меню бота (не выходы узла). */
+const NAV_BACK = '__back';
+const NAV_HOME = '__home';
 
 const RETRY_EXIT: Partial<Record<string, string>> = { menu: 'noinput', buttons: 'other', ask: 'invalid' };
 
@@ -540,8 +560,15 @@ export function resumeFlow(
     case 'buttons': {
       if (event.type === 'timeout') return run.silence(node);
       if (event.type !== 'text') return null;
-      const b = matchButton(buttonsOf(node), event.text);
+      const b = matchButton(run.menuButtons(node), event.text);
       if (!b) return run.retry(node, true);
+      if (b.id === NAV_BACK || b.id === NAV_HOME) {
+        const stack = run.state.menuStack;
+        run.path.push({ nodeId: node.id, type: node.type, exit: b.id === NAV_BACK ? 'back' : 'home' });
+        return run.enter(b.id === NAV_BACK ? stack[stack.length - 1]! : stack[0]!);
+      }
+      // Пройденное меню — в стек: из следующего меню можно вернуться «Назад».
+      run.state = { ...run.state, menuStack: [...run.state.menuStack, node.id] };
       const variable = (node.params as unknown as ButtonsParams).variable;
       if (variable) run.state = { ...run.state, vars: { ...run.state.vars, [variable]: b.label } };
       return run.exit(buttonExit(b.id));

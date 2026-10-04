@@ -16,6 +16,7 @@ import {
 import type { Pool, PoolClient } from 'pg';
 import { appendMessage, emitConversation, loadRef } from './conversations';
 import { DomainError } from './tickets';
+import { freeAgents } from './ivr';
 import { positionSettings, queuePosition } from './queue-position';
 import { enqueueBotTurn } from './webhooks';
 
@@ -27,7 +28,7 @@ import { enqueueBotTurn } from './webhooks';
  * сразу, без перезапуска и кэшей (M-ADM-04).
  */
 
-type RuleKind = 'greeting' | 'queued' | 'after_hours' | 'keyword' | 'inactivity';
+type RuleKind = 'greeting' | 'queued' | 'queued_busy' | 'after_hours' | 'keyword' | 'inactivity';
 
 interface ConvRow {
   id: string;
@@ -184,11 +185,31 @@ async function replyOnce(
   vars: Record<string, string>,
 ): Promise<void> {
   if (c.auto_state[kind]) return;
-  const rule = (await rulesFor(tx, kind, c.channel_id, c.channel_kind))[0];
+  let rule = (await rulesFor(tx, kind, c.channel_id, c.channel_kind))[0];
+  let auto: 'greeting' | 'queued' | 'queued_busy' = kind;
+  // «Все операторы заняты» (п.4 требований): свободных операторов в очереди нет — вместо «Вы в очереди»
+  // отправляется отдельный текст, если администратор его задал.
+  if (kind === 'queued') {
+    const busyRule = (await rulesFor(tx, 'queued_busy', c.channel_id, c.channel_kind))[0];
+    if (busyRule && (await queueIsBusy(tx, c))) {
+      rule = busyRule;
+      auto = 'queued_busy';
+    }
+  }
   if (!rule) return;
   if (kind === 'queued') vars = { ...vars, ...(await positionVars(tx, c)) };
-  await autoMessage(tx, c, render(rule.text, vars), { auto: kind });
+  await autoMessage(tx, c, render(rule.text, vars), { auto });
   await markAuto(tx, c, { [kind]: new Date().toISOString() });
+}
+
+/** В очереди обращения сейчас нет ни одного свободного оператора (все заняты, на перерыве или не в сети). */
+async function queueIsBusy(tx: PoolClient, c: ConvRow): Promise<boolean> {
+  const { rows } = await tx.query<{ queue_id: string | null }>(
+    `SELECT queue_id FROM conversation WHERE id = $1`,
+    [c.id],
+  );
+  const queueId = rows[0]?.queue_id;
+  return !!queueId && (await freeAgents(tx, queueId, 'chat')) === 0;
 }
 
 /**

@@ -23,7 +23,7 @@ function Chat() {
   const [error, setError] = useState<string | null>(null);
   const [typing, setTyping] = useState(false);
   const [pendingFiles, setPendingFiles] = useState<Msg['attachments']>([]);
-  const [form, setForm] = useState({ name: '', phone: '', consent: false });
+  const [form, setForm] = useState({ name: '', phone: '', email: '', consent: false });
   const wsRef = useRef<WebSocket | null>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
   const lastAt = useRef<string | undefined>(undefined);
@@ -105,8 +105,9 @@ function Chat() {
       const s = await api.session({
         consentAccepted: true,
         consentVersion: cfg!.consentVersion,
-        name: form.name || undefined,
-        phone: form.phone || undefined,
+        name: form.name.trim() || undefined,
+        phone: form.phone.trim() || undefined,
+        email: form.email.trim() || undefined,
         appUser,
       });
       store.set(TOKEN_KEY, s.token);
@@ -186,6 +187,13 @@ function Chat() {
     if (wsRef.current?.readyState === 1) wsRef.current.send(JSON.stringify({ type: 'typing' }));
   };
 
+  // Анкета перед чатом (п.2 требований): поля и обязательность — из настроек канала.
+  const fields = cfg?.prechatFields ?? [
+    { key: 'name' as const, required: false },
+    { key: 'phone' as const, required: false },
+  ];
+  const missing = appUser ? [] : fields.filter((f) => f.required && !form[f.key].trim());
+
   const panel = (
     <div class={`panel${inline ? ' inline' : ''}`} data-testid="cc-panel">
       <div class="head">
@@ -195,16 +203,18 @@ function Chat() {
       {!token ? (
         <div class="form">
           <div>{cfg?.greeting}</div>
-          <input
-            placeholder={t.widget.vasheImyaNeobyazatelno}
-            value={form.name}
-            onInput={(e) => setForm({ ...form, name: (e.target as HTMLInputElement).value })}
-          />
-          <input
-            placeholder={t.widget.telefonNeobyazatelno}
-            value={form.phone}
-            onInput={(e) => setForm({ ...form, phone: (e.target as HTMLInputElement).value })}
-          />
+          {fields.map((f) => (
+            <input
+              key={f.key}
+              type={f.key === 'phone' ? 'tel' : f.key === 'email' ? 'email' : 'text'}
+              autoComplete={f.key === 'phone' ? 'tel' : f.key === 'email' ? 'email' : 'name'}
+              placeholder={`${t.widget.field[f.key]}${f.required ? ' *' : t.widget.optional}`}
+              value={form[f.key]}
+              class={f.required && !form[f.key].trim() ? 'need' : ''}
+              data-testid={`cc-field-${f.key}`}
+              onInput={(e) => setForm({ ...form, [f.key]: (e.target as HTMLInputElement).value })}
+            />
+          ))}
           <label>
             <input
               type="checkbox"
@@ -214,7 +224,17 @@ function Chat() {
             <span>{cfg?.consentText}</span>
           </label>
           {error && <div class="err">{error}</div>}
-          <button class="primary" disabled={!form.consent || !cfg} onClick={() => void start()}>
+          {missing.length > 0 && (
+            <div class="hint" data-testid="cc-missing">
+              {t.widget.zapolnite(missing.map((f) => t.widget.field[f.key]).join(', '))}
+            </div>
+          )}
+          <button
+            class="primary"
+            disabled={!form.consent || !cfg || missing.length > 0}
+            onClick={() => void start()}
+            data-testid="cc-start"
+          >
             {t.widget.nachatChat}
           </button>
         </div>

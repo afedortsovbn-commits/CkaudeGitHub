@@ -455,6 +455,7 @@ function ArticleForm({ row, cats, onClose }: { row: Row | null; cats: Row[]; onC
 const RULE_KINDS = [
   { value: 'greeting', label: t.automation.privetstviePriPervomSoobshchenii },
   { value: 'queued', label: t.automation.vyVOcheredi },
+  { value: 'queued_busy', label: t.automation.vseOperatoryZanyaty },
   { value: 'after_hours', label: t.automation.nerabocheeVremya },
   { value: 'keyword', label: t.automation.otvetNaKlyuchevyeSlova },
   { value: 'inactivity', label: t.automation.avtozakrytiePriMolchaniiKlienta },
@@ -522,7 +523,14 @@ export function AutoRepliesPage() {
         createDefaults={{ kind: 'greeting', warnAfterSec: 300, closeAfterSec: 300 }}
         fields={[
           { key: 'name', label: t.automation.nazvanie, required: true },
-          { key: 'kind', label: t.automation.vid, type: 'select', required: true, options: RULE_KINDS },
+          {
+            key: 'kind',
+            label: t.automation.vid,
+            type: 'select',
+            required: true,
+            options: RULE_KINDS,
+            description: t.automation.kindHint,
+          },
           {
             key: 'channelIds',
             label: t.automation.kanalyEkzemplyary,

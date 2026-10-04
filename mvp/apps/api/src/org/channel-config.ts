@@ -23,6 +23,12 @@ const ChatChannelConfigSchema = z
     greeting: z.string().max(1000).optional(),
     max_file_mb: z.number().int().min(1).max(50).optional(),
     app_secret: z.string().min(16).max(200).optional(),
+    /** Анкета перед чатом (п.2 требований): какие сведения о клиенте спросить и какие из них обязательны. */
+    prechat_fields: z
+      .array(z.object({ key: z.enum(['name', 'phone', 'email']), required: z.boolean() }).strict())
+      .max(3)
+      .refine((a) => new Set(a.map((f) => f.key)).size === a.length, 'Поле анкеты указано дважды')
+      .optional(),
   })
   .passthrough();
 
