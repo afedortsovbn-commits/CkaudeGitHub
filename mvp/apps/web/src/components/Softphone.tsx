@@ -19,6 +19,7 @@ import { notifications } from '@mantine/notifications';
 import { useEffect, useState } from 'react';
 import { audioDevices, type DeviceNotice } from '../lib/audio-devices';
 import { AudioSettings } from './AudioSettings';
+import { CallContext } from './CallContext';
 import { errorText, post } from '../lib/api';
 import { options, type Row, useList } from '../lib/data';
 import { useAuth } from '../lib/auth';
@@ -344,7 +345,9 @@ export function SoftphoneCall() {
         left: 16,
         bottom: 16,
         zIndex: 300,
-        width: 'min(330px, calc(100vw - 32px))',
+        width: 'min(360px, calc(100vw - 32px))',
+        maxHeight: 'calc(100vh - 90px)',
+        overflowY: 'auto',
       }}
     >
       <Stack gap={6}>
@@ -387,9 +390,19 @@ export function SoftphoneCall() {
           </Badge>
         )}
         <Text size="sm" data-testid="softphone-remote">
-          {call.remoteName || call.remote}
-          {call.remoteName && call.remote && call.remoteName !== call.remote ? ` · ${call.remote}` : ''}
+          {call.conversationId && !call.listen && !call.consultOf
+            ? call.remote
+            : call.remoteName || call.remote}
+          {!(call.conversationId && !call.listen && !call.consultOf) &&
+          call.remoteName &&
+          call.remote &&
+          call.remoteName !== call.remote
+            ? ` · ${call.remote}`
+            : ''}
         </Text>
+        {call.conversationId && !call.listen && !call.consultOf && (
+          <CallContext conversationId={call.conversationId} fallbackName={call.remoteName || ''} />
+        )}
         {talking && !call.listen && call.supervisorMode && (
           <Alert
             p={6}
