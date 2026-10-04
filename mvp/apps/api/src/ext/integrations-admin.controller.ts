@@ -70,7 +70,7 @@ const SUB_COLS = `s.id, s.kind, s.name, s.url, s.event_types, s.channel_ids, s.h
  * (M-INT-02, M-AI-02) с журналом доставки, проверкой и повтором. Ключ и секрет подписи показываются один раз.
  */
 @Controller('api/v1')
-@RequirePerm('admin.settings')
+@RequirePerm('apikeys.manage', 'webhooks.manage', 'integrations.manage')
 export class IntegrationsAdminController {
   constructor(@Inject(APP_CONTEXT) private readonly ctx: AppContext) {}
 
@@ -86,6 +86,7 @@ export class IntegrationsAdminController {
   // ------------------------------------------------------------------ ключи API
 
   @Get('api-keys')
+  @RequirePerm('apikeys.manage')
   async keys() {
     const list = await rows(
       this.ctx.pool,
@@ -107,6 +108,7 @@ export class IntegrationsAdminController {
   }
 
   @Post('api-keys')
+  @RequirePerm('apikeys.manage')
   async createKey(@CurrentUser() p: Principal, @Body() body: unknown) {
     const b = parse(KeyBody, body);
     const g = generateKey();
@@ -147,6 +149,7 @@ export class IntegrationsAdminController {
   }
 
   @Patch('api-keys/:id')
+  @RequirePerm('apikeys.manage')
   async patchKey(@CurrentUser() p: Principal, @Param('id') id: string, @Body() body: unknown) {
     const b = parse(KeyPatch, body);
     const r = await withTx(this.ctx.pool, async (tx) => {
@@ -191,6 +194,7 @@ export class IntegrationsAdminController {
 
   /** Отзыв необратим: ключ перестаёт работать в течение нескольких секунд на всех экземплярах api. */
   @Post('api-keys/:id/revoke')
+  @RequirePerm('apikeys.manage')
   @HttpCode(200)
   async revoke(@CurrentUser() p: Principal, @Param('id') id: string) {
     const r = await withTx(this.ctx.pool, async (tx) => {
@@ -210,6 +214,7 @@ export class IntegrationsAdminController {
   // ------------------------------------------------------------------ подписки webhooks и внешние боты
 
   @Get('webhooks')
+  @RequirePerm('webhooks.manage')
   async subs(@Query('kind') kind?: string) {
     const list = await rows(
       this.ctx.pool,
@@ -228,6 +233,7 @@ export class IntegrationsAdminController {
   }
 
   @Get('webhooks/:id')
+  @RequirePerm('webhooks.manage')
   async getSub(@Param('id') id: string) {
     return toApi(await this.sub(this.ctx.pool, id));
   }
@@ -240,6 +246,7 @@ export class IntegrationsAdminController {
   }
 
   @Post('webhooks')
+  @RequirePerm('webhooks.manage')
   async createSub(@CurrentUser() p: Principal, @Body() body: unknown) {
     const b = parse(SubBody, body);
     const s = this.sealed();
@@ -269,6 +276,7 @@ export class IntegrationsAdminController {
   }
 
   @Patch('webhooks/:id')
+  @RequirePerm('webhooks.manage')
   async patchSub(@CurrentUser() p: Principal, @Param('id') id: string, @Body() body: unknown) {
     const b = parse(SubPatch, body);
     return withTx(this.ctx.pool, async (tx) => {
@@ -311,6 +319,7 @@ export class IntegrationsAdminController {
   }
 
   @Post('webhooks/:id/activate')
+  @RequirePerm('webhooks.manage')
   @HttpCode(200)
   activate(@CurrentUser() p: Principal, @Param('id') id: string) {
     return this.setActive(p, id, true);
@@ -318,12 +327,14 @@ export class IntegrationsAdminController {
 
   /** Отключённая подписка не получает новых событий; накопленная очередь сохраняется до включения. */
   @Post('webhooks/:id/deactivate')
+  @RequirePerm('webhooks.manage')
   @HttpCode(200)
   deactivate(@CurrentUser() p: Principal, @Param('id') id: string) {
     return this.setActive(p, id, false);
   }
 
   @Post('webhooks/:id/rotate-secret')
+  @RequirePerm('webhooks.manage')
   @HttpCode(200)
   async rotate(@CurrentUser() p: Principal, @Param('id') id: string) {
     const s = this.sealed();
@@ -340,6 +351,7 @@ export class IntegrationsAdminController {
 
   /** Кнопка «Тест»: проверочная доставка сразу, с результатом (код ответа, ошибка, время). */
   @Post('webhooks/:id/test')
+  @RequirePerm('webhooks.manage')
   @HttpCode(200)
   async test(@Param('id') id: string) {
     await this.sub(this.ctx.pool, id);
@@ -353,6 +365,7 @@ export class IntegrationsAdminController {
 
   /** Журнал доставки подписки. */
   @Get('webhooks/:id/deliveries')
+  @RequirePerm('webhooks.manage')
   async deliveries(@Param('id') id: string, @Query('status') status?: string) {
     await this.sub(this.ctx.pool, id);
     const list = await rows(
@@ -367,6 +380,7 @@ export class IntegrationsAdminController {
   }
 
   @Get('webhooks/:id/deliveries/:deliveryId')
+  @RequirePerm('webhooks.manage')
   async delivery(@Param('id') id: string, @Param('deliveryId') deliveryId: string) {
     if (!uuid.safeParse(deliveryId).success) throw notFound('Доставка');
     const r = await one(
@@ -380,6 +394,7 @@ export class IntegrationsAdminController {
 
   /** «Повторить сейчас»: вся очередь подписки (и неудавшиеся) или одна доставка. */
   @Post('webhooks/:id/retry')
+  @RequirePerm('webhooks.manage')
   @HttpCode(200)
   async retry(@CurrentUser() p: Principal, @Param('id') id: string, @Body() body: unknown) {
     const { deliveryId } = parse(z.object({ deliveryId: uuid.optional() }).strict(), body ?? {});

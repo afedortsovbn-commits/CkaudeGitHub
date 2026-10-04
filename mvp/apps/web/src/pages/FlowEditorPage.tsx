@@ -88,7 +88,7 @@ export function FlowListPage({ kind = 'voice' }: { kind?: FlowKind }) {
     <>
       <Group justify="space-between" mb="md">
         <Title order={3}>{text ? t.flowEditor.botyTekstovykhKanalov : t.flowEditor.stsenariiIvr}</Title>
-        {can('admin.directories') && (
+        {can(text ? 'bots.manage' : 'ivr.manage') && (
           <Button onClick={() => setOpen(true)} data-testid="flow-new">
             {t.flowEditor.novyyStsenariy}
           </Button>
@@ -134,7 +134,7 @@ export function FlowListPage({ kind = 'voice' }: { kind?: FlowKind }) {
                 </Badge>
               </Table.Td>
               <Table.Td>
-                {can('admin.directories') && (
+                {can(text ? 'bots.manage' : 'ivr.manage') && (
                   <Button
                     size="xs"
                     variant="subtle"
@@ -1397,7 +1397,8 @@ function Editor({ flow }: { flow: FlowRow }) {
   const [versions, setVersions] = useState(false);
   const [comment, setComment] = useState('');
   const [dirty, setDirty] = useState(false);
-  const writable = can('admin.directories');
+  // Голосовой сценарий правит «Сценарии IVR», бот — «Боты».
+  const writable = can(flow.kind === 'text' ? 'bots.manage' : 'ivr.manage');
 
   // Справочники подгружаются позже графа — обновляем подписи узлов.
   useEffect(() => {
@@ -1806,17 +1807,18 @@ function Versions({ flow, onLoad, onClose }: { flow: FlowRow; onLoad(g: FlowGrap
                   >
                     {t.flowEditor.vChernovik}
                   </Button>
-                  {can('admin.directories') && v.id !== flow.publishedVersionId && (
-                    <Button
-                      size="xs"
-                      variant="light"
-                      color="orange"
-                      onClick={() => rollback.mutate(v.id, { onSuccess: onClose })}
-                      data-testid={`rollback-${v.version}`}
-                    >
-                      {t.flowEditor.otkatitNaNee}
-                    </Button>
-                  )}
+                  {can(flow.kind === 'text' ? 'bots.manage' : 'ivr.manage') &&
+                    v.id !== flow.publishedVersionId && (
+                      <Button
+                        size="xs"
+                        variant="light"
+                        color="orange"
+                        onClick={() => rollback.mutate(v.id, { onSuccess: onClose })}
+                        data-testid={`rollback-${v.version}`}
+                      >
+                        {t.flowEditor.otkatitNaNee}
+                      </Button>
+                    )}
                 </Group>
               </Table.Td>
             </Table.Tr>

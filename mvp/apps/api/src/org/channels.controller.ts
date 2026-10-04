@@ -13,7 +13,7 @@ export class ChannelsController {
   constructor(@Inject(APP_CONTEXT) private readonly ctx: AppContext) {}
 
   @Get(':id/log')
-  @RequirePerm('admin.directories')
+  @RequirePerm('channels.manage')
   async log(@Param('id') id: string, @Query('limit') limit?: string) {
     const ch = await one(
       this.ctx.pool,

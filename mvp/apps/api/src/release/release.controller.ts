@@ -32,7 +32,7 @@ export class ReleaseController {
   }
 
   @Get('admin/feature-flags')
-  @RequirePerm('admin.settings')
+  @RequirePerm('settings.manage')
   async flags() {
     const list = await rows(
       this.ctx.pool,
@@ -42,7 +42,7 @@ export class ReleaseController {
   }
 
   @Patch('admin/feature-flags/:key')
-  @RequirePerm('admin.settings')
+  @RequirePerm('settings.manage')
   async setFlag(@CurrentUser() p: Principal, @Param('key') key: string, @Body() body: unknown) {
     const b = parse(z.object({ enabled: z.boolean() }).strict(), body);
     return withTx(this.ctx.pool, async (tx) => {
@@ -60,7 +60,7 @@ export class ReleaseController {
 
   /** Журнал выпусков (ops/release.sh): тег, предыдущий тег, итог, отчёт по шагам. */
   @Get('admin/releases')
-  @RequirePerm('admin.settings')
+  @RequirePerm('settings.manage')
   async releases() {
     const list = await rows(
       this.ctx.pool,

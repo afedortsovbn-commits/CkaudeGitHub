@@ -12,11 +12,11 @@ import {
 import type { Principal } from '@cc/auth';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import { CurrentUser, RequirePerm } from '../auth/guard';
+import { CurrentUser, hasPerm, RequirePerm } from '../auth/guard';
 import { APP_CONTEXT, type AppContext } from '../context';
 import { audit } from '../lib/audit';
 import { type Db, one, rows, toApi, withTx } from '../lib/db';
-import { ApiError, badRequest, notFound, parse } from '../lib/errors';
+import { ApiError, badRequest, forbidden, notFound, parse } from '../lib/errors';
 import { executeOperation } from './integrations';
 import { parseWav } from './wav';
 
@@ -69,8 +69,19 @@ export class IvrController {
 
   // ------------------------------------------------------------------ сценарии
 
+  /** Голосовой сценарий меняет право «Сценарии IVR», текстовый (бот) — «Боты». */
+  private async assertFlowPerm(p: Principal, flow: { id?: string; kind?: string }): Promise<void> {
+    let kind = flow.kind;
+    if (!kind && flow.id) {
+      const f = await one<{ kind: string }>(this.ctx.pool, `SELECT kind FROM flow WHERE id = $1`, [flow.id]);
+      if (!f) throw notFound('Сценарий');
+      kind = f.kind;
+    }
+    if (!hasPerm(p, kind === 'text' ? 'bots.manage' : 'ivr.manage')) throw forbidden();
+  }
+
   @Get('flows')
-  @RequirePerm('admin.directories', 'supervisor.monitor')
+  @RequirePerm('ivr.manage', 'bots.manage', 'supervisor.monitor')
   async flows(@Query('kind') kind?: string) {
     const list = await rows(
       this.ctx.pool,
@@ -85,9 +96,10 @@ export class IvrController {
   }
 
   @Post('flows')
-  @RequirePerm('admin.directories')
+  @RequirePerm('ivr.manage', 'bots.manage')
   async createFlow(@CurrentUser() p: Principal, @Body() body: unknown) {
     const b = parse(FlowCreate, body);
+    await this.assertFlowPerm(p, { kind: b.kind });
     const id = newId();
     return withTx(this.ctx.pool, async (tx) => {
       await this.checkDids(tx, id, b.kind, b.dids);
@@ -103,7 +115,7 @@ export class IvrController {
   }
 
   @Get('flows/:id')
-  @RequirePerm('admin.directories', 'supervisor.monitor')
+  @RequirePerm('ivr.manage', 'bots.manage', 'supervisor.monitor')
   async flow(@Param('id') id: string) {
     const f = await one(
       this.ctx.pool,
@@ -123,8 +135,9 @@ export class IvrController {
   }
 
   @Patch('flows/:id')
-  @RequirePerm('admin.directories')
+  @RequirePerm('ivr.manage', 'bots.manage')
   async patchFlow(@CurrentUser() p: Principal, @Param('id') id: string, @Body() body: unknown) {
+    await this.assertFlowPerm(p, { id });
     const b = parse(FlowPatch, body);
     return withTx(this.ctx.pool, async (tx) => {
       const before = await one<{ kind: 'voice' | 'text'; name: string; dids: string[] }>(
@@ -178,8 +191,9 @@ export class IvrController {
 
   @Post('flows/:id/validate')
   @HttpCode(200)
-  @RequirePerm('admin.directories')
-  async validate(@Param('id') id: string) {
+  @RequirePerm('ivr.manage', 'bots.manage')
+  async validate(@CurrentUser() p: Principal, @Param('id') id: string) {
+    await this.assertFlowPerm(p, { id });
     const f = await one<{ draft: unknown; kind: 'voice' | 'text' }>(
       this.ctx.pool,
       `SELECT draft, kind FROM flow WHERE id = $1`,
@@ -191,8 +205,9 @@ export class IvrController {
 
   @Post('flows/:id/publish')
   @HttpCode(200)
-  @RequirePerm('admin.directories')
+  @RequirePerm('ivr.manage', 'bots.manage')
   async publish(@CurrentUser() p: Principal, @Param('id') id: string, @Body() body: unknown) {
+    await this.assertFlowPerm(p, { id });
     const b = parse(Publish, body ?? {});
     return withTx(this.ctx.pool, async (tx) => {
       const f = await one<{ draft: unknown; kind: 'voice' | 'text'; published_version_id: string | null }>(
@@ -233,8 +248,9 @@ export class IvrController {
   /** Откат (M-IVR-06): опубликованной становится выбранная прежняя версия. */
   @Post('flows/:id/rollback')
   @HttpCode(200)
-  @RequirePerm('admin.directories')
+  @RequirePerm('ivr.manage', 'bots.manage')
   async rollback(@CurrentUser() p: Principal, @Param('id') id: string, @Body() body: unknown) {
+    await this.assertFlowPerm(p, { id });
     const b = parse(Rollback, body);
     return withTx(this.ctx.pool, async (tx) => {
       const f = await one<{ published_version_id: string | null }>(
@@ -267,7 +283,7 @@ export class IvrController {
   }
 
   @Get('flows/:id/versions/:versionId')
-  @RequirePerm('admin.directories', 'supervisor.monitor')
+  @RequirePerm('ivr.manage', 'bots.manage', 'supervisor.monitor')
   async version(@Param('id') id: string, @Param('versionId') versionId: string) {
     const v = await one(
       this.ctx.pool,
@@ -280,8 +296,9 @@ export class IvrController {
 
   @Post('flows/:id/:op')
   @HttpCode(200)
-  @RequirePerm('admin.directories')
+  @RequirePerm('ivr.manage', 'bots.manage')
   async toggleFlow(@CurrentUser() p: Principal, @Param('id') id: string, @Param('op') op: string) {
+    await this.assertFlowPerm(p, { id });
     if (op !== 'activate' && op !== 'deactivate') throw notFound('Действие');
     return withTx(this.ctx.pool, async (tx) => {
       const f = await one<{ kind: 'voice' | 'text'; dids: string[] }>(
@@ -351,7 +368,7 @@ export class IvrController {
   // ------------------------------------------------------------------ аудиобиблиотека
 
   @Get('ivr/audio')
-  @RequirePerm('admin.directories', 'supervisor.monitor')
+  @RequirePerm('ivr.manage', 'supervisor.monitor')
   async audioList(@Query('active') active?: string) {
     const list = await rows(
       this.ctx.pool,
@@ -363,7 +380,7 @@ export class IvrController {
   }
 
   @Get('ivr/fragments')
-  @RequirePerm('admin.directories')
+  @RequirePerm('ivr.manage')
   async fragments() {
     const have = await rows<{ fragment_key: string; id: string }>(
       this.ctx.pool,
@@ -382,7 +399,7 @@ export class IvrController {
    * перед загрузкой, сервер проверяет заголовок). Имя — ?name=, фрагмент числа — ?kind=fragment&fragmentKey=.
    */
   @Post('ivr/audio')
-  @RequirePerm('admin.directories')
+  @RequirePerm('ivr.manage')
   async uploadAudio(
     @CurrentUser() p: Principal,
     @Req() req: FastifyRequest,
@@ -423,7 +440,7 @@ export class IvrController {
   }
 
   @Patch('ivr/audio/:id')
-  @RequirePerm('admin.directories')
+  @RequirePerm('ivr.manage')
   async patchAudio(@CurrentUser() p: Principal, @Param('id') id: string, @Body() body: unknown) {
     const b = parse(AudioPatch, body);
     return withTx(this.ctx.pool, async (tx) => {
@@ -448,7 +465,7 @@ export class IvrController {
 
   @Post('ivr/audio/:id/:op')
   @HttpCode(200)
-  @RequirePerm('admin.directories')
+  @RequirePerm('ivr.manage')
   async toggleAudio(@CurrentUser() p: Principal, @Param('id') id: string, @Param('op') op: string) {
     if (op !== 'activate' && op !== 'deactivate') throw notFound('Действие');
     return withTx(this.ctx.pool, async (tx) => {
@@ -464,7 +481,7 @@ export class IvrController {
 
   /** Прослушивание файла в админке. */
   @Get('ivr/audio/:id/file')
-  @RequirePerm('admin.directories', 'supervisor.monitor')
+  @RequirePerm('ivr.manage', 'supervisor.monitor')
   async audioFile(@Param('id') id: string, @Res() reply: FastifyReply) {
     const a = await one<{ storage_key: string }>(
       this.ctx.pool,
@@ -483,7 +500,7 @@ export class IvrController {
   /** Тестовый запуск операции из админки и из тестового прогона сценария: возвращает и сам ответ системы. */
   @Post('integrations/:id/test')
   @HttpCode(200)
-  @RequirePerm('admin.directories')
+  @RequirePerm('integrations.manage')
   async testOperation(@CurrentUser() p: Principal, @Param('id') id: string, @Body() body: unknown) {
     const b = parse(TestRun, body ?? {});
     return executeOperation(
@@ -493,7 +510,7 @@ export class IvrController {
   }
 
   @Get('integrations/:id/log')
-  @RequirePerm('admin.directories')
+  @RequirePerm('integrations.manage')
   async operationLog(@Param('id') id: string) {
     const list = await rows(
       this.ctx.pool,

@@ -19,7 +19,7 @@ const SettingsBody = ObjectSyncSettingsSchema.extend({ token: z.string().max(200
  * изменений) и журнал запусков. Плановый ежедневный запуск выполняет worker; логика сверки — `@cc/domain`.
  */
 @Controller('api/v1/objects/sync')
-@RequirePerm('admin.directories')
+@RequirePerm('objects.manage')
 export class ObjectSyncController {
   constructor(@Inject(APP_CONTEXT) private readonly ctx: AppContext) {}
 

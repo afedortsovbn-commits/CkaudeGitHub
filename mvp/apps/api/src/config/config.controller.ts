@@ -9,7 +9,7 @@ import { exportConfig, importConfig } from './config-transfer';
 
 /** Экспорт/импорт конфигурации (Ф9, M-ADM-05): «Администрирование → Экспорт и импорт». */
 @Controller('api/v1/config')
-@RequirePerm('admin.settings')
+@RequirePerm('config.transfer')
 export class ConfigController {
   constructor(@Inject(APP_CONTEXT) private readonly ctx: AppContext) {}
 

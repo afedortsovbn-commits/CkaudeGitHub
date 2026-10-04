@@ -134,7 +134,7 @@ export class OrgController {
 
   /** Мультивыбор предприятий для подразделения: одно подразделение сразу в нескольких предприятиях. */
   @Put('departments/:id/enterprises')
-  @RequirePerm('admin.directories')
+  @RequirePerm('org.manage')
   async setEnterprises(@CurrentUser() p: Principal, @Param('id') id: string, @Body() body: unknown) {
     const { enterpriseIds } = parse(SetEnterprisesBody, body);
     return withTx(this.ctx.pool, async (tx) => {
@@ -168,7 +168,7 @@ export class OrgController {
   }
 
   @Patch('enterprise-departments/:id')
-  @RequirePerm('admin.directories')
+  @RequirePerm('org.manage')
   async patchLink(@CurrentUser() p: Principal, @Param('id') id: string, @Body() body: unknown) {
     const data = parse(LinkPatch, body) as Record<string, unknown>;
     const { cols, vals } = toCols(data);
@@ -192,7 +192,7 @@ export class OrgController {
 
   /** Открытые тикеты, которых коснётся отключение (предупреждение администратору, M-TKT-12a). */
   @Get('tickets-impact')
-  @RequirePerm('admin.directories')
+  @RequirePerm('org.manage')
   async ticketsImpact(@Query() q: Record<string, string>) {
     return openTicketsAffectedBy(this.ctx.pool, {
       ...(q.enterpriseDepartmentId ? { enterpriseDepartmentIds: [q.enterpriseDepartmentId] } : {}),
@@ -216,7 +216,7 @@ export class OrgController {
   }
 
   @Post('topics')
-  @RequirePerm('admin.directories')
+  @RequirePerm('org.manage')
   async createTopic(@CurrentUser() p: Principal, @Body() body: unknown) {
     const b = parse(TopicCreate, body);
     return withTx(this.ctx.pool, async (tx) => {
@@ -250,7 +250,7 @@ export class OrgController {
   }
 
   @Patch('topics/:id')
-  @RequirePerm('admin.directories')
+  @RequirePerm('org.manage')
   async patchTopic(@CurrentUser() p: Principal, @Param('id') id: string, @Body() body: unknown) {
     const data = parse(TopicPatch, body) as Record<string, unknown>;
     const { cols, vals } = toCols(data);
@@ -271,14 +271,14 @@ export class OrgController {
   /** Деактивация темы вместе с поддеревом; активация — только самой темы (родитель должен быть активен). */
   @Post('topics/:id/deactivate')
   @HttpCode(200)
-  @RequirePerm('admin.directories')
+  @RequirePerm('org.manage')
   deactivateTopic(@CurrentUser() p: Principal, @Param('id') id: string) {
     return this.toggleTopic(p, id, 'deactivate');
   }
 
   @Post('topics/:id/activate')
   @HttpCode(200)
-  @RequirePerm('admin.directories')
+  @RequirePerm('org.manage')
   activateTopic(@CurrentUser() p: Principal, @Param('id') id: string) {
     return this.toggleTopic(p, id, 'activate');
   }
@@ -336,7 +336,7 @@ export class OrgController {
   }
 
   @Post('topics/:id/fields')
-  @RequirePerm('admin.directories')
+  @RequirePerm('org.manage')
   async createField(@CurrentUser() p: Principal, @Param('id') topicId: string, @Body() body: unknown) {
     const b = parse(FieldCreate, body);
     if (b.type === 'select' && !b.options?.length) throw badRequest('Для списка нужны варианты значений');
@@ -365,7 +365,7 @@ export class OrgController {
   }
 
   @Patch('fields/:id')
-  @RequirePerm('admin.directories')
+  @RequirePerm('org.manage')
   async patchField(@CurrentUser() p: Principal, @Param('id') id: string, @Body() body: unknown) {
     const data = parse(FieldPatch, body) as Record<string, unknown>;
     if (data.options) data.options = JSON.stringify(data.options);
@@ -392,7 +392,7 @@ export class OrgController {
    */
   @Post('objects/import')
   @HttpCode(200)
-  @RequirePerm('admin.directories')
+  @RequirePerm('objects.manage')
   async importObjects(@CurrentUser() p: Principal, @Body() body: unknown) {
     const { csv } = parse(z.object({ csv: z.string().min(1).max(5_000_000) }), body);
     const parsed = Papa.parse<Record<string, string>>(csv.trim(), {
@@ -452,7 +452,7 @@ export class OrgController {
   }
 
   @Patch('settings')
-  @RequirePerm('admin.settings')
+  @RequirePerm('settings.manage')
   async patchSettings(@CurrentUser() p: Principal, @Body() body: unknown) {
     const data = parse(z.record(z.unknown()), body);
     for (const [k, v] of Object.entries(data)) {

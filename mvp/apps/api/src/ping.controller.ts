@@ -27,7 +27,7 @@ export class PingController {
   }
 
   /** Демонстрация transactional outbox: события пишутся в БД и публикуются в NATS фоновым relay. */
-  @RequirePerm('admin.settings')
+  @RequirePerm('settings.manage')
   @Post('demo/events')
   async demoEvents(@Body() body: unknown) {
     const { count } = DemoEventsBody.parse(body ?? {});

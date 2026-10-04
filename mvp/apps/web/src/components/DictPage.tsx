@@ -30,13 +30,27 @@ interface Props {
   createDefaults?: Record<string, unknown>;
 }
 
+/** Право на изменение справочника по виду (как writePerm в api, org/dictionaries.ts). */
+const DICT_WRITE_PERM: Record<string, string | string[]> = {
+  enterprises: 'org.manage',
+  departments: 'org.manage',
+  objects: 'objects.manage',
+  channels: 'channels.manage',
+  integrations: 'integrations.manage',
+  'auto-replies': 'autoreplies.manage',
+  'kb-categories': 'kb.manage',
+  'assist-providers': 'assist.manage',
+  announcements: ['announcements.manage', 'supervisor.monitor'],
+  'scope-templates': 'admin.users',
+};
+
 /** Страница простого справочника поверх /api/v1/dict/:kind. */
 export function DictPage({
   kind,
   title,
   columns,
   fields,
-  writePerm = 'admin.directories',
+  writePerm = DICT_WRITE_PERM[kind] ?? 'dictionaries.manage',
   toolbar,
   rowActions,
   toForm,
