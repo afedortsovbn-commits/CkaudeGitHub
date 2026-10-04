@@ -36,7 +36,7 @@ const TEXT_CHANNELS = [
 /** Шаблоны ответов: общие (администратор) и личные (любой оператор). Быстрый вызов — «/код» в поле ответа. */
 export function TemplatesPage() {
   const { can } = useAuth();
-  const admin = can('admin.directories');
+  const admin = can('templates.manage');
   const [scope, setScope] = useState('all');
   const [q, setQ] = useState('');
   const [inactive, setInactive] = useState(false);
@@ -245,7 +245,7 @@ export function KnowledgePage() {
       <Tabs defaultValue="articles">
         <Tabs.List mb="md">
           <Tabs.Tab value="articles">{t.automation.stati}</Tabs.Tab>
-          {can('admin.directories') && <Tabs.Tab value="categories">{t.automation.rubriki}</Tabs.Tab>}
+          {can('kb.manage') && <Tabs.Tab value="categories">{t.automation.rubriki}</Tabs.Tab>}
         </Tabs.List>
         <Tabs.Panel value="articles">
           <Articles />
@@ -272,7 +272,7 @@ export function KnowledgePage() {
 
 function Articles() {
   const { can } = useAuth();
-  const admin = can('admin.directories');
+  const admin = can('kb.manage');
   const [q, setQ] = useState('');
   const [cat, setCat] = useState<string | null>(null);
   const [inactive, setInactive] = useState(false);

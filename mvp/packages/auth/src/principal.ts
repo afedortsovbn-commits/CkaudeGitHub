@@ -1,4 +1,5 @@
 import type { Pool } from 'pg';
+import { expandPermissions } from './permissions';
 import type { ScopeRule, ScopeSubject } from './scope';
 
 export const PERMISSIONS = [
@@ -26,6 +27,24 @@ export const PERMISSIONS = [
   'conversations.takeover',
   /** Ф14: подсказка оператору в чате — скрытое сообщение, клиенту не уходит. */
   'conversations.hint',
+  // Дробные права по разделам (п.1 требований): каталог — permissions.ts; admin.directories и admin.settings
+  // раскрываются в них автоматически.
+  'channels.manage',
+  'ivr.manage',
+  'bots.manage',
+  'announcements.manage',
+  'autoreplies.manage',
+  'templates.manage',
+  'kb.manage',
+  'assist.manage',
+  'integrations.manage',
+  'org.manage',
+  'objects.manage',
+  'dictionaries.manage',
+  'settings.manage',
+  'apikeys.manage',
+  'webhooks.manage',
+  'config.transfer',
 ] as const;
 export type Permission = (typeof PERMISSIONS)[number];
 
@@ -92,7 +111,7 @@ export class PrincipalLoader {
     );
     const u = rows[0];
     if (!u) return null;
-    const permissions = new Set(u.permissions ?? []);
+    const permissions = expandPermissions(u.permissions ?? []);
     const scopes = await this.pool.query<{
       enterprise_ids: string[] | null;
       department_ids: string[] | null;

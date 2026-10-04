@@ -23,7 +23,7 @@ export class PrivacyController {
 
   /** Реестр согласий: кто, когда, в каком канале и с какой версией текста согласился. */
   @Get('admin/consents')
-  @RequirePerm('admin.audit', 'admin.settings')
+  @RequirePerm('admin.audit', 'settings.manage')
   async consents(@Query() q: Record<string, string>) {
     const params: unknown[] = [];
     const where: string[] = ['TRUE'];
@@ -73,7 +73,7 @@ export class PrivacyController {
 
   /** Версии текстов согласия по каналам (текст каждой версии хранится навсегда). */
   @Get('admin/consent-texts')
-  @RequirePerm('admin.audit', 'admin.settings', 'admin.directories')
+  @RequirePerm('admin.audit', 'settings.manage', 'channels.manage')
   async consentTexts(@Query('channelId') channelId?: string) {
     const list = await rows(
       this.ctx.pool,
@@ -177,7 +177,7 @@ export class PrivacyController {
   /** Запустить очистку записей по сроку хранения сейчас (обычно — по расписанию раз в час). */
   @Post('admin/retention/run')
   @HttpCode(200)
-  @RequirePerm('admin.settings')
+  @RequirePerm('settings.manage')
   async retention(@CurrentUser() p: Principal) {
     const r = await runRecordingRetention(this.ctx.pool, this.ctx.storage);
     await withTx(this.ctx.pool, (tx) =>

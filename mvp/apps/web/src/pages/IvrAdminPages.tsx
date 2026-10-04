@@ -69,7 +69,7 @@ export function AudioLibraryPage() {
   const [name, setName] = useState('');
   const toggle = useAction((r: Row) => post(`/ivr/audio/${r.id}/${r.isActive ? 'deactivate' : 'activate'}`));
   const saveName = useAction((r: Row) => patch(`/ivr/audio/${r.id}`, { name }));
-  const writable = can('admin.directories');
+  const writable = can('ivr.manage');
   const doUpload = async (file: File | null, query = '') => {
     if (!file) return;
     setBusy(true);
@@ -298,7 +298,7 @@ export function AnnouncementsPage() {
     <DictPage
       kind="announcements"
       title={t.ivr.obyavleniyaOSboyakh}
-      writePerm={['admin.directories', 'supervisor.monitor']}
+      writePerm={['announcements.manage', 'supervisor.monitor']}
       columns={[
         { key: 'name', label: t.ivr.nazvanie },
         {

@@ -65,7 +65,7 @@ export class AutomationController {
 
   /** Общие шаблоны и личные шаблоны сотрудника; q — поиск (по коду, названию, тексту), для «/» и панели. */
   @Get('templates')
-  @RequirePerm('conversations.work', 'admin.directories')
+  @RequirePerm('conversations.work', 'templates.manage')
   async templates(@CurrentUser() p: Principal, @Query() q: Record<string, string | undefined>) {
     const params: unknown[] = [p.id];
     const where = ['(t.owner_user_id IS NULL OR t.owner_user_id = $1)'];
@@ -100,10 +100,10 @@ export class AutomationController {
   }
 
   @Post('templates')
-  @RequirePerm('conversations.work', 'admin.directories')
+  @RequirePerm('conversations.work', 'templates.manage')
   async createTemplate(@CurrentUser() p: Principal, @Body() body: unknown) {
     const b = parse(TemplateBody, body);
-    if (b.shared && !hasPerm(p, 'admin.directories')) throw forbidden();
+    if (b.shared && !hasPerm(p, 'templates.manage')) throw forbidden();
     if (!b.shared && !hasPerm(p, 'conversations.work')) throw forbidden();
     const id = newId();
     return withTx(this.ctx.pool, async (tx) => {
@@ -145,11 +145,11 @@ export class AutomationController {
       [id],
     );
     if (!t || (t.owner_user_id && t.owner_user_id !== p.id)) throw notFound('Шаблон');
-    if (!t.owner_user_id && !hasPerm(p, 'admin.directories')) throw forbidden();
+    if (!t.owner_user_id && !hasPerm(p, 'templates.manage')) throw forbidden();
   }
 
   @Patch('templates/:id')
-  @RequirePerm('conversations.work', 'admin.directories')
+  @RequirePerm('conversations.work', 'templates.manage')
   async patchTemplate(@CurrentUser() p: Principal, @Param('id') id: string, @Body() body: unknown) {
     const b = parse(TemplatePatch, body);
     return withTx(this.ctx.pool, async (tx) => {
@@ -180,7 +180,7 @@ export class AutomationController {
 
   @Post('templates/:id/:op')
   @HttpCode(200)
-  @RequirePerm('conversations.work', 'admin.directories')
+  @RequirePerm('conversations.work', 'templates.manage')
   async templateOp(@CurrentUser() p: Principal, @Param('id') id: string, @Param('op') op: string) {
     if (op === 'used') {
       // Счётчик использования — для порядка подсказок; без аудита.
@@ -205,7 +205,7 @@ export class AutomationController {
   // ------------------------------------------------------------------ база знаний
 
   @Get('kb/articles')
-  @RequirePerm('conversations.work', 'admin.directories', 'supervisor.monitor')
+  @RequirePerm('conversations.work', 'kb.manage', 'supervisor.monitor')
   async articles(@Query() q: Record<string, string | undefined>) {
     const params: unknown[] = [];
     const where: string[] = [];
@@ -242,13 +242,13 @@ export class AutomationController {
   }
 
   @Get('kb/articles/:id')
-  @RequirePerm('conversations.work', 'admin.directories', 'supervisor.monitor')
+  @RequirePerm('conversations.work', 'kb.manage', 'supervisor.monitor')
   getArticle(@Param('id') id: string) {
     return this.article(this.ctx.pool, id);
   }
 
   @Post('kb/articles')
-  @RequirePerm('admin.directories')
+  @RequirePerm('kb.manage')
   async createArticle(@CurrentUser() p: Principal, @Body() body: unknown) {
     const b = parse(ArticleBody, body);
     const id = newId();
@@ -265,7 +265,7 @@ export class AutomationController {
   }
 
   @Patch('kb/articles/:id')
-  @RequirePerm('admin.directories')
+  @RequirePerm('kb.manage')
   async patchArticle(@CurrentUser() p: Principal, @Param('id') id: string, @Body() body: unknown) {
     const b = parse(ArticlePatch, body);
     return withTx(this.ctx.pool, async (tx) => {
@@ -297,7 +297,7 @@ export class AutomationController {
 
   @Post('kb/articles/:id/:op')
   @HttpCode(200)
-  @RequirePerm('admin.directories')
+  @RequirePerm('kb.manage')
   async articleOp(@CurrentUser() p: Principal, @Param('id') id: string, @Param('op') op: string) {
     if (op !== 'activate' && op !== 'deactivate') throw notFound('Действие');
     return withTx(this.ctx.pool, async (tx) => {
@@ -394,7 +394,7 @@ export class AutomationController {
 
   @Post('assist/providers/:id/test')
   @HttpCode(200)
-  @RequirePerm('admin.directories')
+  @RequirePerm('assist.manage')
   async testProvider(@Param('id') id: string) {
     const p = await one<ProviderRow>(
       this.ctx.pool,

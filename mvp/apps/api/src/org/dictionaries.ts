@@ -95,7 +95,7 @@ export const DICTIONARIES: Record<string, DictSpec> = {
     orderBy: 'name',
     search: ['code', 'name'],
     scope: { enterprise: 't.id' },
-    writePerm: 'admin.directories',
+    writePerm: 'org.manage',
   },
   departments: {
     table: 'department',
@@ -104,7 +104,7 @@ export const DICTIONARIES: Record<string, DictSpec> = {
     orderBy: 'name',
     search: ['code', 'name'],
     scope: { department: 't.id' },
-    writePerm: 'admin.directories',
+    writePerm: 'org.manage',
   },
   objects: {
     table: 'service_object',
@@ -119,7 +119,7 @@ export const DICTIONARIES: Record<string, DictSpec> = {
     orderBy: 'name',
     search: ['code', 'name', 'address'],
     scope: { enterprise: 't.enterprise_id' },
-    writePerm: 'admin.directories',
+    writePerm: 'objects.manage',
     guard: guardSyncedObject,
   },
   dispositions: {
@@ -133,7 +133,7 @@ export const DICTIONARIES: Record<string, DictSpec> = {
     ],
     orderBy: 'sort_order, name',
     search: ['code', 'name'],
-    writePerm: 'admin.directories',
+    writePerm: 'dictionaries.manage',
   },
   'answer-methods': {
     table: 'answer_method',
@@ -141,7 +141,7 @@ export const DICTIONARIES: Record<string, DictSpec> = {
     fields: [f('code', code), f('name', name), f('sortOrder', z.number().int().default(0))],
     orderBy: 'sort_order, name',
     search: ['code', 'name'],
-    writePerm: 'admin.directories',
+    writePerm: 'dictionaries.manage',
   },
   tags: {
     table: 'tag',
@@ -149,7 +149,7 @@ export const DICTIONARIES: Record<string, DictSpec> = {
     fields: [f('name', name)],
     orderBy: 'name',
     search: ['name'],
-    writePerm: 'admin.directories',
+    writePerm: 'dictionaries.manage',
   },
   'break-reasons': {
     table: 'break_reason',
@@ -157,7 +157,7 @@ export const DICTIONARIES: Record<string, DictSpec> = {
     fields: [f('name', name)],
     orderBy: 'name',
     search: ['name'],
-    writePerm: 'admin.directories',
+    writePerm: 'dictionaries.manage',
   },
   skills: {
     table: 'skill',
@@ -165,7 +165,7 @@ export const DICTIONARIES: Record<string, DictSpec> = {
     fields: [f('name', name), f('topicId', uuid.nullable().optional(), { filter: true })],
     orderBy: 'name',
     search: ['name'],
-    writePerm: 'admin.directories',
+    writePerm: 'dictionaries.manage',
   },
   queues: {
     table: 'queue',
@@ -191,7 +191,7 @@ export const DICTIONARIES: Record<string, DictSpec> = {
     ],
     orderBy: 'priority DESC, name',
     search: ['name'],
-    writePerm: 'admin.directories',
+    writePerm: 'dictionaries.manage',
   },
   'routing-rules': {
     table: 'routing_rule',
@@ -211,7 +211,7 @@ export const DICTIONARIES: Record<string, DictSpec> = {
     ],
     orderBy: 'sort_order, name',
     search: ['name', 'pattern'],
-    writePerm: 'admin.directories',
+    writePerm: 'dictionaries.manage',
   },
   'segment-priority': {
     table: 'segment_priority',
@@ -219,7 +219,7 @@ export const DICTIONARIES: Record<string, DictSpec> = {
     fields: [f('segment', code), f('boost', z.number().int().min(0).max(10000).default(0))],
     orderBy: 'segment',
     search: ['segment'],
-    writePerm: 'admin.directories',
+    writePerm: 'dictionaries.manage',
   },
   schedules: {
     table: 'schedule',
@@ -234,7 +234,7 @@ export const DICTIONARIES: Record<string, DictSpec> = {
     ],
     orderBy: 'name',
     search: ['name'],
-    writePerm: 'admin.directories',
+    writePerm: 'dictionaries.manage',
   },
   channels: {
     table: 'channel',
@@ -252,7 +252,7 @@ export const DICTIONARIES: Record<string, DictSpec> = {
     ],
     orderBy: 'kind, name',
     search: ['name'],
-    writePerm: 'admin.directories',
+    writePerm: 'channels.manage',
     prepare: (data, before, secretsKey) => {
       if (data.config === undefined && data.kind === undefined) return data;
       const kind = String(data.kind ?? before?.kind);
@@ -276,7 +276,7 @@ export const DICTIONARIES: Record<string, DictSpec> = {
     ],
     orderBy: 'sort_order, name',
     search: ['name'],
-    writePerm: ['admin.directories', 'supervisor.monitor'],
+    writePerm: ['announcements.manage', 'supervisor.monitor'],
   },
   // Ф6: интеграционные операции (M-INT-03); секрет авторизации шифруется, в ответах — маска.
   integrations: {
@@ -299,7 +299,7 @@ export const DICTIONARIES: Record<string, DictSpec> = {
     ],
     orderBy: 'name',
     search: ['code', 'name'],
-    writePerm: 'admin.directories',
+    writePerm: 'integrations.manage',
     prepare: prepareIntegration,
     present: maskIntegration,
   },
@@ -332,7 +332,7 @@ export const DICTIONARIES: Record<string, DictSpec> = {
     ],
     orderBy: 'kind, sort_order, name',
     search: ['name', 'text', 'pattern'],
-    writePerm: 'admin.directories',
+    writePerm: 'autoreplies.manage',
     prepare: (data, before) => {
       const pick = (api: string, col: string) => (api in data ? data[api] : before?.[col]);
       const kind = pick('kind', 'kind');
@@ -364,7 +364,7 @@ export const DICTIONARIES: Record<string, DictSpec> = {
     ],
     orderBy: 'sort_order, name',
     search: ['name'],
-    writePerm: 'admin.directories',
+    writePerm: 'kb.manage',
   },
   // Ф7: провайдеры подсказок (Assist API, M-AI-01); ключи шифруются, в ответах — маска.
   'assist-providers': {
@@ -386,7 +386,7 @@ export const DICTIONARIES: Record<string, DictSpec> = {
     ],
     orderBy: 'sort_order, name',
     search: ['name'],
-    writePerm: 'admin.directories',
+    writePerm: 'assist.manage',
     prepare: prepareProvider,
     present: maskProvider,
   },

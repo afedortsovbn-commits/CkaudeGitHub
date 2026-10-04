@@ -290,7 +290,7 @@ function UserDrawer({ id, onClose }: { id: string; onClose(): void }) {
               <Checkbox
                 key={String(r.code)}
                 label={String(r.name)}
-                description={(r.permissions as string[]).join(', ')}
+                description={String(r.description ?? '')}
                 checked={((form.roles as string[]) ?? []).includes(String(r.code))}
                 onChange={(e) => {
                   const cur = new Set((form.roles as string[]) ?? []);

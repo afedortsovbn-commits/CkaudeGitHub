@@ -37,6 +37,7 @@ import { setDraft } from '../lib/app-version';
 import { EscalateModal, SubstitutesPanel, TicketList, useTicketCount } from './TicketPages';
 import { MergeContactModal } from '../components/MergeContactModal';
 import { t } from '../lib/i18n';
+import { orderTabs } from '../lib/nav';
 
 const CHANNEL: Record<string, string> = {
   webchat: t.workspace.sayt,
@@ -1417,7 +1418,9 @@ function SubTab({
 
 export function WorkspacePage() {
   const { me, can } = useAuth();
-  const [tab, setTab] = useState('mine');
+  // Вкладки списка и карточки — в порядке из интерфейса роли; первая открывается по умолчанию.
+  const wsUi = me?.ui?.workspace;
+  const [tab, setTab] = useState(wsUi?.listTabs?.[0] ?? 'mine');
   const [selected, setSelected] = useState<string | null>(null);
   const [typingContact, setTypingContact] = useState<string | null>(null);
   const qc = useQueryClient();
@@ -1481,7 +1484,7 @@ export function WorkspacePage() {
   // чат попадает в «Постобработку» по времени молчания клиента, без события.
   const nHold = useCount('hold');
   const nWrapup = useCount('wrapup');
-  const tabs = useMemo(
+  const allTabs = useMemo(
     () => [
       { value: 'mine', label: t.workspace.moi },
       { value: 'queue', label: t.workspace.ochered },
@@ -1490,6 +1493,19 @@ export function WorkspacePage() {
       { value: 'closed', label: t.workspace.zakrytye },
     ],
     [can],
+  );
+  const tabs = useMemo(() => orderTabs(allTabs, wsUi?.listTabs), [allTabs, wsUi]);
+  const rightTabs = useMemo(
+    () =>
+      orderTabs(
+        [
+          { value: 'card', label: t.workspace.obrashchenie },
+          { value: 'contact', label: t.workspace.klient },
+          { value: 'calls', label: t.workspace.zvonki, testId: 'tab-calls' },
+        ],
+        wsUi?.rightTabs,
+      ),
+    [wsUi],
   );
 
   return (
@@ -1636,13 +1652,13 @@ export function WorkspacePage() {
       </Grid.Col>
       <Grid.Col span={4}>
         {conv.data && (
-          <Tabs defaultValue="card">
+          <Tabs defaultValue={rightTabs[0]?.value ?? 'card'}>
             <Tabs.List mb="xs">
-              <Tabs.Tab value="card">{t.workspace.obrashchenie}</Tabs.Tab>
-              <Tabs.Tab value="contact">{t.workspace.klient}</Tabs.Tab>
-              <Tabs.Tab value="calls" data-testid="tab-calls">
-                {t.workspace.zvonki}
-              </Tabs.Tab>
+              {rightTabs.map((x) => (
+                <Tabs.Tab key={x.value} value={x.value} data-testid={'testId' in x ? x.testId : undefined}>
+                  {x.label}
+                </Tabs.Tab>
+              ))}
             </Tabs.List>
             <ScrollArea h="calc(100vh - 170px)">
               <Tabs.Panel value="card">

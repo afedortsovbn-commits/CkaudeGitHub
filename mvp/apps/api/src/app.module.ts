@@ -17,6 +17,7 @@ import { DictController } from './org/dict.controller';
 import { MatrixController } from './org/matrix.controller';
 import { ObjectSyncController } from './org/objects-sync.controller';
 import { OrgController } from './org/org.controller';
+import { RolesController } from './org/roles.controller';
 import { UsersController } from './org/users.controller';
 import { PingController } from './ping.controller';
 import { PrivacyController } from './privacy/privacy.controller';
@@ -42,6 +43,7 @@ export class AppModule {
         ChannelsController,
         OrgController,
         UsersController,
+        RolesController,
         MatrixController,
         ClientChatController,
         ConversationsController,

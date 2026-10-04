@@ -2,9 +2,10 @@ import { Body, Controller, Get, HttpCode, Inject, Post, Req, Res } from '@nestjs
 import { newId } from '@cc/contracts';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
+import { mergeRoleUi } from '../org/roles.controller';
 import { APP_CONTEXT, type AppContext } from '../context';
 import { audit } from '../lib/audit';
-import { one, withTx } from '../lib/db';
+import { one, rows, withTx } from '../lib/db';
 import { ApiError, parse } from '../lib/errors';
 import { CurrentUser, Public } from './guard';
 import { hashPassword, PASSWORD_MIN_LENGTH, verifyPassword } from './passwords';
@@ -51,7 +52,7 @@ export async function isAdminUser(db: Pool | PoolClient, userId: string): Promis
   const r = await one<{ a: boolean }>(
     db,
     `SELECT EXISTS (SELECT 1 FROM user_role ur JOIN role r ON r.code = ur.role_code, unnest(r.permissions) p
-                     WHERE ur.user_id = $1 AND p LIKE 'admin.%') AS a`,
+                     WHERE ur.user_id = $1 AND (p LIKE 'admin.%' OR p LIKE '%.manage' OR p = 'config.transfer')) AS a`,
     [userId],
   );
   return !!r?.a;
@@ -291,14 +292,22 @@ export class AuthController {
   }
 
   @Get('me')
-  me(@CurrentUser() p: Principal) {
+  async me(@CurrentUser() p: Principal) {
+    // Роли сотрудника по порядку: названия (для созданных администратором ролей) и интерфейс по умолчанию (п.1).
+    const roleRows = await rows<{ code: string; name: string; ui: unknown }>(
+      this.ctx.pool,
+      `SELECT code, name, ui FROM role WHERE code = ANY($1) ORDER BY sort_order, name`,
+      [p.roles],
+    );
     return {
       id: p.id,
       fullName: p.fullName,
       email: p.email,
       roles: p.roles,
+      roleNames: Object.fromEntries(roleRows.map((r) => [r.code, r.name])),
       permissions: [...p.permissions].sort(),
       scope: p.scope,
+      ui: mergeRoleUi(roleRows),
     };
   }
 

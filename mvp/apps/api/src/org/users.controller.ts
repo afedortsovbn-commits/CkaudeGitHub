@@ -9,6 +9,7 @@ import { audit } from '../lib/audit';
 import { one, rows, toApi, withTx } from '../lib/db';
 import { handleUserDeactivated } from '@cc/domain';
 import { badRequest, notFound, parse } from '../lib/errors';
+import { assertAdminRemains } from './roles.controller';
 
 const uuid = z.string().uuid();
 const password = z.string().min(PASSWORD_MIN_LENGTH, `Пароль — не короче ${PASSWORD_MIN_LENGTH} символов`);
@@ -188,6 +189,7 @@ export class UsersController {
       const before = await rows(tx, 'SELECT role_code FROM user_role WHERE user_id = $1', [id]);
       await tx.query('DELETE FROM user_role WHERE user_id = $1', [id]);
       await this.writeRoles(tx, id, roles);
+      await assertAdminRemains(tx);
       await audit(
         tx,
         p,
@@ -332,6 +334,7 @@ export class UsersController {
         [id],
       );
       if (!r.rowCount) throw notFound('Активный сотрудник');
+      await assertAdminRemains(tx);
       await this.revokeSessions(tx, id);
       const impact = await handleUserDeactivated(tx, id);
       await audit(tx, p, 'deactivate', 'app_user', id, null, { tickets: impact });

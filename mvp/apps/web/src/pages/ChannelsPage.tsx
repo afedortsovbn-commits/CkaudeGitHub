@@ -382,7 +382,7 @@ export function ChannelsPage() {
   const queues = useList('/dict/queues');
   const bots = useList('/flows?kind=text');
   // Внешние боты (Bot Gateway, Ф9) — «Администрирование → Внешние боты».
-  const extBots = useList('/webhooks?kind=bot', can('admin.settings'));
+  const extBots = useList('/webhooks?kind=bot', can('webhooks.manage'));
   const [logOf, setLogOf] = useState<Row | null>(null);
 
   return (

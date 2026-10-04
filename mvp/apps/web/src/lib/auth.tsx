@@ -1,6 +1,7 @@
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useState } from 'react';
 import { api, get, onSessionLost, refreshSession, setAccessToken } from './api';
 import { t } from './i18n';
+import type { RoleUi } from './nav';
 
 export interface Me {
   id: string;
@@ -8,6 +9,10 @@ export interface Me {
   email: string;
   roles: string[];
   permissions: string[];
+  /** Названия ролей (в том числе созданных администратором). */
+  roleNames?: Record<string, string>;
+  /** Интерфейс по умолчанию по ролям (меню, стартовая страница, вкладки); null — стандартный. */
+  ui?: RoleUi | null;
 }
 
 interface AuthState {
@@ -49,6 +54,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     })();
     return onSessionLost(() => setMe(null));
   }, []);
+
+  // Права и интерфейс роли могли измениться (администратор правит роль) — перечитываем при возврате на вкладку.
+  useEffect(() => {
+    if (!me) return;
+    const onFocus = () => {
+      void get<Me>('/auth/me')
+        .then((fresh) => {
+          setMe((cur) => (cur && JSON.stringify(cur) === JSON.stringify(fresh) ? cur : fresh));
+        })
+        .catch(() => undefined);
+    };
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [!!me]);
 
   const login = useCallback(async (email: string, password: string): Promise<MfaStep | null> => {
     const r = await api<LoginResponse>('POST', '/auth/login', { email, password });

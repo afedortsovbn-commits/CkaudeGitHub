@@ -18,6 +18,7 @@ import { SupervisorPage } from './pages/SupervisorPage';
 import { ReportsPage } from './pages/ReportsPage';
 import { TopicsPage } from './pages/TopicsPage';
 import { CabinetPage, TicketControlPage, TicketPage } from './pages/TicketPages';
+import { RolesPage } from './pages/RolesPage';
 import { UsersPage } from './pages/UsersPage';
 import { WorkspacePage } from './pages/WorkspacePage';
 import { ChannelsPage } from './pages/ChannelsPage';
@@ -83,6 +84,7 @@ function App() {
         <Route path="objects" element={<ObjectsPage />} />
         <Route path="objects-sync" element={<ObjectSyncPage />} />
         <Route path="users" element={<UsersPage />} />
+        <Route path="roles" element={<RolesPage />} />
         <Route path="matrix" element={<MatrixPage />} />
         <Route path="dictionaries" element={<DictionariesPage />} />
         <Route path="settings" element={<SettingsPage />} />
