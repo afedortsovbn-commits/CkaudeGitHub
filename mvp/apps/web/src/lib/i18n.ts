@@ -17,6 +17,7 @@ import { mergeContactModalUi } from './i18n/mergeContactModalUi';
 import { notificationBellUi } from './i18n/notificationBellUi';
 import { org } from './i18n/org';
 import { privacy } from './i18n/privacy';
+import { callContext } from './i18n/callContext';
 import { hintPanel } from './i18n/hintPanel';
 import { profilePage } from './i18n/profilePage';
 import { reports } from './i18n/reports';
@@ -130,6 +131,7 @@ const ru = {
   layout,
   matrix,
   hintPanel,
+  callContext,
   mergeContactModalUi,
   notificationBellUi,
   org,
