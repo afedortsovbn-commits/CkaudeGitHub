@@ -130,6 +130,33 @@ export class AuthController {
     return this.startSession(user.id, req, res, 'login.success');
   }
 
+  /**
+   * Демо-стенд: вход в один клик под демо-учёткой (страница /demo-login?as=<email>, ссылки «Войти» на странице
+   * ссылок стенда). Пароль известен api из окружения стенда и в браузер не передаётся; дальше — обычный вход.
+   */
+  @Public()
+  @Post('demo-login')
+  @HttpCode(200)
+  async demoLogin(
+    @Body() body: unknown,
+    @Req() req: FastifyRequest,
+    @Res({ passthrough: true }) res: CookieReply,
+  ) {
+    const cfg = this.ctx.config;
+    if (cfg.DEMO_QUICK_LOGIN !== 'true') throw new ApiError(404, 'not_found', 'Страница не найдена');
+    const { email } = parse(z.object({ email: z.string().trim().email() }).strict(), body);
+    const e = email.toLowerCase();
+    const password =
+      e === cfg.DEMO_ADMIN_EMAIL.toLowerCase()
+        ? cfg.DEMO_ADMIN_PASSWORD
+        : e.endsWith('@demo.local')
+          ? cfg.DEMO_PASSWORD
+          : undefined;
+    if (!password)
+      throw new ApiError(403, 'demo_login_forbidden', 'Быстрый вход — только для демо-учёток стенда');
+    return this.login({ email, password }, req, res);
+  }
+
   /** Вход, шаг 2: код из приложения-аутентификатора (или первый код при обязательной настройке 2FA). */
   @Public()
   @Post('login/totp')

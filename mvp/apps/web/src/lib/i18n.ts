@@ -19,6 +19,7 @@ import { org } from './i18n/org';
 import { privacy } from './i18n/privacy';
 import { callContext } from './i18n/callContext';
 import { roles } from './i18n/roles';
+import { demoLogin } from './i18n/demoLogin';
 import { hintPanel } from './i18n/hintPanel';
 import { profilePage } from './i18n/profilePage';
 import { reports } from './i18n/reports';
@@ -134,6 +135,7 @@ const ru = {
   hintPanel,
   callContext,
   roles,
+  demoLogin,
   mergeContactModalUi,
   notificationBellUi,
   org,

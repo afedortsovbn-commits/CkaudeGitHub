@@ -19,6 +19,8 @@ TAG="${TAG:-dev}"
 export API_TAG="$TAG" MEDIA_TAG="${MEDIA_TAG:-$TAG}" MOCK_TELEGRAM_TAG="$TAG"
 export COMPOSE_PROFILES="${COMPOSE_PROFILES:-test}" SEED_DEMO=true
 export BOOTSTRAP_ADMIN_PASSWORD="${BOOTSTRAP_ADMIN_PASSWORD:-Admin12345!}" DEMO_PASSWORD="${DEMO_PASSWORD:-Demo12345!}"
+# Вход в один клик (/demo-login?as=<email>): api входит с известным паролем демо-учётки — только на стенде.
+export DEMO_ADMIN_PASSWORD="$BOOTSTRAP_ADMIN_PASSWORD"
 # Заглушки внутри контура: webhook Telegram и ссылки в письмах — на Traefik, исходящие звонки — на имитатор транка,
 # письма 2-й линии — в GreenMail.
 export PUBLIC_BASE_URL="${PUBLIC_BASE_URL:-https://traefik}" TRUNK_HOST="${TRUNK_HOST:-trunk-sim:5060}"

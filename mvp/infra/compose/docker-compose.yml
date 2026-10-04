@@ -204,6 +204,10 @@ services:
       # Внешние адреса coturn для браузеров (turn:<адрес>:3478,turn:<адрес>:3479); пусто — без TURN (локальная сеть).
       TURN_URLS: ${TURN_URLS:-}
       DEMO_CALLER_ENABLED: ${SEED_DEMO:-false}
+      # Вход в один клик под демо-учётками (страница /demo-login) — только для демо-стенда (ops/demo.sh).
+      DEMO_QUICK_LOGIN: ${SEED_DEMO:-false}
+      DEMO_PASSWORD: ${DEMO_PASSWORD:-}
+      DEMO_ADMIN_PASSWORD: ${DEMO_ADMIN_PASSWORD:-}
       S3_ENDPOINT: http://s3:8333
       MAX_UPLOAD_MB: 10
       # Адрес системы в описании публичного API (OpenAPI, Ф9).

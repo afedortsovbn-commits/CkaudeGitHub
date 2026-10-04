@@ -18,6 +18,7 @@ import { SupervisorPage } from './pages/SupervisorPage';
 import { ReportsPage } from './pages/ReportsPage';
 import { TopicsPage } from './pages/TopicsPage';
 import { CabinetPage, TicketControlPage, TicketPage } from './pages/TicketPages';
+import { DemoLoginPage } from './pages/DemoLoginPage';
 import { RolesPage } from './pages/RolesPage';
 import { UsersPage } from './pages/UsersPage';
 import { WorkspacePage } from './pages/WorkspacePage';
@@ -44,6 +45,8 @@ function App() {
   const loc = useLocation();
   // Публичная демо-страница звонка — без входа сотрудника.
   if (loc.pathname.startsWith('/demo-call')) return <DemoCallPage />;
+  // Демо-стенд: вход в один клик со страницы ссылок стенда (/demo-login?as=<email>).
+  if (loc.pathname.startsWith('/demo-login')) return <DemoLoginPage />;
   if (loading)
     return (
       <Center h="100vh">
