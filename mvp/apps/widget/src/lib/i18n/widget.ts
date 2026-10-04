@@ -2,8 +2,9 @@
 export const widget = {
   faylBolsheMb: (p0: unknown) => `Файл больше ${p0} МБ`,
   chat: 'Чат',
-  vasheImyaNeobyazatelno: 'Ваше имя (необязательно)',
-  telefonNeobyazatelno: 'Телефон (необязательно)',
+  field: { name: 'Ваше имя', phone: 'Телефон', email: 'Email' } as Record<'name' | 'phone' | 'email', string>,
+  optional: ' (необязательно)',
+  zapolnite: (p0: string) => `Чтобы начать, заполните: ${p0}`,
   nachatChat: 'Начать чат',
   bot: 'Бот',
   avtootvet: 'Автоответ',

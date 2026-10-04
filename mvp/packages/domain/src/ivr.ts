@@ -48,6 +48,46 @@ export async function agentsOnShift(tx: Pool | PoolClient, queueId: string): Pro
   return rows[0]?.n ?? 0;
 }
 
+/**
+ * Ёмкость голоса — один вызов (02-архитектура, Ф3 «голос 1, чаты N»): оператор занят, пока у него идёт или
+ * звонит вызов, либо ему уже предложено голосовое обращение. Чаты голос не блокируют и наоборот.
+ * Предложенная задача «перезвонить» из IVR (Ф6, без живого вызова) голос не занимает — иначе оператор, не
+ * успевший её принять, не получал бы входящие звонки. Условие — над столбцом user_id внешнего запроса.
+ */
+export const VOICE_BUSY = `(EXISTS (SELECT 1 FROM call cl WHERE cl.agent_user_id = user_id AND cl.state IN ('dialing', 'talking'))
+  OR EXISTS (SELECT 1 FROM conversation cv WHERE cv.assignee_id = user_id AND cv.status = 'offered' AND cv.channel_kind = 'voice'
+               AND NOT cv.callback_requested))`;
+
+/** Лимит одновременных чатов оператора (настройка «operator.max_chats»; без неё — 5, как у router). */
+const MAX_CHATS_SQL = `COALESCE((SELECT (value #>> '{}')::int FROM system_setting WHERE key = 'operator.max_chats'), 5)`;
+
+/**
+ * Свободные операторы очереди прямо сейчас («все операторы заняты», п.4 требований заказчика): статус «Готов» и
+ * не заняты — для голоса нет идущего или звонящего вызова, для чата не исчерпан лимит одновременных чатов.
+ * В отличие от agentsOnShift, занятый разговором оператор здесь не считается.
+ */
+export async function freeAgents(
+  tx: Pool | PoolClient,
+  queueId: string,
+  channel: 'voice' | 'chat',
+): Promise<number> {
+  const { rows } = await tx.query<{ n: number }>(
+    `WITH cand AS (
+       SELECT u.id AS user_id,
+         (SELECT count(*)::int FROM conversation c2 WHERE c2.assignee_id = u.id
+            AND c2.status IN ('active', 'hold', 'offered') AND c2.channel_kind <> 'voice') AS active_count
+       FROM app_user u
+       JOIN user_queue uq ON uq.user_id = u.id AND uq.queue_id = $1
+       JOIN agent_status ag ON ag.user_id = u.id
+       WHERE u.is_active AND u.can_login AND ag.status = 'ready'
+     )
+     SELECT count(*)::int AS n FROM cand
+      WHERE ${channel === 'voice' ? `NOT ${VOICE_BUSY}` : `active_count < ${MAX_CHATS_SQL}`}`,
+    [queueId],
+  );
+  return rows[0]?.n ?? 0;
+}
+
 async function queueInfo(tx: PoolClient, queueId: string) {
   const { rows } = await tx.query<{ name: string; priority: number }>(
     `SELECT name, priority FROM queue WHERE id = $1`,

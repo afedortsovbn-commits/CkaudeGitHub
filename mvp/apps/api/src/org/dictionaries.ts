@@ -309,7 +309,7 @@ export const DICTIONARIES: Record<string, DictSpec> = {
     title: 'Правило автоответа',
     fields: [
       f('name', name),
-      f('kind', z.enum(['greeting', 'queued', 'after_hours', 'keyword', 'inactivity'])),
+      f('kind', z.enum(['greeting', 'queued', 'queued_busy', 'after_hours', 'keyword', 'inactivity'])),
       f('channelIds', z.array(uuid).default([])),
       f('channelKinds', z.array(z.enum(['webchat', 'app', 'telegram', 'email', 'api'])).default([])),
       f('scheduleId', uuid.nullable().optional()),

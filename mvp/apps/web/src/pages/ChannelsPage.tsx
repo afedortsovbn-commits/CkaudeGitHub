@@ -36,6 +36,20 @@ const STATUS: Record<string, { color: string; label: string }> = {
   disabled: { color: 'gray', label: t.channels.vyklyuchen },
 };
 
+/** Анкета перед чатом (п.2 требований): по каждому полю — «не спрашивать / необязательно / обязательно». */
+const PRECHAT_KEYS = ['name', 'phone', 'email'] as const;
+const PRECHAT_FORM_KEY = { name: 'pfName', phone: 'pfPhone', email: 'pfEmail' } as const;
+const PRECHAT_MODES = [
+  { value: 'off', label: t.channels.pfOff },
+  { value: 'optional', label: t.channels.pfOptional },
+  { value: 'required', label: t.channels.pfRequired },
+];
+type PrechatField = { key: (typeof PRECHAT_KEYS)[number]; required: boolean };
+const DEFAULT_PRECHAT: PrechatField[] = [
+  { key: 'name', required: false },
+  { key: 'phone', required: false },
+];
+
 const cfg = (r: Row) => (r.config ?? {}) as Record<string, unknown>;
 const str = (v: unknown) => (v === undefined || v === null ? '' : String(v));
 /** Пустое поле секрета при изменении — оставить прежнее значение. */
@@ -132,6 +146,16 @@ const FIELDS: FormField[] = [
     show: isChat,
   },
   { key: 'maxFileMb', label: t.channels.maksRazmerFaylaMb, type: 'number', show: isChat },
+  ...PRECHAT_KEYS.map(
+    (k, i): FormField => ({
+      key: PRECHAT_FORM_KEY[k],
+      label: t.channels.pfLabel[k],
+      type: 'select',
+      options: PRECHAT_MODES,
+      ...(i === 0 ? { description: t.channels.pfHint } : {}),
+      show: isChat,
+    }),
+  ),
   // Telegram
   {
     key: 'botToken',
@@ -225,6 +249,14 @@ const toForm = (r: Row) => {
     consentVersion: c.consent_version,
     greeting: c.greeting,
     maxFileMb: c.max_file_mb,
+    ...Object.fromEntries(
+      PRECHAT_KEYS.map((k) => {
+        const f = ((c.prechat_fields as PrechatField[] | undefined) ?? DEFAULT_PRECHAT).find(
+          (x) => x.key === k,
+        );
+        return [PRECHAT_FORM_KEY[k], f ? (f.required ? 'required' : 'optional') : 'off'];
+      }),
+    ),
     tgMode: c.mode ?? 'polling',
     apiRoot: c.api_root,
     address: c.address,
@@ -321,6 +353,10 @@ const fromForm = (v: Record<string, unknown>, editing: Row | null) => {
       consent_version: str(v.consentVersion || '1'),
       ...(v.greeting ? { greeting: v.greeting } : {}),
       ...(v.maxFileMb ? { max_file_mb: v.maxFileMb } : {}),
+      prechat_fields: PRECHAT_KEYS.filter((k) => (v[PRECHAT_FORM_KEY[k]] ?? 'off') !== 'off').map((k) => ({
+        key: k,
+        required: v[PRECHAT_FORM_KEY[k]] === 'required',
+      })),
     },
   };
 };
@@ -335,6 +371,9 @@ const CREATE_DEFAULTS = {
   smtpPort: 465,
   smtpSecure: true,
   record: true,
+  pfName: 'optional',
+  pfPhone: 'optional',
+  pfEmail: 'off',
 };
 
 /** Экземпляры каналов: веб-чат, чат в приложении, Telegram-боты, почтовые ящики (M-CH-07). */

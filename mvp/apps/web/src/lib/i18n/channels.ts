@@ -1,5 +1,15 @@
 /** Строки интерфейса: раздел «channels» (M-NFR-08). */
 export const channels = {
+  pfLabel: {
+    name: 'Анкета перед чатом: имя',
+    phone: 'Анкета перед чатом: телефон',
+    email: 'Анкета перед чатом: email',
+  } as Record<'name' | 'phone' | 'email', string>,
+  pfHint:
+    'Что клиент заполняет перед началом чата. Обязательное поле — без него кнопка «Начать чат» не нажимается; телефон проверяется на формат.',
+  pfOff: 'Не спрашивать',
+  pfOptional: 'Необязательно',
+  pfRequired: 'Обязательно',
   chatNaSayte: 'Чат на сайте',
   chatVPrilozhenii: 'Чат в приложении',
   telegramBot: 'Telegram-бот',

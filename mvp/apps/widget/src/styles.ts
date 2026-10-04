@@ -20,6 +20,10 @@ textarea{flex:1;resize:none;border:1px solid #ced4da;border-radius:8px;padding:8
 .send{background:#1c7ed6;color:#fff}
 .form{padding:16px;display:flex;flex-direction:column;gap:10px;font-size:14px}
 .form input{border:1px solid #ced4da;border-radius:8px;padding:9px;font-size:14px}
+.form input.need{border-left:3px solid #f08c00}
+.hint{color:#868e96;font-size:12px}
+button{transition:transform .08s ease}
+button:active:not(:disabled){transform:scale(.95)}
 .form label{display:flex;gap:8px;align-items:flex-start;font-size:12px;color:#495057}
 .primary{background:#1c7ed6;color:#fff;border:0;border-radius:8px;padding:10px;font-size:14px;cursor:pointer}
 .primary:disabled{opacity:.5}

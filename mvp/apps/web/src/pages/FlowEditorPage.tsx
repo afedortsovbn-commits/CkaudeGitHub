@@ -517,6 +517,7 @@ function NodeParams({
             t.flowEditor.zvuchitPeriodicheskiVmestoMuzyki,
           )}
           {num('announceEverySec', t.flowEditor.periodichnostSoobshcheniyaS, 10, 600)}
+          {audioMulti('busyAudio', t.flowEditor.busyAudio, t.flowEditor.busyAudioHint)}
           {num('maxWaitSec', t.flowEditor.maksimalnoeOzhidanieSVykhod, 10, 7200)}
           <Switch
             label={t.flowEditor.proveryatOperatorovNaSmene}
@@ -727,6 +728,33 @@ function TextNodeParams({
           />
           {textArea('retryText', t.flowEditor.esliOtvetNeSovpal, ' ')}
           {num('retries', t.flowEditor.povtorovVoprosaZatemVykhod, 0, 10)}
+          {(
+            [
+              ['backLabel', t.flowEditor.navBack, t.flowEditor.navBackDefault],
+              ['homeLabel', t.flowEditor.navHome, t.flowEditor.navHomeDefault],
+            ] as const
+          ).map(([key, label, def]) => (
+            <Group key={key} gap="xs" wrap="nowrap" align="center">
+              <Switch
+                label={label}
+                checked={!!p[key]}
+                onChange={(e) => set(key, e.currentTarget.checked ? def : '')}
+                data-testid={`param-${key}-on`}
+              />
+              {!!p[key] && (
+                <TextInput
+                  size="xs"
+                  style={{ flex: 1 }}
+                  value={String(p[key] ?? '')}
+                  onChange={(e) => set(key, e.currentTarget.value)}
+                  data-testid={`param-${key}`}
+                />
+              )}
+            </Group>
+          ))}
+          <Text size="xs" c="dimmed">
+            {t.flowEditor.navHint}
+          </Text>
           {wait}
         </>
       );

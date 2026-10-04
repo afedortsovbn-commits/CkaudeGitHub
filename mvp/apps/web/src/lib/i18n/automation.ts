@@ -41,6 +41,9 @@ export const automation = {
   sinonimyIRazgovornyeFormy: 'Синонимы и разговорные формы через запятую',
   tekstStati: 'Текст статьи',
   privetstviePriPervomSoobshchenii: 'Приветствие при первом сообщении',
+  vseOperatoryZanyaty: 'Все операторы заняты',
+  kindHint:
+    '«Вы в очереди» — когда обращение встаёт в очередь. «Все операторы заняты» — вместо него, если свободных операторов нет (все разговаривают, на перерыве или не в сети). Переменная {{позиция}} работает в обоих.',
   vyVOcheredi: '«Вы в очереди»',
   nerabocheeVremya: 'Нерабочее время',
   otvetNaKlyuchevyeSlova: 'Ответ на ключевые слова',

@@ -31,8 +31,21 @@ interface ChannelRow {
     greeting?: string;
     max_file_mb?: number;
     app_secret?: string;
+    prechat_fields?: PrechatField[];
   };
 }
+
+interface PrechatField {
+  key: 'name' | 'phone' | 'email';
+  required: boolean;
+}
+/** Анкета по умолчанию — как было до настройки: имя и телефон, оба необязательные. */
+const DEFAULT_PRECHAT: PrechatField[] = [
+  { key: 'name', required: false },
+  { key: 'phone', required: false },
+];
+export const prechatFields = (ch: ChannelRow): PrechatField[] => ch.config.prechat_fields ?? DEFAULT_PRECHAT;
+const FIELD_TITLE: Record<PrechatField['key'], string> = { name: 'Имя', phone: 'Телефон', email: 'Email' };
 
 const SessionBody = z
   .object({
@@ -43,7 +56,7 @@ const SessionBody = z
     }),
     name: z.string().trim().max(200).optional(),
     phone: z.string().trim().max(64).optional(),
-    email: z.string().trim().email().max(200).optional().or(z.literal('')),
+    email: z.string().trim().email('Проверьте адрес email').max(200).optional().or(z.literal('')),
     /** Чат в приложении: идентификатор пользователя приложения, подписанный бэкендом приложения (HMAC-SHA256). */
     appUser: z.object({ id: z.string().min(1).max(200), signature: z.string().min(1) }).optional(),
   })
@@ -130,6 +143,7 @@ export class ClientChatController {
       consentText: ch.config.consent_text ?? 'Я согласен(на) на обработку персональных данных.',
       consentVersion: ch.config.consent_version ?? '1',
       maxFileMb: ch.config.max_file_mb ?? this.ctx.config.MAX_UPLOAD_MB,
+      prechatFields: prechatFields(ch),
     };
   }
 
@@ -145,6 +159,20 @@ export class ClientChatController {
       throw new ApiError(403, 'origin', 'Чат не разрешён на этом сайте');
     if (b.consentVersion !== (ch.config.consent_version ?? '1'))
       throw badRequest('Текст согласия изменился — обновите страницу');
+    // Обязательные поля анкеты задаёт администратор канала; пользователь приложения (подпись) уже известен.
+    if (!b.appUser) {
+      const missing = prechatFields(ch).filter((f) => f.required && !b[f.key]?.trim());
+      if (missing.length)
+        throw new ApiError(
+          400,
+          'prechat_required',
+          `Заполните: ${missing.map((f) => FIELD_TITLE[f.key]).join(', ')}`,
+        );
+    }
+    // Телефон — номер, по которому можно перезвонить (не внутренний короткий номер).
+    const phone = b.phone ? normalizePhone(b.phone) : null;
+    if (b.phone && !phone?.startsWith('+'))
+      throw new ApiError(400, 'phone_invalid', 'Проверьте номер телефона, например +375 29 123-45-67');
 
     let identity: { kind: 'webchat' | 'app'; value: string };
     if (ch.kind === 'app' && b.appUser) {
@@ -173,7 +201,7 @@ export class ClientChatController {
         await tx.query('INSERT INTO contact (id, display_name, phone, email) VALUES ($1,$2,$3,$4)', [
           id,
           b.name || null,
-          b.phone || null,
+          phone,
           b.email || null,
         ]);
         await tx.query('INSERT INTO contact_identity (id, contact_id, kind, value) VALUES ($1,$2,$3,$4)', [
@@ -183,10 +211,10 @@ export class ClientChatController {
           identity.value,
         ]);
         // Телефон/email из формы до диалога — дополнительные идентификаторы: узнавание клиента в других каналах.
-        if (b.phone) {
+        if (phone) {
           await tx.query(
             `INSERT INTO contact_identity (id, contact_id, kind, value) VALUES ($1,$2,'phone',$3) ON CONFLICT DO NOTHING`,
-            [newId(), id, normalizePhone(b.phone)],
+            [newId(), id, phone],
           );
         }
         if (b.email) {

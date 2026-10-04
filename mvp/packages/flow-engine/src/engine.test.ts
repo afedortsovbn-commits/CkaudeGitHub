@@ -142,6 +142,7 @@ describe('flow-engine: исполнение', () => {
       announceEverySec: null,
       maxWaitSec: null, // выход «долгое ожидание» не подключён
       checkAgents: true,
+      busyAudio: [],
     });
     r = step(resumeFlow(demo, r.state, { type: 'queue', result: 'after' }, work));
     expect(r.action).toMatchObject({ type: 'collect', digits: ['1', '2', '3', '4', '5'] });

@@ -5,6 +5,8 @@ export interface WidgetConfig {
   consentText: string;
   consentVersion: string;
   maxFileMb: number;
+  /** Анкета перед чатом: поля и обязательность задаёт администратор канала. */
+  prechatFields?: { key: 'name' | 'phone' | 'email'; required: boolean }[];
 }
 export interface Msg {
   id: string;
@@ -55,7 +57,11 @@ export class ChatApi {
     });
     const text = await r.text();
     const data = text ? JSON.parse(text) : {};
-    if (!r.ok) throw Object.assign(new Error(data.message || t.api.oshibka), { status: r.status });
+    if (!r.ok) {
+      // Ошибка проверки поля (например, email) — показываем её текст, а не общее «ошибка в данных».
+      const detail = Array.isArray(data.details) ? data.details[0]?.message : undefined;
+      throw Object.assign(new Error(detail || data.message || t.api.oshibka), { status: r.status });
+    }
     return data as T;
   }
 
