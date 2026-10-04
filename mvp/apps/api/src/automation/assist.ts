@@ -185,7 +185,9 @@ export async function builtinSuggest(
           WHERE t.is_active AND (t.owner_user_id IS NULL OR t.owner_user_id = $3)
             AND (cardinality(t.channel_kinds) = 0 OR $4 = ANY (t.channel_kinds))
             AND (($1 <> '' AND t.search @@ to_tsquery('russian', $1)) OR t.topic_id = ANY ($2::uuid[]))
-          ORDER BY score DESC, t.usage_count DESC LIMIT $5`,
+          ORDER BY (CASE WHEN $1 = '' THEN 0 ELSE ts_rank(t.search, to_tsquery('russian', $1), 32) END
+                    + CASE WHEN t.topic_id = ANY ($2::uuid[]) THEN 0.125 ELSE 0 END) DESC,
+                   t.usage_count DESC LIMIT $5`,
         [q, c.topicPath, c.userId, c.channel, nT],
       )
     : { rows: [] };
@@ -197,7 +199,8 @@ export async function builtinSuggest(
            FROM kb_article a
           WHERE a.is_active
             AND (($1 <> '' AND a.search @@ to_tsquery('russian', $1)) OR a.topic_ids && $2::uuid[])
-          ORDER BY score DESC LIMIT $3`,
+          ORDER BY (CASE WHEN $1 = '' THEN 0 ELSE ts_rank(a.search, to_tsquery('russian', $1), 32) END
+                    + CASE WHEN a.topic_ids && $2::uuid[] THEN 0.1 ELSE 0 END) DESC LIMIT $3`,
         [q, c.topicPath, nA],
       )
     : { rows: [] };
