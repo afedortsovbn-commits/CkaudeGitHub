@@ -341,7 +341,7 @@ export function SoftphoneCall() {
       data-state={call.state}
       style={{
         position: 'fixed',
-        right: 16,
+        left: 16,
         bottom: 16,
         zIndex: 300,
         width: 'min(330px, calc(100vw - 32px))',

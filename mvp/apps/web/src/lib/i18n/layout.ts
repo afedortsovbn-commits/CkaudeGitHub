@@ -23,4 +23,10 @@ export const layout = {
   zdravstvuyte: 'Здравствуйте, ',
   razdelyVMenyuSleva:
     'Разделы — в меню слева: рабочее место оператора, панель супервизора, настройка IVR, каналов, оргструктуры, прав и справочников.',
+  roleName: {
+    admin: 'Администратор',
+    operator: 'Оператор',
+    supervisor: 'Супервизор',
+    responsible: '2-я линия',
+  },
 };
