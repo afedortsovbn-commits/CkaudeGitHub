@@ -17,6 +17,7 @@ import { mergeContactModalUi } from './i18n/mergeContactModalUi';
 import { notificationBellUi } from './i18n/notificationBellUi';
 import { org } from './i18n/org';
 import { privacy } from './i18n/privacy';
+import { hintPanel } from './i18n/hintPanel';
 import { profilePage } from './i18n/profilePage';
 import { reports } from './i18n/reports';
 import { reviews } from './i18n/reviews';
@@ -128,6 +129,7 @@ const ru = {
   ivr,
   layout,
   matrix,
+  hintPanel,
   mergeContactModalUi,
   notificationBellUi,
   org,

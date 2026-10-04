@@ -68,6 +68,8 @@ export function Layout() {
   const userId = me?.id;
   // На телефоне меню свёрнуто под «бургер» (иначе оно закрывает весь экран вместе с панелью звонка).
   const [menuOpened, menu] = useDisclosure(false);
+  // Рабочее место оператора: меню свёрнуто и на компьютере — всё место под разговор (открывается «бургером»).
+  const focus = loc.pathname.startsWith('/workspace');
   useEffect(() => {
     menu.close();
   }, [loc.pathname]);
@@ -80,13 +82,23 @@ export function Layout() {
   return (
     <AppShell
       header={{ height: 56 }}
-      navbar={{ width: 250, breakpoint: 'sm', collapsed: { mobile: !menuOpened } }}
+      navbar={{
+        width: 250,
+        breakpoint: 'sm',
+        collapsed: { mobile: !menuOpened, desktop: focus && !menuOpened },
+      }}
       padding="md"
     >
       <AppShell.Header>
         <Group h="100%" px="md" justify="space-between" wrap="nowrap">
           <Group gap="xs" wrap="nowrap">
-            <Burger opened={menuOpened} onClick={menu.toggle} hiddenFrom="sm" size="sm" />
+            <Burger
+              opened={menuOpened}
+              onClick={menu.toggle}
+              hiddenFrom={focus ? undefined : 'sm'}
+              size="sm"
+              data-testid="menu-toggle"
+            />
             <Text fw={700} visibleFrom="xs">
               {t.appName}
             </Text>
@@ -106,7 +118,7 @@ export function Layout() {
             </Text>
             {me?.roles.map((r) => (
               <Badge key={r} variant="light" visibleFrom="md">
-                {r}
+                {t.layout.roleName[r as keyof typeof t.layout.roleName] ?? r}
               </Badge>
             ))}
             <Button size="xs" variant="default" onClick={() => void logout()} visibleFrom="sm">

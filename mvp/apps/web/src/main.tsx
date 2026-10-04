@@ -98,7 +98,7 @@ function App() {
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <MantineProvider>
-      <Notifications position="top-right" />
+      <Notifications position="bottom-right" />
       <QueryClientProvider client={queryClient}>
         <AuthProvider>
           <BrowserRouter>
