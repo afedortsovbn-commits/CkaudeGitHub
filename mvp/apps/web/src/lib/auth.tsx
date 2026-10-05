@@ -20,6 +20,8 @@ interface AuthState {
   loading: boolean;
   /** Вход по паролю; если нужна вторая ступень — возвращает, что показать (код или настройку 2FA). */
   login(email: string, password: string): Promise<MfaStep | null>;
+  /** Демо-стенд: вход в один клик под демо-учёткой (пароль знает сервер стенда). */
+  loginDemo(email: string): Promise<MfaStep | null>;
   loginTotp(mfaToken: string, code: string): Promise<void>;
   logout(): Promise<void>;
   can(...perms: string[]): boolean;
@@ -69,8 +71,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener('focus', onFocus);
   }, [!!me]);
 
-  const login = useCallback(async (email: string, password: string): Promise<MfaStep | null> => {
-    const r = await api<LoginResponse>('POST', '/auth/login', { email, password });
+  const finishLogin = useCallback(async (r: LoginResponse): Promise<MfaStep | null> => {
     if (r.mfaToken && (r.mfaRequired || r.mfaSetupRequired)) {
       return {
         mfaToken: r.mfaToken,
@@ -81,6 +82,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setMe(await get<Me>('/auth/me'));
     return null;
   }, []);
+
+  const login = useCallback(
+    async (email: string, password: string) =>
+      finishLogin(await api<LoginResponse>('POST', '/auth/login', { email, password })),
+    [finishLogin],
+  );
+  const loginDemo = useCallback(
+    async (email: string) => finishLogin(await api<LoginResponse>('POST', '/auth/demo-login', { email })),
+    [finishLogin],
+  );
 
   const loginTotp = useCallback(async (mfaToken: string, code: string) => {
     const r = await api<{ accessToken: string }>('POST', '/auth/login/totp', { mfaToken, code });
@@ -99,7 +110,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [me],
   );
 
-  return <Ctx.Provider value={{ me, loading, login, loginTotp, logout, can }}>{children}</Ctx.Provider>;
+  return (
+    <Ctx.Provider value={{ me, loading, login, loginDemo, loginTotp, logout, can }}>{children}</Ctx.Provider>
+  );
 }
 
 export function useAuth(): AuthState {

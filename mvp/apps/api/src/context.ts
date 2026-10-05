@@ -40,6 +40,15 @@ export const ApiConfigSchema = BaseConfigSchema.extend({
   /** Демо-страница «Позвонить в КЦ» (WebRTC-абонент без SIP-транка) — только для демо-стенда. */
   DEMO_CALLER_ENABLED: z.enum(['true', 'false']).default('false'),
   DEMO_CALLER_DID: z.string().default('1000'),
+  /**
+   * Вход в один клик под демо-учётками (страница /demo-login?as=<email>) — только демо-стенд: api выполняет обычный
+   * вход (блокировка, 2FA, аудит) с известным паролем — DEMO_PASSWORD для *@demo.local, DEMO_ADMIN_PASSWORD для
+   * DEMO_ADMIN_EMAIL. На рабочем сервере выключено.
+   */
+  DEMO_QUICK_LOGIN: z.enum(['true', 'false']).default('false'),
+  DEMO_PASSWORD: z.string().optional(),
+  DEMO_ADMIN_PASSWORD: z.string().optional(),
+  DEMO_ADMIN_EMAIL: z.string().default('admin@cc.local'),
   // ---- Публичный API и webhooks (Ф9) ----
   /** Адрес системы для ссылок (документация API, ход внешнего бота). */
   PUBLIC_BASE_URL: z.preprocess(
