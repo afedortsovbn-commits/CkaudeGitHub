@@ -1,5 +1,6 @@
 /** Строки интерфейса: раздел «demoCall» (M-NFR-08). */
 export const demoCall = {
+  tabTitle: 'Звонилка — демо-стенд',
   zvonokZavershen: (p0: unknown) => `Звонок завершён (${p0})`,
   zvonokZavershen2: 'Звонок завершён',
   pozvonitVKontaktTsentr: 'Позвонить в контакт-центр',

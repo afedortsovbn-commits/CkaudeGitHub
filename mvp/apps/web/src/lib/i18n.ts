@@ -20,6 +20,7 @@ import { privacy } from './i18n/privacy';
 import { callContext } from './i18n/callContext';
 import { roles } from './i18n/roles';
 import { demoLogin } from './i18n/demoLogin';
+import { extApps } from './i18n/extApps';
 import { hintPanel } from './i18n/hintPanel';
 import { profilePage } from './i18n/profilePage';
 import { reports } from './i18n/reports';
@@ -88,6 +89,16 @@ const ru = {
   nav: {
     home: 'Главная',
     profile: 'Профиль',
+    // Группы меню (Ф16): порядок — в lib/nav.ts.
+    groupWork: 'Обращения',
+    groupApps: 'Приложения',
+    groupControl: 'Контроль и отчёты',
+    groupChannels: 'Каналы и сценарии',
+    groupOrg: 'Оргструктура и справочники',
+    groupIntegrations: 'Интеграции и API',
+    groupAdmin: 'Администрирование',
+    collapse: 'Свернуть меню',
+    expand: 'Развернуть меню',
     enterprises: 'Предприятия',
     departments: 'Подразделения',
     topics: 'Темы и поля',
@@ -136,6 +147,7 @@ const ru = {
   callContext,
   roles,
   demoLogin,
+  extApps,
   mergeContactModalUi,
   notificationBellUi,
   org,
