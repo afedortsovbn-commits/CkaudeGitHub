@@ -13,6 +13,8 @@ export interface Me {
   roleNames?: Record<string, string>;
   /** Интерфейс по умолчанию по ролям (меню, стартовая страница, вкладки); null — стандартный. */
   ui?: RoleUi | null;
+  /** Внешние приложения, доступные сотруднику (меню «Приложения»). */
+  apps?: { id: string; name: string; url: string; mode: 'embed' | 'tab' }[];
 }
 
 interface AuthState {

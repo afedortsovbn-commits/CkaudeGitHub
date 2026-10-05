@@ -23,6 +23,9 @@ interface DemoCreds {
  * Демо-страница «Позвонить в КЦ» (02-архитектура 8.1): клиент звонит из браузера по WebRTC — для показа
  * телефонии без SIP-транка. Доступна только на демо-стенде (DEMO_CALLER_ENABLED).
  */
+const PHONE_ICON =
+  "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23f76707'/%3E%3Cpath d='M11 7c1.2 0 2.4 2.4 3 4.2.4 1.2-.7 1.9-1.4 2.6 1.2 2.6 3.1 4.5 5.8 5.8.7-.7 1.4-1.8 2.6-1.4 1.8.6 4.2 1.8 4.2 3 0 1.9-2.1 3.6-4 3.3C14.6 23.6 9 18 8.4 11 8.2 9.1 9.1 7 11 7z' fill='white'/%3E%3C/svg%3E";
+
 export function DemoCallPage() {
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
@@ -34,6 +37,12 @@ export function DemoCallPage() {
   const audio = useRef<HTMLAudioElement>(null);
 
   useEffect(() => () => ua.current?.stop(), []);
+  // Своя иконка и заголовок вкладки браузера — «Звонилка» отличается от вкладок сотрудников.
+  useEffect(() => {
+    document.title = t.demoCall.tabTitle;
+    const link = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
+    if (link) link.href = PHONE_ICON;
+  }, []);
 
   const call = async () => {
     setInfo('');

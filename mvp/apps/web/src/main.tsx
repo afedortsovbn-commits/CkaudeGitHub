@@ -19,6 +19,7 @@ import { ReportsPage } from './pages/ReportsPage';
 import { TopicsPage } from './pages/TopicsPage';
 import { CabinetPage, TicketControlPage, TicketPage } from './pages/TicketPages';
 import { DemoLoginPage } from './pages/DemoLoginPage';
+import { AppFramePage, ExternalAppsPage } from './pages/ExternalAppsPages';
 import { RolesPage } from './pages/RolesPage';
 import { UsersPage } from './pages/UsersPage';
 import { WorkspacePage } from './pages/WorkspacePage';
@@ -88,6 +89,8 @@ function App() {
         <Route path="objects-sync" element={<ObjectSyncPage />} />
         <Route path="users" element={<UsersPage />} />
         <Route path="roles" element={<RolesPage />} />
+        <Route path="external-apps" element={<ExternalAppsPage />} />
+        <Route path="apps/:id" element={<AppFramePage />} />
         <Route path="matrix" element={<MatrixPage />} />
         <Route path="dictionaries" element={<DictionariesPage />} />
         <Route path="settings" element={<SettingsPage />} />

@@ -17,6 +17,7 @@ import { DictController } from './org/dict.controller';
 import { MatrixController } from './org/matrix.controller';
 import { ObjectSyncController } from './org/objects-sync.controller';
 import { OrgController } from './org/org.controller';
+import { ExternalAppsController } from './org/external-apps.controller';
 import { RolesController } from './org/roles.controller';
 import { UsersController } from './org/users.controller';
 import { PingController } from './ping.controller';
@@ -44,6 +45,7 @@ export class AppModule {
         OrgController,
         UsersController,
         RolesController,
+        ExternalAppsController,
         MatrixController,
         ClientChatController,
         ConversationsController,

@@ -16,7 +16,21 @@ export async function login(page: Page, email: string, password: string) {
 }
 
 export async function nav(page: Page, name: string) {
-  await page.getByRole('navigation').getByRole('link', { name }).click();
+  const menu = page.getByRole('navigation');
+  const link = menu.getByRole('link', { name });
+  // Ф16: разделы сгруппированы, свёрнутые группы прячут пункты — раскрыть группы, если пункт не виден.
+  const closed = menu.locator('[data-testid^="nav-group-"]:not([data-expanded])');
+  // Меню может перестроиться (например, после входа — переход на стартовую страницу с узким меню): короткие
+  // попытки и повторная проверка, а не ожидание исчезнувшей группы.
+  for (let i = 0; i < 10; i++) {
+    if (await link.first().isVisible()) break;
+    if (!(await closed.count())) break;
+    await closed
+      .first()
+      .click({ timeout: 2000 })
+      .catch(() => undefined);
+  }
+  await link.click();
 }
 
 /** Выбор значения в Select/MultiSelect Mantine по подписи поля. */

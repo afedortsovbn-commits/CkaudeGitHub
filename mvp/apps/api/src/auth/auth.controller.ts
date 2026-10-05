@@ -2,6 +2,7 @@ import { Body, Controller, Get, HttpCode, Inject, Post, Req, Res } from '@nestjs
 import { newId } from '@cc/contracts';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
+import { externalAppsFor } from '../org/external-apps.controller';
 import { mergeRoleUi } from '../org/roles.controller';
 import { APP_CONTEXT, type AppContext } from '../context';
 import { audit } from '../lib/audit';
@@ -335,6 +336,8 @@ export class AuthController {
       permissions: [...p.permissions].sort(),
       scope: p.scope,
       ui: mergeRoleUi(roleRows),
+      // Внешние приложения в окне системы — по ролям сотрудника.
+      apps: await externalAppsFor(this.ctx.pool, p.roles),
     };
   }
 

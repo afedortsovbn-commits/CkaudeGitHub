@@ -33,6 +33,7 @@ import {
   MarkerType,
   MiniMap,
   type Node,
+  PanOnScrollMode,
   type NodeProps,
   Position,
   ReactFlow,
@@ -59,13 +60,17 @@ import {
   type StepResult,
   validateGraph,
 } from '@cc/flow-engine';
-import { memo, useCallback, useEffect, useMemo, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
 import { ApiError, errorText, get, patch, post } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { options, type Row, useAction, useList } from '../lib/data';
 import { AudioPreview } from './IvrAdminPages';
 import { t } from '../lib/i18n';
+
+/** Пределы масштаба схемы. */
+const MIN_ZOOM = 0.2;
+const MAX_ZOOM = 2;
 
 // ------------------------------------------------------------------ список сценариев
 
@@ -1383,6 +1388,28 @@ function Editor({ flow }: { flow: FlowRow }) {
   const qc = useQueryClient();
   const refs = useRefs();
   const rf = useReactFlow();
+  const canvasRef = useRef<HTMLDivElement>(null);
+  // Щипок на тачпаде приходит как колесо с Ctrl; у React Flow на Windows он в 10 раз медленнее, чем на Mac, —
+  // масштабируем сами, относительно точки под пальцами. Обычное колесо мыши с Ctrl — так же.
+  useEffect(() => {
+    const el = canvasRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      if (!e.ctrlKey) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const { x, y, zoom } = rf.getViewport();
+      const step = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY;
+      const next = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom * Math.exp(-step * 0.01)));
+      const r = el.getBoundingClientRect();
+      const px = e.clientX - r.left;
+      const py = e.clientY - r.top;
+      const k = next / zoom;
+      void rf.setViewport({ x: px - (px - x) * k, y: py - (py - y) * k, zoom: next });
+    };
+    el.addEventListener('wheel', onWheel, { passive: false, capture: true });
+    return () => el.removeEventListener('wheel', onWheel, { capture: true });
+  }, [rf]);
   const initial = useMemo(() => toRf(flow.draft, refs), [flow.draft, refs]);
   const [nodes, setNodes, onNodesChange] = useNodesState<CcNode>(initial.nodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>(initial.edges);
@@ -1621,6 +1648,7 @@ function Editor({ flow }: { flow: FlowRow }) {
           </Stack>
         )}
         <Box
+          ref={canvasRef}
           style={{ flex: 1, border: '1px solid var(--mantine-color-gray-3)', borderRadius: 8 }}
           data-testid="flow-canvas"
         >
@@ -1644,7 +1672,12 @@ function Editor({ flow }: { flow: FlowRow }) {
             deleteKeyCode={writable ? ['Delete', 'Backspace'] : null}
             fitView
             fitViewOptions={{ maxZoom: 1 }}
-            minZoom={0.2}
+            minZoom={MIN_ZOOM}
+            maxZoom={MAX_ZOOM}
+            // Тачпад ноутбука: два пальца — перемещение схемы (как прокрутка), щипок — масштаб (обработчик выше).
+            panOnScroll
+            panOnScrollMode={PanOnScrollMode.Free}
+            zoomOnScroll={false}
           >
             <Background />
             <Controls />
