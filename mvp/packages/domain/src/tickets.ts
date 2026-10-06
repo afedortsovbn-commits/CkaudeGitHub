@@ -613,9 +613,15 @@ export async function openTicket(tx: PoolClient, id: string, actorId: string): P
   return next;
 }
 
+/** Принятые меры к работнику при закрытии на 2-й линии; `none` — не применялись. */
+export const TICKET_MEASURES = ['none', 'remark', 'reprimand', 'depremium', 'dismissal'] as const;
+
 export interface CloseTicketInput {
   answerMethodId: string;
   answerSummary: string;
+  /** Вина работника (обязательно при закрытии). */
+  staffGuilty: boolean;
+  measures: string[];
   attachments: AttachmentRef[];
   version: number;
   now?: Date;
@@ -645,8 +651,9 @@ export async function closeTicketByResponsible(
   if (!method.rowCount) throw bad('Выберите способ ответа');
   await tx.query(
     `UPDATE ticket SET status = 'approval', answer_method_id = $2, answer_summary = $3, answered_at = $4,
-            approval_wait_since = $4, version = version + 1, updated_at = now() WHERE id = $1`,
-    [id, i.answerMethodId, summary, now],
+            approval_wait_since = $4, staff_guilty = $5, measures = $6, version = version + 1, updated_at = now()
+      WHERE id = $1`,
+    [id, i.answerMethodId, summary, now, i.staffGuilty, i.measures],
   );
   await addComment(tx, id, actorId, 'answer', summary, i.attachments);
   await transition(tx, t, actorId, 'answered', t.status, 'approval', {

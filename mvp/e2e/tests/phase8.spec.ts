@@ -169,6 +169,10 @@ test.describe.serial('Ф8: вторая линия', () => {
     await select(r1, 'answer-method', 'Письмо на бумаге', cf);
     await cf.getByTestId('answer-summary').fill('Направлено официальное письмо с извинениями');
     await attach(r1, 'письмо.pdf', cf);
+    await cf.getByTestId('close-guilt-yes').click();
+    await cf.getByTestId('close-measures').click();
+    await r1.getByRole('option', { name: 'Замечание' }).click();
+    await r1.keyboard.press('Escape');
     await cf.getByTestId('close-submit').click();
     await expect(r1.getByTestId('ticket-status')).toHaveText('На согласовании');
 
@@ -203,6 +207,10 @@ test.describe.serial('Ф8: вторая линия', () => {
     await select(r1, 'answer-method', 'Письмо на бумаге', cf);
     await cf.getByTestId('answer-summary').fill('Письмо подписано, скан приложен');
     await attach(r1, 'письмо-с-подписью.pdf', cf);
+    await cf.getByTestId('close-guilt-yes').click();
+    await cf.getByTestId('close-measures').click();
+    await r1.getByRole('option', { name: 'Замечание' }).click();
+    await r1.keyboard.press('Escape');
     await cf.getByTestId('close-submit').click();
     await expect(r1.getByTestId('ticket-status')).toHaveText('На согласовании');
 

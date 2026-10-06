@@ -15,6 +15,7 @@ import {
   Modal,
   MultiSelect,
   Paper,
+  Radio,
   ScrollArea,
   Select,
   Stack,
@@ -588,6 +589,13 @@ function TicketFacts({ t: tk }: { t: Row }) {
       <Text size="sm" style={{ whiteSpace: 'pre-wrap' }}>
         <b>{t.tickets.sutOtveta2}</b> {String(tk.answerSummary ?? '—')}
       </Text>
+      {tk.staffGuilty !== null && tk.staffGuilty !== undefined && (
+        <Text size="sm" data-testid="ticket-guilt">
+          <b>{t.tickets.guilt}:</b> {tk.staffGuilty ? t.tickets.guiltYes : t.tickets.guiltNo}
+          {((tk.measures as string[]) ?? []).length > 0 &&
+            ` · ${t.tickets.measuresLabel}: ${((tk.measures as string[]) ?? []).map((m) => t.tickets.measure[m] ?? m).join(', ')}`}
+        </Text>
+      )}
       {tk.answerSummary ? <AnswerToTemplate t={tk} /> : null}
       <Accordion variant="contained" chevronPosition="left" mt={6}>
         <Accordion.Item value="more" data-testid="ticket-more">
@@ -1114,7 +1122,10 @@ function CloseDialog({ t: tk, opened, onClose }: { t: Row; opened: boolean; onCl
   const [method, setMethod] = useState<string | null>(null);
   const [summary, setSummary] = useState('');
   const [files, setFiles] = useState<Att[]>([]);
+  const [guilty, setGuilty] = useState<string | null>(null);
+  const [measures, setMeasures] = useState<string[]>([]);
   const req = useRequired();
+  const realMeasures = measures.filter((m) => m !== 'none');
   // Шаблоны и примеры ответов 2-й линии по теме обращения (и темам выше), общие без темы — в конце.
   const tpls = useList(`/templates?line=second&forTopic=${String(tk.topicId)}`, opened);
   const [asTpl, setAsTpl] = useState(false);
@@ -1131,6 +1142,8 @@ function CloseDialog({ t: tk, opened, onClose }: { t: Row; opened: boolean; onCl
         answerMethodId: method,
         answerSummary: summary,
         attachmentIds: files.map((f) => f.id),
+        staffGuilty: guilty === 'yes',
+        measures,
       }),
     t.tickets.tiketOtpravlenNaSoglasovanie,
     () => {
@@ -1146,6 +1159,8 @@ function CloseDialog({ t: tk, opened, onClose }: { t: Row; opened: boolean; onCl
       setFiles([]);
       setAsTpl(false);
       setTplName('');
+      setGuilty(null);
+      setMeasures([]);
     },
   );
   return (
@@ -1210,7 +1225,41 @@ function CloseDialog({ t: tk, opened, onClose }: { t: Row; opened: boolean; onCl
           autosize
           data-testid="answer-summary"
         />
+        <Group align="flex-start" grow>
+          <Radio.Group
+            label={t.tickets.guilt}
+            withAsterisk
+            value={guilty}
+            onChange={setGuilty}
+            error={req.error(!guilty)}
+            data-testid="close-guilt"
+          >
+            <Group mt={6}>
+              <Radio value="yes" label={t.tickets.guiltYes} data-testid="close-guilt-yes" />
+              <Radio value="no" label={t.tickets.guiltNo} data-testid="close-guilt-no" />
+            </Group>
+          </Radio.Group>
+          <MultiSelect
+            label={t.tickets.measuresLabel}
+            description={t.tickets.measuresHint}
+            withAsterisk
+            data={Object.entries(t.tickets.measure).map(([value, label]) => ({ value, label }))}
+            value={measures}
+            // «Не применялись» и меры взаимоисключающие: последнее выбранное вытесняет противоположное.
+            onChange={(v) => {
+              const added = v.find((x) => !measures.includes(x));
+              setMeasures(added === 'none' ? ['none'] : v.filter((x) => x !== 'none'));
+            }}
+            error={req.error(!measures.length)}
+            data-testid="close-measures"
+          />
+        </Group>
         <Files value={files} onChange={setFiles} />
+        {realMeasures.length > 0 && !files.length && (
+          <Alert color="yellow" variant="light" data-testid="measures-doc-hint">
+            {t.tickets.measuresDocHint}
+          </Alert>
+        )}
         <Checkbox
           label={t.tickets.tplSaveAs(topicShort)}
           checked={asTpl}
@@ -1238,6 +1287,8 @@ function CloseDialog({ t: tk, opened, onClose }: { t: Row; opened: boolean; onCl
               req.check([
                 ...(!method ? [t.tickets.sposobOtveta] : []),
                 ...(!summary.trim() ? [t.tickets.sutOtveta] : []),
+                ...(!guilty ? [t.tickets.guilt] : []),
+                ...(!measures.length ? [t.tickets.measuresLabel] : []),
               ]) && close.mutate(undefined)
             }
             data-testid="close-submit"

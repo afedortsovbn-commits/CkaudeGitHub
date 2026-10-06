@@ -21,6 +21,7 @@ import {
   systemTimezone,
   ticketsNeedingReassignment,
   TICKET_COLS,
+  TICKET_MEASURES,
   type AttachmentRef,
   type TicketRow,
 } from '@cc/domain';
@@ -63,6 +64,12 @@ const CloseBody = z
     answerMethodId: uuid,
     answerSummary: z.string().trim().min(1, 'Опишите суть ответа').max(10000),
     attachmentIds: z.array(uuid).max(20).default([]),
+    staffGuilty: z.boolean({ required_error: 'Укажите, есть ли вина работника' }),
+    measures: z
+      .array(z.enum(TICKET_MEASURES))
+      .min(1, 'Укажите принятые меры (или «не применялись»)')
+      .max(5)
+      .refine((m) => !m.includes('none') || m.length === 1, '«Не применялись» нельзя сочетать с мерами'),
   })
   .strict();
 const ApproveBody = z.object({ version, comment: z.string().max(5000).optional() }).strict();
@@ -446,6 +453,8 @@ export class TicketsController {
         version: b.version,
         answerMethodId: b.answerMethodId,
         answerSummary: b.answerSummary,
+        staffGuilty: b.staffGuilty,
+        measures: b.measures,
         attachments,
       });
     });
@@ -685,7 +694,8 @@ export class TicketsController {
 
 const LIST_SQL = `SELECT t.id, t.number, t.status, to_char(t.due_date, 'YYYY-MM-DD') AS due_date, t.is_important, t.returns_count,
     t.summary, t.enterprise_id, t.department_id, t.topic_id, t.topic_path, t.created_by, t.conversation_id, t.created_at,
-    t.updated_at, t.answered_at, t.closed_at, t.closed_in_time, t.answer_summary, t.version,
+    t.updated_at, t.answered_at, t.closed_at, t.closed_in_time, t.answer_summary, t.version, t.staff_guilty, t.measures,
+    t.answer_method_id,
     (SELECT m.name FROM answer_method m WHERE m.id = t.answer_method_id) AS answer_method_name,
     e.name AS enterprise_name, d.name AS department_name,
     (SELECT string_agg(x.name, ' / ' ORDER BY array_position(t.topic_path, x.id)) FROM topic x WHERE x.id = ANY(t.topic_path)) AS topic_name,

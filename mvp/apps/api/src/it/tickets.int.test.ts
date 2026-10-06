@@ -214,6 +214,8 @@ describe.skipIf(!ADMIN_URL)('Вторая линия Ф8 (интеграция)'
           version: v,
           answerMethodId: id.method,
           answerSummary: '  ',
+          staffGuilty: false,
+          measures: ['none'],
         })
       ).status,
     ).toBe(400);
@@ -221,6 +223,8 @@ describe.skipIf(!ADMIN_URL)('Вторая линия Ф8 (интеграция)'
       version: v - 1,
       answerMethodId: id.method,
       answerSummary: 'ответ',
+      staffGuilty: false,
+      measures: ['none'],
     });
     expect(stale.status).toBe(409);
     expect(stale.body.error).toBe('ticket_changed');
@@ -242,6 +246,8 @@ describe.skipIf(!ADMIN_URL)('Вторая линия Ф8 (интеграция)'
       version: v,
       answerMethodId: id.method,
       answerSummary: 'Позвонили клиенту, извинились, проверка проведена',
+      staffGuilty: false,
+      measures: ['none'],
       attachmentIds: [fileId],
     });
     expect(closed.status, JSON.stringify(closed.body)).toBe(200);
@@ -298,6 +304,8 @@ describe.skipIf(!ADMIN_URL)('Вторая линия Ф8 (интеграция)'
       version: again.body.version,
       answerMethodId: id.method,
       answerSummary: 'Скан письма приложен',
+      staffGuilty: false,
+      measures: ['none'],
     });
     expect(closed2.body.status).toBe('approval');
     const ok = await call('POST', `/tickets/${tid}/approve`, 'op1', { version: closed2.body.version });
@@ -342,14 +350,32 @@ describe.skipIf(!ADMIN_URL)('Вторая линия Ф8 (интеграция)'
     const declined = await call('POST', `/tickets/${tid}/extension/decline`, 'op1', { comment: 'нет' });
     expect(declined.status).toBe(200);
     expect(declined.body.dueDate).toBe(ticket.dueDate);
+    // без вины работника и принятых мер — отказ; «не применялись» вместе с мерами — тоже
+    const noGuilt = await call('POST', `/tickets/${tid}/close`, 'r1', {
+      version: declined.body.version,
+      answerMethodId: id.method,
+      answerSummary: 'ответ',
+    });
+    expect(noGuilt.status).toBe(400);
+    const mixed = await call('POST', `/tickets/${tid}/close`, 'r1', {
+      version: declined.body.version,
+      answerMethodId: id.method,
+      answerSummary: 'ответ',
+      staffGuilty: true,
+      measures: ['none', 'remark'],
+    });
+    expect(mixed.status).toBe(400);
     // закрытие «Нового» без открытия: в истории — взято в работу и закрыто ответственным
     const closed = await call('POST', `/tickets/${tid}/close`, 'r1', {
       version: declined.body.version,
       answerMethodId: id.method,
       answerSummary: 'ответ',
+      staffGuilty: false,
+      measures: ['none'],
     });
     expect(closed.status).toBe(200);
     expect(closed.body.status).toBe('approval');
+    expect(closed.body).toMatchObject({ staffGuilty: false, measures: ['none'] });
     const hist = closed.body.history.map((h: { action: string }) => h.action);
     expect(hist.slice(-2)).toEqual(['opened', 'answered']);
   });
@@ -358,7 +384,13 @@ describe.skipIf(!ADMIN_URL)('Вторая линия Ф8 (интеграция)'
     const { ticket } = await newTicket('op1');
     const tid = ticket.id as string;
     const opened = await call('POST', `/tickets/${tid}/open`, 'r1', {});
-    const body = { version: opened.body.version, answerMethodId: id.method, answerSummary: 'ответ' };
+    const body = {
+      version: opened.body.version,
+      answerMethodId: id.method,
+      answerSummary: 'ответ',
+      staffGuilty: false,
+      measures: ['none'],
+    };
     const [a, b] = await Promise.all([
       call('POST', `/tickets/${tid}/close`, 'r1', body),
       call('POST', `/tickets/${tid}/close`, 'c1', body),
@@ -530,6 +562,8 @@ describe.skipIf(!ADMIN_URL)('Вторая линия Ф8 (интеграция)'
       version: v.version,
       answerMethodId: id.method,
       answerSummary: 'ответ',
+      staffGuilty: false,
+      measures: ['none'],
     });
     expect(closed.body.status).toBe('approval');
     // режим «только супервизор»: создатель принять не может, супервизор «Севера» — может
@@ -580,6 +614,8 @@ describe.skipIf(!ADMIN_URL)('Вторая линия Ф8 (интеграция)'
           version: ticket.version,
           answerMethodId: id.method,
           answerSummary: 'х',
+          staffGuilty: false,
+          measures: ['none'],
         })
       ).status,
     ).toBe(403);
@@ -976,6 +1012,8 @@ describe.skipIf(!ADMIN_URL)('Ежедневная рассылка Ф8 (инте
       version: v,
       answerMethodId: method,
       answerSummary: 'ответ',
+      staffGuilty: false,
+      measures: ['none'],
     });
     expect(closed.status).toBe(200);
     v = closed.body.version;
