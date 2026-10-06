@@ -92,6 +92,14 @@ const ReassignBody = z
     comment: z.string().max(5000).optional(),
   })
   .strict();
+/** Список идентификаторов из строки «a,b,c»: только корректные UUID; `me` — текущий сотрудник. */
+function idList(raw: string | undefined, me?: string): string[] {
+  return (raw ?? '')
+    .split(',')
+    .map((v) => (v === 'me' && me ? me : v))
+    .filter((v) => uuid.safeParse(v).success);
+}
+
 const CommentBody = z
   .object({ body: z.string().max(10000).default(''), attachmentIds: z.array(uuid).max(20).default([]) })
   .strict();
@@ -285,14 +293,36 @@ export class TicketsController {
         `EXISTS (SELECT 1 FROM ticket_assignee a WHERE a.ticket_id = t.id AND a.user_id = $1 AND a.is_active AND a.kind = ?)`,
         q.role,
       );
+    // Фильтры списка: несколько ответственных/кураторов («me» — я), тем (с подтемами), предприятий и
+    // подразделений на предприятии («e» — всё предприятие, «e/d» — подразделение).
+    for (const kind of ['responsible', 'curator'] as const) {
+      const list = idList(q[`${kind}Ids`], p.id);
+      if (list.length)
+        add(
+          `EXISTS (SELECT 1 FROM ticket_assignee a WHERE a.ticket_id = t.id AND a.is_active AND a.kind = '${kind}' AND a.user_id = ANY(?::uuid[]))`,
+          list,
+        );
+    }
+    const topicIds = idList(q.topicIds);
+    if (topicIds.length) add('t.topic_path && ?::uuid[]', topicIds);
+    const orgs = (q.orgs ?? '').split(',').filter((v) => /^[0-9a-f-]{36}(\/[0-9a-f-]{36})?$/i.test(v));
+    if (orgs.length)
+      add(
+        `(t.enterprise_id = ANY(?::uuid[]) OR (t.enterprise_id::text || '/' || t.department_id::text) = ANY(?::text[]))`,
+        orgs.filter((v) => !v.includes('/')),
+        orgs.filter((v) => v.includes('/')).map((v) => v.toLowerCase()),
+      );
     if (q.overdue === 'true')
       where.push(`t.status IN ('new', 'in_work', 'rework') AND t.due_date < $2::date`);
     if (q.important === 'true') where.push('t.is_important');
     if (q.enterpriseId) add('t.enterprise_id = ?', q.enterpriseId);
     if (q.departmentId) add('t.department_id = ?', q.departmentId);
     if (q.topicId) add('? = ANY(t.topic_path)', q.topicId);
-    if (q.dueFrom) add('t.due_date >= ?::date', q.dueFrom);
-    if (q.dueTo) add('t.due_date <= ?::date', q.dueTo);
+    if (q.dueFrom) add('t.due_date >= ?::date', parse(day, q.dueFrom));
+    if (q.dueTo) add('t.due_date <= ?::date', parse(day, q.dueTo));
+    // Дата передачи на 2-ю линию — по местному времени системы.
+    if (q.createdFrom) add('(t.created_at AT TIME ZONE ?)::date >= ?::date', tz, parse(day, q.createdFrom));
+    if (q.createdTo) add('(t.created_at AT TIME ZONE ?)::date <= ?::date', tz, parse(day, q.createdTo));
     if (q.q)
       add(
         `(t.number::text = ? OR ct.display_name ILIKE ? OR ct.phone ILIKE ? OR ct.email ILIKE ? OR t.summary ILIKE ?)`,
@@ -305,7 +335,9 @@ export class TicketsController {
     const list = await rows(
       this.ctx.pool,
       `${LIST_SQL} WHERE ${where.join(' AND ')}
-        ORDER BY (t.status IN ('new', 'in_work', 'rework')) DESC, t.due_date, t.number LIMIT 300`,
+        ORDER BY (t.status IN ('new', 'in_work', 'rework') AND t.due_date < $2::date) DESC,
+                 (t.status IN ('new', 'in_work', 'rework')) DESC, (t.status = 'approval') DESC, t.due_date, t.number
+        LIMIT 300`,
       params,
     );
     return list.map((r) => toApi(r));

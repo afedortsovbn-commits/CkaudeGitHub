@@ -1,4 +1,5 @@
 import {
+  ActionIcon,
   Alert,
   Anchor,
   Badge,
@@ -14,7 +15,6 @@ import {
   MultiSelect,
   Paper,
   ScrollArea,
-  SegmentedControl,
   Select,
   Stack,
   Table,
@@ -23,6 +23,7 @@ import {
   Textarea,
   TextInput,
   Title,
+  Tooltip,
 } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -33,6 +34,8 @@ import { useAuth } from '../lib/auth';
 import { type Row, options, useAction, useList } from '../lib/data';
 import { t } from '../lib/i18n';
 import { OrgPicker, TopicPicker } from '../components/DictPickers';
+import { DEFAULT_FILTER, filterQuery, type TicketFilter, TicketFilters } from '../components/TicketFilters';
+import { IconAlertTriangle } from '@tabler/icons-react';
 
 // ---------------------------------------------------------------- общее
 
@@ -304,6 +307,11 @@ export function EscalateModal({ conv, opened, onClose }: { conv: Row; opened: bo
 
 function TicketCard({ t: tk, selected, onOpen }: { t: Row; selected?: boolean; onOpen(id: string): void }) {
   const mine = tk.myRole as string | null;
+  const status = String(tk.status);
+  // Закрытые и на согласовании (работа ответственного завершена) — светло-серым; просроченные — красным.
+  const dim = status === 'closed' || status === 'approval';
+  const overdue = !!tk.isOverdue;
+  const c = dim ? 'dimmed' : undefined;
   return (
     <Card
       withBorder
@@ -311,30 +319,45 @@ function TicketCard({ t: tk, selected, onOpen }: { t: Row; selected?: boolean; o
       onClick={() => onOpen(tk.id)}
       style={{
         cursor: 'pointer',
-        borderLeft: `4px solid ${mine === 'responsible' ? 'var(--mantine-color-blue-6)' : mine === 'curator' ? 'var(--mantine-color-gray-5)' : 'transparent'}`,
-        outline: selected ? '2px solid var(--mantine-color-blue-5)' : undefined,
+        borderLeft: `4px solid ${overdue ? 'var(--mantine-color-red-6)' : mine === 'responsible' ? 'var(--mantine-color-blue-6)' : mine === 'curator' ? 'var(--mantine-color-gray-5)' : 'transparent'}`,
+        // Выбранное — заметно: заливка и толстая рамка.
+        borderColor: selected ? 'var(--mantine-color-blue-6)' : undefined,
+        borderWidth: selected ? 2 : undefined,
+        boxShadow: selected ? '0 0 0 2px var(--mantine-color-blue-3)' : undefined,
+        background: selected
+          ? 'var(--mantine-color-blue-light)'
+          : overdue
+            ? 'var(--mantine-color-red-light)'
+            : undefined,
+        opacity: dim && !selected ? 0.75 : undefined,
       }}
       data-testid="ticket-item"
+      data-selected={selected || undefined}
+      data-overdue={overdue || undefined}
     >
       <Group justify="space-between" wrap="nowrap">
         <Group gap={6} wrap="nowrap">
-          <Text fw={700} size="sm">
+          <Text fw={700} size="sm" c={c}>
             №{String(tk.number)}
           </Text>
           {tk.isImportant ? (
-            <Badge color="red" size="xs" variant="filled">
+            <Badge color={dim ? 'gray' : 'red'} size="xs" variant={dim ? 'outline' : 'filled'}>
               {t.tickets.osoboVazhnoe}
             </Badge>
           ) : null}
           {mine ? (
-            <Badge size="xs" variant={mine === 'responsible' ? 'filled' : 'light'} color="blue">
+            <Badge
+              size="xs"
+              variant={dim ? 'outline' : mine === 'responsible' ? 'filled' : 'light'}
+              color={dim ? 'gray' : 'blue'}
+            >
               {mine === 'responsible' ? t.tickets.yaOtvetstvennyy : t.tickets.yaKurator}
             </Badge>
           ) : null}
         </Group>
-        <StatusBadge status={String(tk.status)} testId="ticket-item-status" />
+        <StatusBadge status={status} testId="ticket-item-status" />
       </Group>
-      <Text size="xs" lineClamp={1}>
+      <Text size="xs" lineClamp={1} c={c}>
         {String(tk.topicName)} · {String(tk.enterpriseName)} / {String(tk.departmentName)}
       </Text>
       <Text size="xs" c="dimmed" lineClamp={1}>
@@ -343,7 +366,7 @@ function TicketCard({ t: tk, selected, onOpen }: { t: Row; selected?: boolean; o
       <Group justify="space-between">
         <Deadline t={tk} />
         {Number(tk.returnsCount) > 0 && (
-          <Text size="xs" c="orange">
+          <Text size="xs" c={dim ? 'dimmed' : 'orange'}>
             {t.tickets.vozvratov}
             {String(tk.returnsCount)}
           </Text>
@@ -353,19 +376,33 @@ function TicketCard({ t: tk, selected, onOpen }: { t: Row; selected?: boolean; o
   );
 }
 
-/** Список тикетов для вкладок оператора и супервизора; клик — переход в тикет. */
+/** Значок-переключатель «только особо важные»: включён — красный. */
+function ImportantToggle({ value, onChange }: { value: boolean; onChange(v: boolean): void }) {
+  return (
+    <Tooltip label={value ? t.tickets.fltImportantOn : t.tickets.fltImportantOff} withArrow>
+      <ActionIcon
+        variant={value ? 'filled' : 'default'}
+        color="red"
+        onClick={() => onChange(!value)}
+        aria-label={t.tickets.tolkoOsoboVazhnye}
+        data-testid="flt-important"
+      >
+        <IconAlertTriangle size={18} />
+      </ActionIcon>
+    </Tooltip>
+  );
+}
+
+/** Список обращений 2-й линии для вкладок оператора и супервизора; клик — переход в обращение. */
 export function TicketList({ view, extra = '' }: { view: string; extra?: string }) {
   const nav = useNavigate();
   const [important, setImportant] = useState(false);
   const list = useList(`/tickets?view=${view}${extra}${important ? '&important=true' : ''}`);
   return (
     <Stack gap={6}>
-      <Checkbox
-        size="xs"
-        label={t.tickets.tolkoOsoboVazhnye}
-        checked={important}
-        onChange={(e) => setImportant(e.currentTarget.checked)}
-      />
+      <Group justify="flex-end">
+        <ImportantToggle value={important} onChange={setImportant} />
+      </Group>
       {(list.data ?? []).length === 0 && (
         <Text c="dimmed" size="sm">
           {t.tickets.netTiketov}
@@ -378,44 +415,20 @@ export function TicketList({ view, extra = '' }: { view: string; extra?: string 
   );
 }
 
-/** Количество тикетов во вкладке (для подписи). */
+/** Количество обращений во вкладке (для подписи). */
 export function useTicketCount(view: string, extra = ''): number {
   const list = useList(`/tickets?view=${view}${extra}`);
   return (list.data ?? []).length;
 }
 
-// ---------------------------------------------------------------- кабинет ответственного
+// ---------------------------------------------------------------- обращения на 2-й линии
 
-const QUICK: { value: string; label: string; q: string }[] = [
-  { value: 'all', label: t.all, q: '' },
-  { value: 'resp', label: t.tickets.yaOtvetstvennyy2, q: '&role=responsible' },
-  { value: 'cur', label: t.tickets.yaKurator2, q: '&role=curator' },
-  { value: 'overdue', label: t.tickets.prosrochennye, q: '&overdue=true' },
-  { value: 'rework', label: t.tickets.naDorabotke, q: '&status=rework' },
-  { value: 'important', label: t.tickets.osoboVazhnye, q: '&important=true' },
-];
-
-/** Кабинет ответственного/куратора (M-TKT-05): список, быстрые фильтры, предпросмотр, переход в обращение. */
+/** Обращения на 2-й линии (M-TKT-05): список с фильтрами значками, краткая информация, переход в обращение. */
 export function CabinetPage() {
   const nav = useNavigate();
-  const [quick, setQuick] = useState('all');
-  const [enterpriseId, setEnterpriseId] = useState<string | null>(null);
-  const [departmentId, setDepartmentId] = useState<string | null>(null);
-  const [topicId, setTopicId] = useState<string | null>(null);
-  const [status, setStatus] = useState<string | null>(null);
-  const [dueTo, setDueTo] = useState('');
+  const [filter, setFilter] = useState<TicketFilter>(DEFAULT_FILTER);
   const [selected, setSelected] = useState<string | null>(null);
-  const enterprises = useList('/dict/enterprises');
-  const departments = useList('/dict/departments');
-  const topics = useList('/topics');
-  const q =
-    (QUICK.find((x) => x.value === quick)?.q ?? '') +
-    (enterpriseId ? `&enterpriseId=${enterpriseId}` : '') +
-    (departmentId ? `&departmentId=${departmentId}` : '') +
-    (topicId ? `&topicId=${topicId}` : '') +
-    (status && quick !== 'rework' ? `&status=${status}` : '') +
-    (dueTo ? `&dueTo=${dueTo}` : '');
-  const list = useList(`/tickets?view=cabinet${q}`);
+  const list = useList(`/tickets?view=cabinet${filterQuery(filter)}`);
   const preview = useQuery({
     queryKey: [`/tickets/${selected}`],
     queryFn: () => get<Row>(`/tickets/${selected}`),
@@ -427,64 +440,11 @@ export function CabinetPage() {
         <Title order={3} mb="xs">
           {t.tickets.kabinet2YLinii}
         </Title>
-        <SegmentedControl
-          size="xs"
-          data={QUICK.map(({ value, label }) => ({ value, label }))}
-          value={quick}
-          onChange={setQuick}
-          mb="xs"
-          data-testid="quick-filters"
-          style={{ flexWrap: 'wrap' }}
-        />
-        <Group grow gap="xs" mb="xs">
-          <Select
-            size="xs"
-            placeholder={t.tickets.predpriyatie}
-            data={options(enterprises.data)}
-            value={enterpriseId}
-            onChange={setEnterpriseId}
-            clearable
-          />
-          <Select
-            size="xs"
-            placeholder={t.tickets.podrazdelenie}
-            data={options(departments.data)}
-            value={departmentId}
-            onChange={setDepartmentId}
-            clearable
-          />
-        </Group>
-        <Group grow gap="xs" mb="xs">
-          <Select
-            size="xs"
-            placeholder={t.tickets.tema}
-            data={(topics.data ?? []).map((topic) => ({
-              value: topic.id,
-              label: `${'— '.repeat(Number(topic.level) - 1)}${String(topic.name)}`,
-            }))}
-            value={topicId}
-            onChange={setTopicId}
-            searchable
-            clearable
-          />
-          <Select
-            size="xs"
-            placeholder={t.tickets.status}
-            data={Object.entries(TICKET_STATUS).map(([value, s]) => ({ value, label: s.label }))}
-            value={status}
-            onChange={setStatus}
-            clearable
-          />
-          <TextInput
-            size="xs"
-            type="date"
-            placeholder={t.tickets.srokDo}
-            value={dueTo}
-            onChange={(e) => setDueTo(e.currentTarget.value)}
-          />
-        </Group>
-        <ScrollArea h="calc(100vh - 270px)">
-          <Stack gap={6} data-testid="ticket-list">
+        <Box mb="xs">
+          <TicketFilters value={filter} onChange={setFilter} />
+        </Box>
+        <ScrollArea h="calc(100vh - 250px)">
+          <Stack gap={6} p={4} data-testid="ticket-list">
             {(list.data ?? []).length === 0 && (
               <Text c="dimmed" size="sm">
                 {t.tickets.netTiketov}

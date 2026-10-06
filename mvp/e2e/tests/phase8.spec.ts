@@ -134,7 +134,10 @@ test.describe.serial('Ф8: вторая линия', () => {
     const r3 = await as(browser, 'resp3@demo.local');
     await expect(r3.getByTestId('bell-count')).toBeVisible();
     await nav(r3, 'Обращения на 2-й линии');
-    await r3.getByTestId('quick-filters').getByText('Я ответственный').click();
+    await r3.getByTestId('flt-responsible').click();
+    await r3.getByTestId('flt-responsible-me').click();
+    await r3.keyboard.press('Escape');
+    await expect(r3.getByTestId('flt-responsible')).toHaveAttribute('data-active', 'true');
     const mine = r3.getByTestId('ticket-item').filter({ hasText: `№${number}` });
     await expect(mine).toContainText('я ответственный');
     await expect(mine).toContainText('особо важное');
