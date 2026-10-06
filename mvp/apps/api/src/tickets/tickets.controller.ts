@@ -1,5 +1,6 @@
 import { Body, Controller, Get, HttpCode, Inject, Param, Post, Query, Req, Res } from '@nestjs/common';
 import { inScope, scopeFilter, type Principal } from '@cc/auth';
+import { newId } from '@cc/contracts';
 import {
   applyMatrixToOpenTickets,
   approveTicket,
@@ -113,6 +114,9 @@ const ExtensionBody = z
   .object({ dueDate: day, reason: z.string().trim().min(1, 'Укажите причину продления').max(5000) })
   .strict();
 const DeclineBody = z.object({ comment: z.string().max(5000).default('') }).strict();
+const EditBody = z
+  .object({ version, summary: z.string().trim().min(1, 'Суть не может быть пустой').max(5000) })
+  .strict();
 const CommentBody = z
   .object({ body: z.string().max(10000).default(''), attachmentIds: z.array(uuid).max(20).default([]) })
   .strict();
@@ -552,6 +556,78 @@ export class TicketsController {
     return this.detail(p, id);
   }
 
+  /** Исправление сути обращения — отдельное право `tickets.edit` (у ответственных и кураторов его обычно нет). */
+  @Post('tickets/:id/edit')
+  @HttpCode(200)
+  @RequirePerm('tickets.edit')
+  async edit(@CurrentUser() p: Principal, @Param('id') id: string, @Body() body: unknown) {
+    const b = parse(EditBody, body);
+    await withTx(this.ctx.pool, async (tx) => {
+      const t = await this.visible(p, id, tx);
+      if (t.version !== b.version)
+        throw new ApiError(
+          409,
+          'ticket_changed',
+          'Обращение уже изменено другим сотрудником — обновите страницу',
+        );
+      await tx.query(
+        `UPDATE ticket SET summary = $2, version = version + 1, updated_at = now() WHERE id = $1`,
+        [id, b.summary],
+      );
+      await tx.query(
+        `INSERT INTO ticket_transition (id, ticket_id, actor_id, action, from_status, to_status, details)
+         VALUES ($1, $2, $3, 'edited', $4, $4, $5)`,
+        [newId(), id, p.id, t.status, JSON.stringify({ before: t.summary })],
+      );
+      await audit(tx, p, 'update', 'ticket', id, { summary: t.summary }, { summary: b.summary });
+    });
+    return this.detail(p, id);
+  }
+
+  /** Записи разговоров обращения — участникам 2-й линии (без прав оператора), каждое прослушивание — в аудит. */
+  @Get('tickets/:id/recordings')
+  @RequirePerm('conversations.work', 'tickets.work', 'supervisor.approvals', 'admin.matrix')
+  async recordings(@CurrentUser() p: Principal, @Param('id') id: string) {
+    const t = await this.visible(p, id);
+    const list = await rows(
+      this.ctx.pool,
+      `SELECT r.id, r.status, r.duration_s, r.deleted_at, r.created_at, c.direction, c.from_number, c.to_number,
+              u.full_name AS agent_name
+         FROM call_recording r JOIN call c ON c.id = r.call_id LEFT JOIN app_user u ON u.id = c.agent_user_id
+        WHERE r.conversation_id = $1 ORDER BY r.created_at`,
+      [t.conversation_id],
+    );
+    return list.map((r) => toApi(r));
+  }
+
+  @Get('tickets/:id/recordings/:recId')
+  @RequirePerm('conversations.work', 'tickets.work', 'supervisor.approvals', 'admin.matrix')
+  async recordingFile(
+    @CurrentUser() p: Principal,
+    @Param('id') id: string,
+    @Param('recId') recId: string,
+    @Res() reply: FastifyReply,
+  ) {
+    const t = await this.visible(p, id);
+    if (!uuid.safeParse(recId).success) throw notFound('Запись');
+    const r = await one<{ storage_key: string | null; status: string; deleted_at: Date | null }>(
+      this.ctx.pool,
+      `SELECT storage_key, status, deleted_at FROM call_recording WHERE id = $1 AND conversation_id = $2`,
+      [recId, t.conversation_id],
+    );
+    if (!r) throw notFound('Запись');
+    if (r.deleted_at) throw new ApiError(410, 'deleted', 'Запись удалена: истёк срок хранения');
+    if (r.status !== 'uploaded' || !r.storage_key)
+      throw new ApiError(409, 'not_ready', 'Запись ещё обрабатывается');
+    await withTx(this.ctx.pool, (tx) =>
+      audit(tx, p, 'recording.play', 'call_recording', recId, null, null, { configChanged: false }),
+    );
+    const obj = await this.ctx.storage.get(r.storage_key);
+    reply.header('content-type', 'audio/wav').header('x-content-type-options', 'nosniff');
+    if (obj.length) reply.header('content-length', obj.length);
+    return reply.send(obj.body);
+  }
+
   // ---------- Внутреннее ----------
 
   private async visible(
@@ -662,9 +738,24 @@ export class TicketsController {
     );
     const conv = await one(
       this.ctx.pool,
-      `SELECT c.id, c.channel_kind, c.status, c.fields, c.contact_id, ct.display_name, ct.phone, ct.email
+      `SELECT c.id, c.channel_kind, c.status, c.fields, c.contact_id, c.created_at, c.is_urgent,
+              ct.display_name, ct.phone, ct.email,
+              (SELECT o.name FROM service_object o WHERE o.id = c.object_id) AS object_name,
+              (SELECT count(*)::int FROM call_recording r WHERE r.conversation_id = c.id AND r.deleted_at IS NULL) AS recordings
          FROM conversation c JOIN contact ct ON ct.id = c.contact_id WHERE c.id = $1`,
       [t.conversation_id],
+    );
+    // Подписи полей карточки темы (для показа заполненных полей на 2-й линии).
+    const fieldDefs = await rows(
+      this.ctx.pool,
+      `SELECT DISTINCT ON (f.key) f.key, f.label FROM field_def f
+        WHERE f.topic_id = ANY($1) AND f.is_active ORDER BY f.key, f.sort_order`,
+      [t.topic_path],
+    );
+    // Открыл — обращение больше не «Новое» для этого сотрудника.
+    await this.ctx.pool.query(
+      `INSERT INTO ticket_view (ticket_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+      [id, p.id],
     );
     const approvalMode = await one<{ v: string }>(
       this.ctx.pool,
@@ -678,6 +769,7 @@ export class TicketsController {
       comments: comments.map((r) => toApi(r)),
       history: history.map((r) => toApi(r)),
       conversation: conv ? toApi(conv) : null,
+      fieldDefs: fieldDefs.map((r) => toApi(r)),
       approvalMode: approvalMode?.v ?? 'creator',
       can: {
         open: !!t.my_role && (t.status === 'new' || t.status === 'rework'),
@@ -687,6 +779,7 @@ export class TicketsController {
         approve: canApproveNow,
         reassign: t.status !== 'closed' && this.canReassign(p, t),
         comment: !!t.my_role || t.created_by === p.id || canApproveNow,
+        edit: hasPerm(p, 'tickets.edit') && t.status !== 'closed',
       },
     };
   }

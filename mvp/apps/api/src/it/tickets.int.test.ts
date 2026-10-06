@@ -350,6 +350,23 @@ describe.skipIf(!ADMIN_URL)('Вторая линия Ф8 (интеграция)'
     const declined = await call('POST', `/tickets/${tid}/extension/decline`, 'op1', { comment: 'нет' });
     expect(declined.status).toBe(200);
     expect(declined.body.dueDate).toBe(ticket.dueDate);
+    // суть исправляет только сотрудник с правом «Редактирование обращений 2-й линии» (администратор)
+    expect(
+      (await call('POST', `/tickets/${tid}/edit`, 'r1', { version: declined.body.version, summary: 'х' }))
+        .status,
+    ).toBe(403);
+    const edited = await call('POST', `/tickets/${tid}/edit`, 'admin', {
+      version: declined.body.version,
+      summary: 'Исправленная суть',
+    });
+    expect(edited.status, JSON.stringify(edited.body)).toBe(200);
+    expect(edited.body.summary).toBe('Исправленная суть');
+    expect(edited.body.history.map((h: { action: string }) => h.action)).toContain('edited');
+    // записи разговоров обращения доступны участнику 2-й линии (у этого обращения их нет — пустой список)
+    const recs = await call('GET', `/tickets/${tid}/recordings`, 'r1');
+    expect(recs.status).toBe(200);
+    expect(recs.body).toEqual([]);
+    declined.body.version = edited.body.version;
     // без вины работника и принятых мер — отказ; «не применялись» вместе с мерами — тоже
     const noGuilt = await call('POST', `/tickets/${tid}/close`, 'r1', {
       version: declined.body.version,

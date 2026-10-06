@@ -8,7 +8,6 @@ import {
   Button,
   Card,
   Checkbox,
-  Divider,
   FileButton,
   Grid,
   Group,
@@ -36,6 +35,7 @@ import { useAuth } from '../lib/auth';
 import { type Row, options, useAction, useList, useRequired } from '../lib/data';
 import { t } from '../lib/i18n';
 import { OrgPicker, TopicPicker } from '../components/DictPickers';
+import { COMMON_FIELD_KEYS, isCommonField } from '../lib/common-fields';
 import { DEFAULT_FILTER, filterQuery, type TicketFilter, TicketFilters } from '../components/TicketFilters';
 import {
   IconAlertTriangle,
@@ -43,6 +43,9 @@ import {
   IconCircleCheck,
   IconClockPlus,
   IconExternalLink,
+  IconMessages,
+  IconPencil,
+  IconPlayerPlay,
   IconTemplate,
 } from '@tabler/icons-react';
 
@@ -456,7 +459,6 @@ export function useTicketCount(view: string, extra = ''): number {
 
 /** Обращения на 2-й линии (M-TKT-05): список с фильтрами значками, краткая информация, переход в обращение. */
 export function CabinetPage() {
-  const nav = useNavigate();
   const [filter, setFilter] = useState<TicketFilter>(DEFAULT_FILTER);
   const [selected, setSelected] = useState<string | null>(null);
   const [dialog, setDialog] = useState<Dialog>(null);
@@ -466,6 +468,18 @@ export function CabinetPage() {
     queryFn: () => get<Row>(`/tickets/${selected}`),
     enabled: !!selected,
   });
+  // Выбрал «Новое» (или возвращённое) — оно взято в работу (M-TKT-03): полной карточки из списка больше нет.
+  const openTicket = useTicketAction(
+    (tid: string) => post(`/tickets/${tid}/open`),
+    t.tickets.tiketVzyatVRabotu,
+  );
+  const autoOpened = useRef<string | null>(null);
+  useEffect(() => {
+    const d = preview.data;
+    if (!d || autoOpened.current === d.id) return;
+    autoOpened.current = String(d.id);
+    if ((d.can as Record<string, boolean> | undefined)?.open) openTicket.mutate(String(d.id));
+  }, [preview.data, openTicket]);
   return (
     <Grid gutter="sm">
       <Grid.Col span={{ base: 12, md: 5 }}>
@@ -492,17 +506,13 @@ export function CabinetPage() {
         {preview.data ? (
           <Paper withBorder p="md" data-testid="ticket-preview">
             <Group justify="space-between" mb="xs">
-              <Title order={4}>
+              <Title order={4} data-testid="ticket-title">
                 {t.tickets.tiket}
                 {String(preview.data.number)}
               </Title>
-              <StatusBadge status={String(preview.data.status)} testId="ticket-preview-status" />
+              <StatusBadge status={String(preview.data.status)} />
             </Group>
-            <TicketActions
-              t={preview.data}
-              onDialog={setDialog}
-              onOpenFull={() => nav(`/tickets/${selected}`)}
-            />
+            <TicketActions t={preview.data} onDialog={setDialog} />
             <ExtensionNotice t={preview.data} />
             <TicketFacts t={preview.data} />
             <TicketDialogs t={preview.data} dialog={dialog} onClose={() => setDialog(null)} />
@@ -553,12 +563,249 @@ function History({ items }: { items: Row[] }) {
   );
 }
 
+/** Источник обращения (канал). */
+const CHANNEL_LABEL: Record<string, string> = {
+  webchat: t.workspace.sayt,
+  app: t.workspace.prilozhenie,
+  telegram: 'Telegram',
+  email: 'Email',
+  voice: t.workspace.zvonok,
+  api: t.workspace.vneshnyayaSistema,
+  review: t.reviews.channel,
+};
+
+/** Фамилия — первое слово ФИО (подпись автора заметки). */
+const surname = (name: unknown) => String(name ?? '').split(' ')[0] ?? '';
+
+function Line({ label, value }: { label: string; value: unknown }) {
+  if (value === null || value === undefined || value === '') return null;
+  return (
+    <Text size="sm">
+      <b>{label}:</b> {String(value)}
+    </Text>
+  );
+}
+
+function Section({ title, children, testId }: { title: string; children: React.ReactNode; testId?: string }) {
+  return (
+    <Box data-testid={testId}>
+      <Text size="xs" fw={700} tt="uppercase" c="blue.8" mt={8} mb={2}>
+        {title}
+      </Text>
+      <Stack gap={2}>{children}</Stack>
+    </Box>
+  );
+}
+
+/** Переписка с клиентом — в окне по кнопке. */
+function DialogButton({ ticketId }: { ticketId: string }) {
+  const [opened, setOpened] = useState(false);
+  return (
+    <>
+      <Tooltip label={t.tickets.openDialog} withArrow>
+        <ActionIcon
+          variant="light"
+          onClick={() => setOpened(true)}
+          aria-label={t.tickets.openDialog}
+          data-testid="open-dialog"
+        >
+          <IconMessages size={18} />
+        </ActionIcon>
+      </Tooltip>
+      <Modal opened={opened} onClose={() => setOpened(false)} title={t.tickets.perepiskaSKlientom} size="xl">
+        {opened && <Conversation ticketId={ticketId} />}
+      </Modal>
+    </>
+  );
+}
+
+/** Записи разговоров — в окне по кнопке (прослушивание фиксируется в журнале аудита). */
+function RecordingsButton({ ticketId }: { ticketId: string }) {
+  const [opened, setOpened] = useState(false);
+  const list = useList(`/tickets/${ticketId}/recordings`, opened);
+  const [src, setSrc] = useState<Record<string, string>>({});
+  const play = async (id: string) => {
+    try {
+      const url = await authBlobUrl(`/tickets/${ticketId}/recordings/${id}`);
+      setSrc((x) => ({ ...x, [id]: url }));
+    } catch (e) {
+      notifications.show({ color: 'red', title: t.error, message: errorText(e) });
+    }
+  };
+  return (
+    <>
+      <Tooltip label={t.tickets.openRecordings} withArrow>
+        <ActionIcon
+          variant="light"
+          color="green"
+          onClick={() => setOpened(true)}
+          aria-label={t.tickets.openRecordings}
+          data-testid="open-recordings"
+        >
+          <IconPlayerPlay size={18} />
+        </ActionIcon>
+      </Tooltip>
+      <Modal opened={opened} onClose={() => setOpened(false)} title={t.tickets.openRecordings} size="lg">
+        <Stack gap="xs">
+          {(list.data ?? []).map((r) => (
+            <Paper key={r.id} withBorder p="xs">
+              <Text size="sm">
+                {fmtTime(r.createdAt)} · {String(r.fromNumber ?? '')} → {String(r.toNumber ?? '')}
+                {r.agentName ? ` · ${String(r.agentName)}` : ''}
+                {r.durationS ? ` · ${String(r.durationS)} ${t.tickets.sec}` : ''}
+              </Text>
+              {r.deletedAt ? (
+                <Text size="xs" c="dimmed">
+                  {t.tickets.recDeleted}
+                </Text>
+              ) : src[r.id] ? (
+                <audio controls autoPlay src={src[r.id]} style={{ width: '100%' }} />
+              ) : (
+                <Button size="compact-xs" variant="light" mt={4} onClick={() => void play(r.id)}>
+                  {t.tickets.listen}
+                </Button>
+              )}
+            </Paper>
+          ))}
+          {list.data && !list.data.length && (
+            <Text size="sm" c="dimmed">
+              {t.tickets.noRecordings}
+            </Text>
+          )}
+        </Stack>
+      </Modal>
+    </>
+  );
+}
+
+/** Исправление сути — только с правом «Редактирование обращений 2-й линии». */
+function EditSummary({ t: tk }: { t: Row }) {
+  const [opened, setOpened] = useState(false);
+  const [text, setText] = useState('');
+  const req = useRequired();
+  const save = useTicketAction(
+    () => post(`/tickets/${tk.id}/edit`, { version: tk.version, summary: text }),
+    t.saved,
+    () => setOpened(false),
+  );
+  return (
+    <>
+      <Tooltip label={t.tickets.editSummary} withArrow>
+        <ActionIcon
+          variant="subtle"
+          color="gray"
+          onClick={() => {
+            setText(String(tk.summary ?? ''));
+            req.reset();
+            setOpened(true);
+          }}
+          aria-label={t.tickets.editSummary}
+          data-testid="edit-summary"
+        >
+          <IconPencil size={18} />
+        </ActionIcon>
+      </Tooltip>
+      <Modal opened={opened} onClose={() => setOpened(false)} title={t.tickets.editSummary} size="lg">
+        <Stack gap="xs">
+          <Textarea
+            label={t.tickets.sut.replace(':', '')}
+            withAsterisk
+            error={req.error(!text.trim())}
+            value={text}
+            onChange={(e) => setText(e.currentTarget.value)}
+            autosize
+            minRows={4}
+          />
+          <Group justify="flex-end">
+            <Button variant="default" onClick={() => setOpened(false)}>
+              {t.cancel}
+            </Button>
+            <Button
+              loading={save.isPending}
+              onClick={() =>
+                req.check(!text.trim() ? [t.tickets.sut.replace(':', '')] : []) && save.mutate(undefined)
+              }
+            >
+              {t.save}
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
+    </>
+  );
+}
+
+/** Заметки по обращению: видны сразу (без открытия обращения), у каждой — фамилия автора; добавить может участник. */
+function Notes({ t: tk }: { t: Row }) {
+  const can = (tk.can as Record<string, boolean> | undefined) ?? {};
+  const [text, setText] = useState('');
+  const add = useTicketAction(
+    () => post(`/tickets/${tk.id}/comments`, { body: text, attachmentIds: [] }),
+    t.tickets.noteAdded,
+    () => setText(''),
+  );
+  const notes = ((tk.comments as Row[]) ?? []).filter((c) => c.kind === 'comment');
+  return (
+    <Paper withBorder p="xs" mt="xs" data-testid="ticket-notes">
+      <Text size="sm" fw={600} mb={4}>
+        {t.tickets.notes} {notes.length ? `(${notes.length})` : ''}
+      </Text>
+      <Stack gap={4}>
+        {notes.map((n) => (
+          <Text size="sm" key={n.id} style={{ whiteSpace: 'pre-wrap' }}>
+            <b>{surname(n.authorName)}</b>{' '}
+            <Text span size="xs" c="dimmed">
+              {fmtTime(n.createdAt)}
+            </Text>
+            : {String(n.body)}
+          </Text>
+        ))}
+        {!notes.length && (
+          <Text size="xs" c="dimmed">
+            {t.tickets.noNotes}
+          </Text>
+        )}
+      </Stack>
+      {can.comment && (
+        <Group gap="xs" mt="xs" align="flex-end" wrap="nowrap">
+          <Textarea
+            size="xs"
+            style={{ flex: 1 }}
+            placeholder={t.tickets.notePlaceholder}
+            value={text}
+            onChange={(e) => setText(e.currentTarget.value)}
+            autosize
+            minRows={1}
+            data-testid="note-text"
+          />
+          <Button
+            size="xs"
+            loading={add.isPending}
+            onClick={() =>
+              text.trim()
+                ? add.mutate(undefined)
+                : notifications.show({ color: 'red', message: t.tickets.noteEmpty })
+            }
+            data-testid="note-add"
+          >
+            {t.add}
+          </Button>
+        </Group>
+      )}
+    </Paper>
+  );
+}
+
 /**
- * Сведения об обращении: на виду — тема, подтема, суть, срок, статус, способ закрытия и суть ответа,
- * ответственный; остальное (направлено, клиент, кураторы, кто передал, история) — свёрнуто.
+ * Сведения об обращении: на виду — срок, тема, подтема, суть (справа — диалог и запись), ответственный, способ и
+ * суть ответа, вина и меры, заметки. «Подробнее» раскрывает всё остальное по разделам: клиент, обращение,
+ * участники, ответ и документы, комментарии, история.
  */
 function TicketFacts({ t: tk }: { t: Row }) {
-  const c = tk.conversation as Row | null;
+  const c = (tk.conversation as Row | null) ?? null;
+  const can = (tk.can as Record<string, boolean> | undefined) ?? {};
+  const fields = ((c?.fields as Record<string, unknown> | null) ?? {}) as Record<string, unknown>;
+  const labels = new Map(((tk.fieldDefs as Row[]) ?? []).map((f) => [String(f.key), String(f.label)]));
   const assignees = ((tk.assignees as Row[]) ?? []).filter((a) => a.isActive);
   const names = (kind: string) =>
     assignees
@@ -566,6 +813,10 @@ function TicketFacts({ t: tk }: { t: Row }) {
       .map((a) => String(a.fullName))
       .join(', ') || '—';
   const [topic, ...sub] = String(tk.topicName ?? '').split(' / ');
+  const docs = ((tk.comments as Row[]) ?? []).flatMap((x) => ((x.attachments as Att[]) ?? []).map((a) => a));
+  const topicFields = Object.entries(fields).filter(
+    ([k, v]) => !isCommonField(k) && v !== null && v !== undefined && v !== '',
+  );
   return (
     <Stack gap={4} data-testid="ticket-facts">
       <Deadline t={tk} />
@@ -577,9 +828,16 @@ function TicketFacts({ t: tk }: { t: Row }) {
           <b>{t.tickets.podtema}</b> {sub.join(' / ')}
         </Text>
       )}
-      <Text size="sm">
-        <b>{t.tickets.sut}</b> {String(tk.summary)}
-      </Text>
+      <Group gap="xs" wrap="nowrap" align="flex-start">
+        <Text size="sm" style={{ flex: 1, whiteSpace: 'pre-wrap' }}>
+          <b>{t.tickets.sut}</b> {String(tk.summary)}
+        </Text>
+        <Group gap={4} wrap="nowrap">
+          {can.edit && <EditSummary t={tk} />}
+          <DialogButton ticketId={String(tk.id)} />
+          {Number(c?.recordings ?? 0) > 0 && <RecordingsButton ticketId={String(tk.id)} />}
+        </Group>
+      </Group>
       <Text size="sm">
         <b>{t.tickets.otvetstvennyy}</b> {names('responsible')}
       </Text>
@@ -597,32 +855,83 @@ function TicketFacts({ t: tk }: { t: Row }) {
         </Text>
       )}
       {tk.answerSummary ? <AnswerToTemplate t={tk} /> : null}
+      <Notes t={tk} />
       <Accordion variant="contained" chevronPosition="left" mt={6}>
         <Accordion.Item value="more" data-testid="ticket-more">
           <Accordion.Control py={4} data-testid="ticket-more-toggle">
             <Text size="sm">{t.tickets.more}</Text>
           </Accordion.Control>
           <Accordion.Panel>
-            <Stack gap={4}>
-              <Text size="sm">
-                <b>{t.tickets.napravleno}</b> {String(tk.enterpriseName)} / {String(tk.departmentName)}
-              </Text>
-              <Text size="sm">
-                <b>{t.tickets.klient}</b>{' '}
-                {[c?.displayName, c?.phone, c?.email].filter(Boolean).join(', ') || String(tk.contactName)}
-              </Text>
-              <Text size="sm">
-                <b>{t.tickets.kuratory2}</b> {names('curator')}
-              </Text>
-              <Text size="sm">
-                <b>{t.tickets.peredal}</b> {String(tk.creatorName)}
-              </Text>
-              <Divider my={4} />
-              <Text fw={600} size="sm">
-                {t.tickets.istoriya}
-              </Text>
+            <Section title={t.tickets.secClient} testId="sec-client">
+              <Line label={t.tickets.clientName} value={c?.displayName ?? tk.contactName} />
+              <Line label={t.tickets.clientPhone} value={c?.phone} />
+              <Line label="E-mail" value={c?.email} />
+              {COMMON_FIELD_KEYS.map((k) => (
+                <Line key={k} label={t.workspace.commonFields[k] ?? k} value={fields[k]} />
+              ))}
+            </Section>
+            <Section title={t.tickets.secRequest} testId="sec-request">
+              <Line
+                label={t.tickets.source}
+                value={CHANNEL_LABEL[String(c?.channelKind)] ?? c?.channelKind}
+              />
+              <Line label={t.tickets.receivedAt} value={fmtTime(c?.createdAt)} />
+              <Line label={t.tickets.passedAt} value={fmtTime(tk.createdAt)} />
+              <Line
+                label={t.tickets.napravleno.replace(':', '')}
+                value={`${String(tk.enterpriseName)} / ${String(tk.departmentName)}`}
+              />
+              <Line label={t.tickets.object} value={c?.objectName} />
+              {tk.isImportant ? <Line label={t.tickets.osoboVazhnoe2} value={t.tickets.guiltYes} /> : null}
+              {topicFields.map(([k, v]) => (
+                <Line
+                  key={k}
+                  label={labels.get(k) ?? k}
+                  value={typeof v === 'object' ? JSON.stringify(v) : v}
+                />
+              ))}
+            </Section>
+            <Section title={t.tickets.secPeople} testId="sec-people">
+              <Line label={t.tickets.otvetstvennye2.replace(':', '')} value={names('responsible')} />
+              <Line label={t.tickets.kuratory2.replace(':', '')} value={names('curator')} />
+              <Line label={t.tickets.peredal.replace(':', '')} value={tk.creatorName} />
+            </Section>
+            <Section title={t.tickets.secAnswer} testId="sec-answer">
+              <Line label={t.tickets.sposobOtveta} value={tk.answerMethodName} />
+              <Line label={t.tickets.sutOtveta} value={tk.answerSummary} />
+              <Line label={t.tickets.answeredAt} value={fmtTime(tk.answeredAt)} />
+              {Number(tk.returnsCount) > 0 && <Line label={t.tickets.returns} value={tk.returnsCount} />}
+              {docs.length > 0 && (
+                <Group gap="xs">
+                  <Text size="sm" fw={700}>
+                    {t.tickets.docs}:
+                  </Text>
+                  {docs.map((a) => (
+                    <Anchor key={a.id} size="sm" onClick={() => void openTicketFile(String(tk.id), a.id)}>
+                      📎 {a.filename}
+                    </Anchor>
+                  ))}
+                </Group>
+              )}
+            </Section>
+            <Section title={t.tickets.secLinks} testId="sec-links">
+              <Group gap="xs">
+                <DialogButton ticketId={String(tk.id)} />
+                <Text size="sm">{t.tickets.openDialog}</Text>
+                {Number(c?.recordings ?? 0) > 0 && (
+                  <>
+                    <RecordingsButton ticketId={String(tk.id)} />
+                    <Text size="sm">{t.tickets.openRecordings}</Text>
+                  </>
+                )}
+              </Group>
+            </Section>
+            <Section title={t.tickets.kommentariiIDokumenty}>
+              <Comments t={tk} />
+            </Section>
+            <Section title={t.tickets.istoriya}>
               <History items={(tk.history as Row[]) ?? []} />
-            </Stack>
+            </Section>
           </Accordion.Panel>
         </Accordion.Item>
       </Accordion>

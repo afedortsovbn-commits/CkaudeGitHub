@@ -58,7 +58,7 @@ async function openTicket(page: Page, number: string) {
   await expect(item).toBeVisible({ timeout: 15_000 });
   await item.click();
   await expect(page.getByTestId('ticket-preview')).toBeVisible();
-  await page.getByTestId('ticket-open-full').click();
+  // Всё — в правой части списка (полной карточки из списка нет): выбор «Нового» берёт его в работу.
   await expect(page.getByTestId('ticket-title')).toHaveText(`Обращение (2 линия) №${number}`);
 }
 
@@ -143,10 +143,12 @@ test.describe.serial('Ф8: вторая линия', () => {
     await expect(mine).toContainText('особо важное');
     await expect(mine.getByTestId('deadline')).toContainText('осталось 10 дней');
     await mine.click();
-    await r3.getByTestId('ticket-open-full').click();
     await expect(r3.getByTestId('ticket-title')).toHaveText(`Обращение (2 линия) №${number}`);
     await expect(r3.getByTestId('ticket-status')).toHaveText('В работе');
+    // Диалог с клиентом — по кнопке справа от сути.
+    await r3.getByTestId('open-dialog').first().click();
     await expect(r3.getByTestId('ticket-messages')).toContainText('нагрубил');
+    await r3.keyboard.press('Escape');
 
     // Переадресация другому ответственному сменой подразделения (комментарий обязателен).
     await r3.getByTestId('ticket-redirect').click();
@@ -201,7 +203,7 @@ test.describe.serial('Ф8: вторая линия', () => {
 
     // Ответственный получает уведомление, прикладывает документ и закрывает повторно.
     await waitMail('resp1@demo.local', (s) => s.includes(`№${number} возвращено на доработку`));
-    await r1.reload();
+    await openTicket(r1, number);
     await expect(r1.getByTestId('ticket-status')).toHaveText('В работе');
     await r1.getByTestId('ticket-close').click();
     await select(r1, 'answer-method', 'Письмо на бумаге', cf);
