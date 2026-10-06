@@ -30,6 +30,7 @@ import { SoftphoneCall, SoftphoneStatus } from '../components/Softphone';
 import { useRealtime } from '../lib/realtime';
 import { softphone } from '../lib/softphone';
 import { useAuth, type Me } from '../lib/auth';
+import { applyRoleFavicon } from '../lib/favicon';
 import { t } from '../lib/i18n';
 import { buildMenu, groupMenu, MENU, MENU_GROUPS, type MenuItem } from '../lib/nav';
 
@@ -190,6 +191,16 @@ export function Layout() {
     const cur = items.find((m) => isActive(m, loc.pathname));
     document.title = cur ? `${cur.label} — ${t.appName}` : t.appName;
   }, [items, loc.pathname]);
+  // Значок вкладки — по роли (свои роли без стандартного кода — по правам).
+  const roleKey = [
+    ...(me?.roles ?? []),
+    ...(can('admin.users', 'settings.manage') ? ['admin'] : []),
+    ...(can('supervisor.monitor') ? ['supervisor'] : []),
+    ...(can('tickets.work') ? ['responsible'] : []),
+  ].join(',');
+  useEffect(() => {
+    if (roleKey) applyRoleFavicon(roleKey.split(','));
+  }, [roleKey]);
   // Одно общее соединение: колокольчик и рабочее место получают события по нему.
   useRealtime(!!userId);
   useEffect(() => {
