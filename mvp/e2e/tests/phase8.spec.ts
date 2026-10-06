@@ -59,7 +59,7 @@ async function openTicket(page: Page, number: string) {
   await item.click();
   await expect(page.getByTestId('ticket-preview')).toBeVisible();
   await page.getByTestId('ticket-open-full').click();
-  await expect(page.getByTestId('ticket-title')).toHaveText(`Тикет №${number}`);
+  await expect(page.getByTestId('ticket-title')).toHaveText(`Обращение (2 линия) №${number}`);
 }
 
 async function attach(page: Page, name: string, scope: ReturnType<Page['locator']>) {
@@ -123,18 +123,18 @@ test.describe.serial('Ф8: вторая линия', () => {
     await expect(op.getByTestId('conv-item').filter({ hasText: CLIENT })).toHaveCount(0);
 
     // Назначенным — письмо «Важно!» с высоким приоритетом.
-    const mail = await waitMail('resp3@demo.local', (s) => s.includes(`тикет №${number}`));
-    expect(mail.subject).toMatch(/^Важно! Вам назначен тикет/);
+    const mail = await waitMail('resp3@demo.local', (s) => s.includes(`обращение (2 линия) №${number}`));
+    expect(mail.subject).toMatch(/^Важно! Вам назначено обращение/);
     expect(mail.raw).toMatch(/^Importance: High/im);
     expect(mail.raw).toMatch(/^X-Priority: 1/im);
     expect(mail.text).toContain('грубость');
     expect(mail.text).toContain(`/tickets/`);
-    await waitMail('curator1@demo.local', (s) => s.includes(`тикет №${number}`));
+    await waitMail('curator1@demo.local', (s) => s.includes(`обращение (2 линия) №${number}`));
 
     // Ответственный видит тикет выделенным в кабинете (фильтр «Я ответственный»), открывает — «В работе».
     const r3 = await as(browser, 'resp3@demo.local');
     await expect(r3.getByTestId('bell-count')).toBeVisible();
-    await nav(r3, 'Кабинет 2-й линии');
+    await nav(r3, 'Обращения на 2-й линии');
     await r3.getByTestId('quick-filters').getByText('Я ответственный').click();
     const mine = r3.getByTestId('ticket-item').filter({ hasText: `№${number}` });
     await expect(mine).toContainText('я ответственный');
@@ -142,7 +142,7 @@ test.describe.serial('Ф8: вторая линия', () => {
     await expect(mine.getByTestId('deadline')).toContainText('осталось 10 дней');
     await mine.click();
     await r3.getByTestId('ticket-open-full').click();
-    await expect(r3.getByTestId('ticket-title')).toHaveText(`Тикет №${number}`);
+    await expect(r3.getByTestId('ticket-title')).toHaveText(`Обращение (2 линия) №${number}`);
     await expect(r3.getByTestId('ticket-status')).toHaveText('В работе');
     await expect(r3.getByTestId('ticket-messages')).toContainText('нагрубил');
 
@@ -156,7 +156,7 @@ test.describe.serial('Ф8: вторая линия', () => {
     await rf.getByTestId('redirect-comment').click();
     await rf.getByTestId('redirect-comment').fill('Вопрос к службе эксплуатации АЗС');
     await rf.getByTestId('redirect-submit').click();
-    await expect(r3.getByText('Тикет переадресован')).toBeVisible();
+    await expect(r3.getByText('Обращение переадресовано')).toBeVisible();
     await expect(r3.getByTestId('ticket-close')).toHaveCount(0);
 
     // Новый ответственный закрывает: «письмо на бумаге», суть, скан письма.
@@ -174,7 +174,7 @@ test.describe.serial('Ф8: вторая линия', () => {
     await expect(
       op
         .locator('.mantine-Notification-root')
-        .filter({ hasText: `Тикет №${number}` })
+        .filter({ hasText: `Обращение (2 линия) №${number}` })
         .first(),
     ).toBeVisible({ timeout: 10_000 });
 
@@ -185,7 +185,7 @@ test.describe.serial('Ф8: вторая линия', () => {
       .getByTestId('ticket-item')
       .filter({ hasText: `№${number}` })
       .click();
-    await expect(op.getByTestId('ticket-title')).toHaveText(`Тикет №${number}`);
+    await expect(op.getByTestId('ticket-title')).toHaveText(`Обращение (2 линия) №${number}`);
     await op.getByRole('tab', { name: 'Комментарии и документы' }).click();
     await expect(op.getByTestId('ticket-comments')).toContainText('письмо.pdf');
     await op.getByTestId('ticket-return').click();
@@ -194,7 +194,7 @@ test.describe.serial('Ф8: вторая линия', () => {
     await expect(op.getByTestId('ticket-status')).toHaveText('На доработке');
 
     // Ответственный получает уведомление, прикладывает документ и закрывает повторно.
-    await waitMail('resp1@demo.local', (s) => s.includes(`№${number} возвращён на доработку`));
+    await waitMail('resp1@demo.local', (s) => s.includes(`№${number} возвращено на доработку`));
     await r1.reload();
     await expect(r1.getByTestId('ticket-status')).toHaveText('В работе');
     await r1.getByTestId('ticket-close').click();
@@ -213,10 +213,10 @@ test.describe.serial('Ф8: вторая линия', () => {
     await op.reload();
     await op.getByTestId('ticket-approve').click();
     await op.getByTestId('approve-submit').click();
-    await expect(op.getByTestId('ticket-status')).toHaveText('Закрыт');
-    await expect(op.getByTestId('ticket-history')).toContainText('возвращён на доработку');
+    await expect(op.getByTestId('ticket-status')).toHaveText('Закрыто');
+    await expect(op.getByTestId('ticket-history')).toContainText('возвращено на доработку');
     await expect(op.getByTestId('ticket-history')).toContainText('переадресован');
-    await expect(op.getByTestId('ticket-history')).toContainText('принят, тикет закрыт');
+    await expect(op.getByTestId('ticket-history')).toContainText('ответ принят, обращение закрыто');
     await op.goto('/workspace');
     await op.getByTestId('tabs').getByText('Закрытые').click();
     await expect(op.getByTestId('conv-item').filter({ hasText: CLIENT })).toBeVisible();

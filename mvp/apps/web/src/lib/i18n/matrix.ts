@@ -20,7 +20,8 @@ export const matrix = {
   podrazdeleniyNetNaTselevom: (p0: unknown) =>
     ` Подразделений нет на целевом предприятии: ${p0} — их назначения пропущены.`,
   neNaydenoOperatorVyberet: '— не найдено, оператор выберет вручную',
-  kogoSistemaPodstavitV: 'Кого система подставит в тикет при передаче на 2-ю линию и какой срок предложит.',
+  kogoSistemaPodstavitV:
+    'Кого система подставит ответственными при передаче на 2-ю линию и какой срок предложит.',
   predpriyatie: 'Предприятие',
   podrazdelenie: 'Подразделение',
   tema: 'Тема',

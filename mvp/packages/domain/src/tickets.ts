@@ -443,7 +443,7 @@ export async function createTicket(tx: PoolClient, i: CreateTicketInput): Promis
   const open = await tx.query("SELECT 1 FROM ticket WHERE conversation_id = $1 AND status <> 'closed'", [
     i.conversationId,
   ]);
-  if (open.rowCount) throw conflict('ticket_exists', 'По обращению уже есть открытый тикет');
+  if (open.rowCount) throw conflict('ticket_exists', 'Обращение уже передано на 2-ю линию');
 
   const ed = (
     await tx.query<{ id: string }>(
@@ -478,7 +478,7 @@ export async function createTicket(tx: PoolClient, i: CreateTicketInput): Promis
   const responsibleIds = uniq(i.responsibleIds);
   const curatorIds = uniq(i.curatorIds).filter((u) => !responsibleIds.includes(u));
   if (!responsibleIds.length)
-    throw bad('Укажите хотя бы одного ответственного — без него тикет не сохраняется');
+    throw bad('Укажите хотя бы одного ответственного — без него обращение не передаётся');
   await assertAssignable(tx, [...responsibleIds, ...curatorIds]);
 
   const tz = await systemTimezone(tx);
@@ -546,7 +546,7 @@ export async function createTicket(tx: PoolClient, i: CreateTicketInput): Promis
     tx,
     t,
     i.actorId,
-    `Передано на 2-ю линию: тикет №${t.number}, ${names.rows[0]!.e} / ${names.rows[0]!.d}; ответственные: ${who.rows.map((w) => w.full_name).join(', ')}; срок ответа до ${due}`,
+    `Передано на 2-ю линию: обращение №${t.number}, ${names.rows[0]!.e} / ${names.rows[0]!.d}; ответственные: ${who.rows.map((w) => w.full_name).join(', ')}; срок ответа до ${due}`,
   );
   // Автосообщение клиенту о передаче — только в текстовых каналах (M-TKT-01).
   const msg = ((await setting(tx, 'ticket.transfer_message')) ?? '').trim();
@@ -634,7 +634,7 @@ export async function closeTicketByResponsible(
   const now = i.now ?? new Date();
   const t = await lockTicket(tx, id, i.version);
   if (t.status !== 'in_work' && t.status !== 'rework')
-    throw conflict('bad_status', 'Закрыть можно тикет «В работе» или «На доработке»');
+    throw conflict('bad_status', 'Закрыть можно обращение «В работе» или «На доработке»');
   const summary = i.answerSummary.trim();
   if (!summary) throw bad('Опишите суть ответа клиенту');
   const method = await tx.query('SELECT 1 FROM answer_method WHERE id = $1 AND is_active', [
@@ -810,7 +810,7 @@ export async function redirectTicket(
 ): Promise<TicketRow> {
   const t = await lockTicket(tx, id, i.version);
   if (t.status === 'approval' || t.status === 'closed')
-    throw conflict('bad_status', 'Переадресовать можно только тикет, который в работе');
+    throw conflict('bad_status', 'Переадресовать можно только обращение, которое в работе');
   const comment = i.comment.trim();
   if (!comment) throw bad('Комментарий к переадресации обязателен');
   const enterpriseId = i.enterpriseId ?? t.enterprise_id;

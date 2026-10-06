@@ -3,7 +3,7 @@ export const layout = {
   rabocheeMestoOperatora: 'Рабочее место оператора',
   supervizor: 'Супервизор',
   otchety: 'Отчёты',
-  kabinet2YLinii: 'Кабинет 2-й линии',
+  kabinet2YLinii: 'Обращения на 2-й линии',
   kontrol2YLinii: 'Контроль 2-й линии',
   kanaly: 'Каналы',
   stsenariiIvr: 'Сценарии IVR',

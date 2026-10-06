@@ -507,7 +507,7 @@ export class TicketsController {
 
   private requireParticipant(t: VisibleTicket): void {
     if (!t.my_role)
-      throw new ApiError(403, 'forbidden', 'Действовать может только ответственный или куратор тикета');
+      throw new ApiError(403, 'forbidden', 'Действовать может только ответственный или куратор обращения');
   }
 
   private async isApprover(p: Principal, t: TicketRow, db: Pool | PoolClient): Promise<boolean> {
@@ -519,11 +519,11 @@ export class TicketsController {
 
   private async requireApprover(p: Principal, t: TicketRow, db: Pool | PoolClient): Promise<void> {
     if (!(await this.isApprover(p, t, db))) {
-      if (t.status !== 'approval') throw new ApiError(409, 'bad_status', 'Тикет не ожидает согласования');
+      if (t.status !== 'approval') throw new ApiError(409, 'bad_status', 'Обращение не ожидает согласования');
       throw new ApiError(
         403,
         'forbidden',
-        'Согласовать может создатель тикета, его заместитель или супервизор',
+        'Согласовать может создатель обращения, его заместитель или супервизор',
       );
     }
   }

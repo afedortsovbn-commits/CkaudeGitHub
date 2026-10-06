@@ -25,7 +25,7 @@ const card: TicketCard = {
 describe('renderMail', () => {
   it('ответственным и кураторам — «Важно!» и высокий приоритет; в письме все поля из M-TKT-04', () => {
     const m = renderMail('daily', card, { daysLeft: 2 });
-    expect(m).toMatchObject({ subject: 'Важно! Тикет №1001: осталось 2 дня', high: true });
+    expect(m).toMatchObject({ subject: 'Важно! Обращение (2 линия) №1001: осталось 2 дня', high: true });
     for (const part of [
       '№1001',
       'Топливо / Недолив',
@@ -38,15 +38,15 @@ describe('renderMail', () => {
     ])
       expect(m.body).toContain(part);
     expect(renderMail('daily', card, { daysLeft: -1 }).subject).toBe(
-      'Важно! Тикет №1001: просрочено на 1 день',
+      'Важно! Обращение (2 линия) №1001: просрочено на 1 день',
     );
-    expect(renderMail('assigned', card).subject).toMatch(/^Важно! Вам назначен тикет №1001/);
+    expect(renderMail('assigned', card).subject).toMatch(/^Важно! Вам назначено обращение \(2 линия\) №1001/);
     expect(renderMail('rework', card, { comment: 'нет скана' }).body).toContain('нет скана');
   });
   it('согласование — без высокого приоритета', () => {
     expect(renderMail('approval_request', card)).toMatchObject({
       high: false,
-      subject: 'Тикет №1001 ожидает согласования',
+      subject: 'Обращение (2 линия) №1001 ожидает согласования',
     });
     expect(renderMail('approval_reminder', card).high).toBe(false);
   });

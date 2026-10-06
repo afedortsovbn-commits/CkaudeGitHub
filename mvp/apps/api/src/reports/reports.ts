@@ -255,7 +255,7 @@ async function conversationsReport(ctx: ReportCtx, period: Period, group: Report
     totals,
     notes: [
       'Обращения, созданные в периоде; тема, результат и измерения — на конец периода.',
-      'Результат «Передано на 2-ю линию» включает обращения, ожидающие закрытия тикета.',
+      'Результат «Передано на 2-ю линию» включает обращения, ожидающие закрытия на 2-й линии.',
     ],
   };
 }
@@ -1095,7 +1095,7 @@ async function overdueReport(ctx: ReportCtx, period: Period) {
   );
   return {
     columns: [
-      col('number', '№ тикета'),
+      col('number', '№ обращения (2 линия)'),
       col('created_at', 'Создан', 'datetime'),
       col('enterprise', 'Предприятие', 'text'),
       col('department', 'Подразделение', 'text'),
@@ -1117,7 +1117,7 @@ async function overdueReport(ctx: ReportCtx, period: Period) {
     })),
     totals: null,
     notes: [
-      `На ${period.today}: тикеты «Новый», «В работе» и «На доработке» с истёкшим сроком. Период отчёта не применяется.`,
+      `На ${period.today}: обращения 2-й линии «Новое», «В работе» и «На доработке» с истёкшим сроком. Период отчёта не применяется.`,
     ],
   };
 }

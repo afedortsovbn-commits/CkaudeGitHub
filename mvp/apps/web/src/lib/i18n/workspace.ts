@@ -81,7 +81,7 @@ export const workspace = {
   dannyeVneshnikhSistem: 'Данные внешних систем',
   obrashchenieZakryto2: 'Обращение закрыто',
   dialogPeredan: 'Диалог передан',
-  n2YaLiniyaTiket: '2-я линия: тикет №',
+  n2YaLiniyaTiket: '2-я линия: обращение №',
   otsenkaKlienta: 'Оценка клиента: ',
   iz5: ' из 5',
   tema: 'Тема',

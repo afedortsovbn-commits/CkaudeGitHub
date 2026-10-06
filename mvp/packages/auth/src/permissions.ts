@@ -36,7 +36,7 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
       },
       {
         code: 'tickets.work',
-        title: 'Кабинет 2-й линии',
+        title: 'Обращения на 2-й линии',
         description: 'Обращения, переданные на 2-ю линию: ответ клиенту, возврат, продление срока',
       },
     ],

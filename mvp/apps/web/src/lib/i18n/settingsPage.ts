@@ -2,7 +2,7 @@
 export const settingsPage = {
   srokOtveta2Y: 'Срок ответа 2-й линии по умолчанию, календарных дней',
   deystvuetEsliUTemy: 'Действует, если у темы и её родителей срок не задан',
-  vremyaEzhednevnoyRassylkiPo: 'Время ежедневной рассылки по тикетам',
+  vremyaEzhednevnoyRassylkiPo: 'Время ежедневной рассылки по обращениям 2-й линии',
   pismaOstalosNDney: 'Письма «осталось N дней / просрочено» — каждый день, включая выходные',
   nadbavkaPrioritetaPriEskalatsii: 'Надбавка приоритета при эскалации по времени ожидания',
   pribavlyaetsyaKPrioritetuObrashcheni:
@@ -10,8 +10,8 @@ export const settingsPage = {
   chatVoVkladkePostobrabotka: 'Чат во вкладке «Постобработка» после молчания клиента, с',
   poslednimNapisalOperatorKlient:
     'Последним написал оператор, клиент не отвечает — обращение ждёт классификации и закрытия',
-  ktoSoglasuetZakrytieTiketa: 'Кто согласует закрытие тикета',
-  sozdatelTiketaEgoZamestitel: 'Создатель тикета, его заместитель или супервизор',
+  ktoSoglasuetZakrytieTiketa: 'Кто согласует закрытие обращения 2-й линии',
+  sozdatelTiketaEgoZamestitel: 'Создатель обращения 2-й линии, его заместитель или супервизор',
   tolkoSupervizor: 'Только супервизор',
   avtosoobshchenieKlientuPriPeredache: 'Автосообщение клиенту при передаче на 2-ю линию',
   ukhoditVTekstovykhKanalakh: 'Уходит в текстовых каналах; пусто — не отправлять',

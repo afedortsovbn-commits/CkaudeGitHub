@@ -11,7 +11,7 @@ export const notificationBellUi = {
   vzyatVRabotu: 'взят в работу',
   izmenen: 'изменён',
   obnovlen: 'обновлён',
-  tiket: (p0: unknown) => `Тикет №${p0}`,
+  tiket: (p0: unknown) => `Обращение (2 линия) №${p0}`,
   uvedomleniya: 'Уведомления',
   prochitatVse: 'Прочитать все',
   pokaNichegoNovogo: 'Пока ничего нового',

@@ -177,7 +177,7 @@ describe.skipIf(!ADMIN_URL)('Вторая линия Ф8 (интеграция)'
     ).rows;
     expect(mails).toHaveLength(2);
     for (const m of mails) {
-      expect(m.subject).toMatch(/^Важно! Вам назначен тикет №/);
+      expect(m.subject).toMatch(/^Важно! Вам назначено обращение \(2 линия\) №/);
       expect(m.data.priority).toBe('high');
       expect(m.body).toContain('{{link}}');
       expect(m.body).toContain('Клиент жалуется на качество топлива');
@@ -376,7 +376,7 @@ describe.skipIf(!ADMIN_URL)('Вторая линия Ф8 (интеграция)'
       `SELECT subject FROM notification WHERE ticket_id = $1 AND user_id = $2 AND channel = 'email'`,
       [tid, id.r2],
     );
-    expect(m.subject).toMatch(/^Важно! Вам назначен тикет/);
+    expect(m.subject).toMatch(/^Важно! Вам назначено обращение/);
     // старый ответственный больше не действует
     expect(
       (
@@ -961,7 +961,7 @@ describe.skipIf(!ADMIN_URL)('Ежедневная рассылка Ф8 (инте
       [tid],
     );
     expect(reminder.length).toBeGreaterThanOrEqual(1);
-    expect(reminder[0].subject).toMatch(/^Напоминание: тикет №\d+ ожидает согласования$/);
+    expect(reminder[0].subject).toMatch(/^Напоминание: обращение \(2 линия\) №\d+ ожидает согласования$/);
     const back = await api('POST', `/tickets/${tid}/return`, op, { version: v, comment: 'Доработать' });
     expect(back.status).toBe(200);
     await runDailyDigest(t.pool, new Date('2026-10-09T05:00:00Z'));

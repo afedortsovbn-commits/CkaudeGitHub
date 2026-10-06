@@ -89,7 +89,7 @@ const topicLine = (c: TicketCard) => c.topicNames.join(' / ') || 'без тем�
 
 function cardText(c: TicketCard, extra: MailExtra): string {
   const lines = [
-    `Тикет №${c.number}${c.isImportant ? ' (особо важное)' : ''}`,
+    `Обращение (2 линия) №${c.number}${c.isImportant ? ' (особо важное)' : ''}`,
     `Тема: ${topicLine(c)}`,
     `Предприятие: ${c.enterpriseName}; подразделение: ${c.departmentName}`,
     `Суть обращения: ${c.summary}`,
@@ -122,40 +122,40 @@ export function renderMail(kind: NotificationKind, c: TicketCard, extra: MailExt
   switch (kind) {
     case 'assigned':
     case 'redirected':
-      subject = withImportant(`Вам назначен тикет №${n}: ${topicLine(c)}`);
+      subject = withImportant(`Вам назначено обращение (2 линия) №${n}: ${topicLine(c)}`);
       break;
     case 'assignees_changed':
-      subject = `Тикет №${n}: изменены ответственные или тема`;
+      subject = `Обращение (2 линия) №${n}: изменены ответственные или тема`;
       break;
     case 'opened':
-      subject = `Тикет №${n} взят в работу`;
+      subject = `Обращение (2 линия) №${n} взято в работу`;
       break;
     case 'unassigned':
-      subject = `Вы сняты с тикета №${n}`;
+      subject = `Вы сняты с обращения (2 линия) №${n}`;
       break;
     case 'daily':
-      subject = withImportant(`Тикет №${n}: ${deadlinePhrase(extra.daysLeft ?? 0)}`);
+      subject = withImportant(`Обращение (2 линия) №${n}: ${deadlinePhrase(extra.daysLeft ?? 0)}`);
       break;
     case 'rework':
-      subject = withImportant(`Тикет №${n} возвращён на доработку`);
+      subject = withImportant(`Обращение (2 линия) №${n} возвращено на доработку`);
       break;
     case 'approval_request':
-      subject = `Тикет №${n} ожидает согласования`;
+      subject = `Обращение (2 линия) №${n} ожидает согласования`;
       break;
     case 'approval_reminder':
-      subject = `Напоминание: тикет №${n} ожидает согласования`;
+      subject = `Напоминание: обращение (2 линия) №${n} ожидает согласования`;
       break;
     case 'approved':
-      subject = `Тикет №${n} принят и закрыт`;
+      subject = `Обращение (2 линия) №${n}: ответ принят, обращение закрыто`;
       break;
     case 'needs_reassign':
-      subject = withImportant(`Тикет №${n} требует переназначения`);
+      subject = withImportant(`Обращение (2 линия) №${n} требует переназначения`);
       break;
     case 'client_message':
-      subject = `Новое сообщение клиента по тикету №${n}`;
+      subject = `Новое сообщение клиента по обращению (2 линия) №${n}`;
       break;
     default:
-      subject = `Тикет №${n}: новый комментарий`;
+      subject = `Обращение (2 линия) №${n}: новый комментарий`;
   }
   return { subject, body: cardText(c, extra), high };
 }

@@ -663,7 +663,7 @@ describe.skipIf(!ADMIN_URL)('Отчёты Ф10 (интеграция)', () => {
     const sup = await report('overdue', '', 'sup');
     expect(sup.rows.map((x) => x.overdue_days)).toEqual([3]);
     const file = await csv('/api/v1/reports/overdue?format=csv');
-    expect(file.body.split('\r\n')[0]).toContain('№ тикета;Создан;Предприятие');
+    expect(file.body.split('\r\n')[0]).toContain('№ обращения (2 линия);Создан;Предприятие');
   });
 
   it('панель супервизора: пороги из настроек, очереди в области видимости, SL за сегодня', async () => {
