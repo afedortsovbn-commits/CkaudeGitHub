@@ -1,4 +1,5 @@
 import {
+  ActionIcon,
   AppShell,
   Badge,
   Burger,
@@ -15,8 +16,8 @@ import { useDisclosure } from '@mantine/hooks';
 import {
   IconChevronRight,
   IconExternalLink,
-  IconLayoutSidebarLeftCollapse,
-  IconLayoutSidebarLeftExpand,
+  IconChevronsLeft,
+  IconChevronsRight,
   IconWorld,
 } from '@tabler/icons-react';
 import { useEffect, useMemo, useState } from 'react';
@@ -154,8 +155,7 @@ function Menu({ items, path, compact }: { items: MenuItem[]; path: string; compa
             rightSection={<IconChevronRight size={14} />}
             fw={600}
             childrenOffset={14}
-            // Группа с открытым сейчас разделом не сворачивается.
-            opened={!closed.includes(g.group.id) || g.items.some((m) => isActive(m, path))}
+            opened={!closed.includes(g.group.id)}
             onChange={() => toggle(g.group!.id)}
             data-testid={`nav-group-${g.group.id}`}
           >
@@ -178,11 +178,9 @@ export function Layout() {
   const userId = me?.id;
   // На телефоне меню свёрнуто под «бургер» (иначе оно закрывает весь экран вместе с панелью звонка).
   const [menuOpened, menu] = useDisclosure(false);
-  // Узкое меню (только иконки): выбор сотрудника, запоминается в браузере. На рабочем месте оператора меню
-  // узкое всегда — место под разговор; раскрывается кнопкой внизу меню до перехода в другой раздел.
+  // Узкое меню (только иконки): только по кнопке сотрудника, одинаково во всех разделах; запоминается в браузере.
   const [railPref, setRailPref] = useState<boolean>(() => pref.get('cc.nav.rail', false));
-  const focus = loc.pathname.startsWith('/workspace');
-  const compact = focus ? !menuOpened : railPref && !menuOpened;
+  const compact = railPref && !menuOpened;
   const items = useMenu(me);
   useEffect(() => {
     menu.close();
@@ -199,11 +197,8 @@ export function Layout() {
     return () => softphone.stop();
   }, [phone, userId]);
   const toggleRail = () => {
-    if (focus) menu.toggle();
-    else {
-      setRailPref(!railPref);
-      pref.set('cc.nav.rail', !railPref);
-    }
+    setRailPref(!railPref);
+    pref.set('cc.nav.rail', !railPref);
   };
   return (
     <AppShell
@@ -254,6 +249,22 @@ export function Layout() {
         </Group>
       </AppShell.Header>
       <AppShell.Navbar p={compact ? 6 : 'xs'}>
+        {/* Свернуть/развернуть меню — стрелка справа вверху (на телефоне меню открывается «бургером»). */}
+        <AppShell.Section visibleFrom="sm">
+          <Group justify={compact ? 'center' : 'flex-end'} mb={4}>
+            <Tooltip label={compact ? t.nav.expand : t.nav.collapse} position="right" withArrow>
+              <ActionIcon
+                variant="subtle"
+                color="gray"
+                onClick={toggleRail}
+                aria-label={compact ? t.nav.expand : t.nav.collapse}
+                data-testid="nav-rail-toggle"
+              >
+                {compact ? <IconChevronsRight size={18} /> : <IconChevronsLeft size={18} />}
+              </ActionIcon>
+            </Tooltip>
+          </Group>
+        </AppShell.Section>
         <AppShell.Section grow component={ScrollArea}>
           <Menu items={items} path={loc.pathname} compact={compact} />
           <Stack gap="xs" mt="md" hiddenFrom="sm">
@@ -262,25 +273,6 @@ export function Layout() {
               {t.signOut}
             </Button>
           </Stack>
-        </AppShell.Section>
-        <AppShell.Section visibleFrom="sm">
-          <Divider mb={4} />
-          <Tooltip label={compact ? t.nav.expand : t.nav.collapse} position="right" withArrow>
-            <NavLink
-              component="button"
-              onClick={toggleRail}
-              label={compact ? undefined : t.nav.collapse}
-              leftSection={
-                compact ? (
-                  <IconLayoutSidebarLeftExpand size={20} stroke={1.6} />
-                ) : (
-                  <IconLayoutSidebarLeftCollapse size={20} stroke={1.6} />
-                )
-              }
-              c="dimmed"
-              data-testid="nav-rail-toggle"
-            />
-          </Tooltip>
         </AppShell.Section>
       </AppShell.Navbar>
       <AppShell.Main>
