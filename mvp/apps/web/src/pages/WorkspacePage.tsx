@@ -37,6 +37,7 @@ import { setDraft } from '../lib/app-version';
 import { EscalateModal, SubstitutesPanel, TicketList, useTicketCount } from './TicketPages';
 import { MergeContactModal } from '../components/MergeContactModal';
 import { OrgPicker, TopicPicker } from '../components/DictPickers';
+import { COMMON_FIELD_KEYS, isCommonField } from '../lib/common-fields';
 import { t } from '../lib/i18n';
 import { orderTabs } from '../lib/nav';
 
@@ -1018,7 +1019,7 @@ function ConversationCard({ conv }: { conv: Row }) {
           </Text>
         ) : null}
       </Paper>
-      {!!conv.topicId && (fields.data ?? []).length > 0 && (
+      {!!conv.topicId && (fields.data ?? []).some((f) => !isCommonField(String(f.key))) && (
         <Paper withBorder p="xs" data-testid="topic-fields">
           <Text size="sm" fw={600}>
             {t.workspace.stepAsk}
@@ -1027,47 +1028,99 @@ function ConversationCard({ conv }: { conv: Row }) {
             {t.workspace.stepAskHint}
           </Text>
           <Stack gap={6}>
-            {(fields.data ?? []).map((f) => {
-              const k = String(f.key);
-              const label = String(f.label);
-              const description = prefilled.includes(k) ? t.workspace.prefilled : undefined;
-              const must = requiredNow(f);
-              const error = req.error(must && empty(k));
-              return f.type === 'select' && Array.isArray(f.options) ? (
-                <Select
-                  key={String(f.id)}
-                  size="xs"
-                  label={label}
-                  description={description}
-                  data={(f.options as string[]).map(String)}
-                  value={(vals[k] as string) ?? null}
-                  onChange={(v) => saveField(k, v)}
-                  clearable
-                  disabled={closed}
-                  withAsterisk={must}
-                  error={error}
-                />
-              ) : (
-                <TextInput
-                  key={String(f.id)}
-                  size="xs"
-                  label={label}
-                  description={description}
-                  placeholder={(f.mask as string) ?? undefined}
-                  type={f.type === 'date' ? 'date' : f.type === 'number' ? 'number' : 'text'}
-                  value={String(vals[k] ?? '')}
-                  onChange={(e) => setVals({ ...vals, [k]: e.currentTarget.value })}
-                  onBlur={() => upd.mutate({ fields: vals })}
-                  disabled={closed}
-                  withAsterisk={must}
-                  error={error}
-                />
-              );
-            })}
+            {(fields.data ?? [])
+              .filter((f) => !isCommonField(String(f.key)))
+              .map((f) => {
+                const k = String(f.key);
+                const label = String(f.label);
+                const description = prefilled.includes(k) ? t.workspace.prefilled : undefined;
+                const must = requiredNow(f);
+                const error = req.error(must && empty(k));
+                return f.type === 'select' && Array.isArray(f.options) ? (
+                  <Select
+                    key={String(f.id)}
+                    size="xs"
+                    label={label}
+                    description={description}
+                    data={(f.options as string[]).map(String)}
+                    value={(vals[k] as string) ?? null}
+                    onChange={(v) => saveField(k, v)}
+                    clearable
+                    disabled={closed}
+                    withAsterisk={must}
+                    error={error}
+                  />
+                ) : (
+                  <TextInput
+                    key={String(f.id)}
+                    size="xs"
+                    label={label}
+                    description={description}
+                    placeholder={(f.mask as string) ?? undefined}
+                    type={f.type === 'date' ? 'date' : f.type === 'number' ? 'number' : 'text'}
+                    value={String(vals[k] ?? '')}
+                    onChange={(e) => setVals({ ...vals, [k]: e.currentTarget.value })}
+                    onBlur={() => upd.mutate({ fields: vals })}
+                    disabled={closed}
+                    withAsterisk={must}
+                    error={error}
+                  />
+                );
+              })}
           </Stack>
         </Paper>
       )}
-      <ExtraFields fields={(conv.fields as Record<string, unknown>) ?? {}} defined={fields.data ?? []} />
+      <Paper withBorder p="xs" data-testid="client-fields">
+        <Text size="sm" fw={600}>
+          {t.workspace.clientBlock}
+        </Text>
+        <Text size="xs" c="dimmed" mb={4}>
+          {t.workspace.clientBlockHint}
+        </Text>
+        <Stack gap={6}>
+          {COMMON_FIELD_KEYS.map((k) => {
+            // Обязательность — из поля темы с тем же ключом, если оно есть.
+            const def = (fields.data ?? []).find((f) => String(f.key) === k);
+            const must = !!def && requiredNow(def);
+            const error = req.error(must && empty(k));
+            const label = t.workspace.commonFields[k];
+            return k === 'feedback_channel' ? (
+              <Select
+                key={k}
+                size="xs"
+                label={label}
+                data={t.workspace.feedbackChannels}
+                value={(vals[k] as string) ?? null}
+                onChange={(v) => saveField(k, v)}
+                clearable
+                searchable
+                disabled={closed}
+                withAsterisk={must}
+                error={error}
+                data-testid={`common-${k}`}
+              />
+            ) : (
+              <TextInput
+                key={k}
+                size="xs"
+                label={label}
+                description={prefilled.includes(k) ? t.workspace.prefilled : undefined}
+                value={String(vals[k] ?? '')}
+                onChange={(e) => setVals({ ...vals, [k]: e.currentTarget.value })}
+                onBlur={() => upd.mutate({ fields: vals })}
+                disabled={closed}
+                withAsterisk={must}
+                error={error}
+                data-testid={`common-${k}`}
+              />
+            );
+          })}
+        </Stack>
+      </Paper>
+      <ExtraFields
+        fields={(conv.fields as Record<string, unknown>) ?? {}}
+        defined={[...(fields.data ?? []), ...COMMON_FIELD_KEYS.map((k) => ({ id: k, key: k }))]}
+      />
       <Paper withBorder p="xs">
         <Text size="sm" fw={600} mb={4}>
           {t.workspace.stepWhere}
