@@ -186,11 +186,12 @@ export function Layout() {
   useEffect(() => {
     menu.close();
   }, [loc.pathname]);
-  // Заголовок вкладки браузера — по разделу.
+  // Текущий раздел: заголовок вкладки браузера и название со значком в шапке рядом с «Контакт-центр».
+  const cur = items.find((m) => isActive(m, loc.pathname));
   useEffect(() => {
-    const cur = items.find((m) => isActive(m, loc.pathname));
     document.title = cur ? `${cur.label} — ${t.appName}` : t.appName;
-  }, [items, loc.pathname]);
+  }, [cur]);
+  const CurIcon = cur?.icon;
   // Значок вкладки — по роли (свои роли без стандартного кода — по правам).
   const roleKey = [
     ...(me?.roles ?? []),
@@ -234,6 +235,22 @@ export function Layout() {
             <Text fw={700} visibleFrom="xs">
               {t.appName}
             </Text>
+            {cur && (
+              <Group
+                gap={6}
+                wrap="nowrap"
+                pl="sm"
+                ml={4}
+                visibleFrom="sm"
+                data-testid="section-title"
+                style={{ borderLeft: '1px solid var(--mantine-color-gray-4)' }}
+              >
+                {CurIcon ? <CurIcon size={20} stroke={1.6} color="var(--mantine-color-blue-6)" /> : null}
+                <Text fw={600} c="blue.7" truncate>
+                  {cur.label}
+                </Text>
+              </Group>
+            )}
           </Group>
           <Group gap="xs" wrap="nowrap">
             {phone && <SoftphoneStatus />}
