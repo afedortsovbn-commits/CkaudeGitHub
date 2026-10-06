@@ -260,4 +260,8 @@ export const tickets = {
   newMark: 'Новое',
   toTop: 'В начало',
   histEdited: 'исправлена суть',
+  fltMeResp: 'Я ответственный',
+  fltMeCur: 'Я куратор',
+  qOn: 'ищем',
+  qOff: 'не ищем',
 };

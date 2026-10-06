@@ -346,13 +346,15 @@ export function EscalateModal({ conv, opened, onClose }: { conv: Row; opened: bo
  */
 function deadlineColor(tk: Row): string | undefined {
   if (!['new', 'in_work', 'rework'].includes(String(tk.status))) return undefined;
-  if (tk.isOverdue) return 'hsl(0, 85%, 80%)';
+  // Полупрозрачный цвет слева, уходящий в прозрачность вправо, — легче, чем сплошная заливка.
+  const fade = (h: number, s: number, l: number, a: number) =>
+    `linear-gradient(90deg, hsla(${h}, ${s}%, ${l}%, ${a}) 0%, hsla(${h}, ${s}%, ${l}%, 0) 75%)`;
+  if (tk.isOverdue) return fade(0, 85, 62, 0.45);
   const total = Math.max(1, Number(tk.totalDays ?? 15));
   const left = Math.min(total, Math.max(0, Number(tk.daysLeft ?? total)));
   const used = 1 - left / total; // 0 — только поступило, 1 — срок сегодня
-  const hue = 52 - used * 52; // жёлтый → оранжевый → красный
-  const light = 94 - used * 10; // светлее → насыщеннее
-  return `hsl(${Math.round(hue)}, 90%, ${Math.round(light)}%)`;
+  const hue = Math.round(52 - used * 52); // жёлтый → оранжевый → красный
+  return fade(hue, 95, 60, 0.2 + used * 0.25); // ближе к сроку — насыщеннее
 }
 
 function TicketCard({ t: tk, selected, onOpen }: { t: Row; selected?: boolean; onOpen(id: string): void }) {
@@ -384,11 +386,6 @@ function TicketCard({ t: tk, selected, onOpen }: { t: Row; selected?: boolean; o
     >
       <Group justify="space-between" wrap="nowrap">
         <Group gap={6} wrap="nowrap">
-          {fresh && (
-            <Badge color="pink" size="sm" variant="filled" data-testid="ticket-new">
-              {t.tickets.newMark}
-            </Badge>
-          )}
           <Text fw={700} size="sm" c={c}>
             №{String(tk.number)}
           </Text>
@@ -407,7 +404,14 @@ function TicketCard({ t: tk, selected, onOpen }: { t: Row; selected?: boolean; o
             </Badge>
           ) : null}
         </Group>
-        <StatusBadge status={status} testId="ticket-item-status" />
+        <Group gap={6} wrap="nowrap">
+          {fresh && (
+            <Text size="xs" fw={700} c="green.7" tt="uppercase" data-testid="ticket-new">
+              {t.tickets.newMark}
+            </Text>
+          )}
+          <StatusBadge status={status} testId="ticket-item-status" />
+        </Group>
       </Group>
       <Text size="xs" lineClamp={1} c={c}>
         {String(tk.topicName)} · {String(tk.enterpriseName)} / {String(tk.departmentName)}
@@ -593,7 +597,6 @@ export function CabinetPage() {
           <TicketFilters
             value={f}
             onChange={setFilter}
-            onReset={() => setFilter(defaults)}
             onExport={() => void exportXlsx()}
             exporting={exporting}
           />
@@ -926,6 +929,7 @@ function TicketFacts({ t: tk }: { t: Row }) {
       .join(', ') || '—';
   const [topic, ...sub] = String(tk.topicName ?? '').split(' / ');
   const docs = ((tk.comments as Row[]) ?? []).flatMap((x) => ((x.attachments as Att[]) ?? []).map((a) => a));
+  const answered = ['approval', 'closed'].includes(String(tk.status));
   const topicFields = Object.entries(fields).filter(
     ([k, v]) => !isCommonField(k) && v !== null && v !== undefined && v !== '',
   );
@@ -954,9 +958,13 @@ function TicketFacts({ t: tk }: { t: Row }) {
         <b>{t.tickets.otvetstvennyy}</b> {names('responsible')}
       </Text>
       <Text size="sm">
+        <b>{t.tickets.source}:</b> {CHANNEL_LABEL[String(c?.channelKind)] ?? String(c?.channelKind ?? '—')}
+      </Text>
+      {/* Пока ответа нет (новое, в работе, на доработке) — способ закрытия и суть ответа светлые. */}
+      <Text size="sm" c={answered ? undefined : 'dimmed'} data-testid="answer-method-line">
         <b>{t.tickets.sposobZakrytiya}</b> {String(tk.answerMethodName ?? '—')}
       </Text>
-      <Text size="sm" style={{ whiteSpace: 'pre-wrap' }}>
+      <Text size="sm" c={answered ? undefined : 'dimmed'} style={{ whiteSpace: 'pre-wrap' }}>
         <b>{t.tickets.sutOtveta2}</b> {String(tk.answerSummary ?? '—')}
       </Text>
       {tk.staffGuilty !== null && tk.staffGuilty !== undefined && (

@@ -1,6 +1,5 @@
 import {
   ActionIcon,
-  Badge,
   Button,
   Checkbox,
   Divider,
@@ -15,15 +14,21 @@ import {
 } from '@mantine/core';
 import {
   IconAlertTriangle,
+  IconAt,
   IconBuilding,
+  IconDownload,
   IconCalendar,
-  IconFileSpreadsheet,
-  IconFilterOff,
+  IconFileText,
+  IconGasStation,
   IconGavel,
+  IconGift,
+  IconHash,
   IconListTree,
   IconMailForward,
+  IconPhone,
   IconProgressCheck,
   IconSearch,
+  IconUser,
   IconUserCheck,
   IconUserStar,
   IconWorldWww,
@@ -41,6 +46,16 @@ export const STATUS_ORDER = ['new', 'in_work', 'rework', 'approval', 'closed'] a
 export const OPEN_STATUSES = ['new', 'in_work', 'rework', 'approval'];
 /** Поля поиска (индикаторы справа от строки поиска). */
 export const SEARCH_FIELDS = ['number', 'name', 'phone', 'email', 'summary', 'fuel', 'loyalty'] as const;
+/** Значки полей поиска. */
+const SEARCH_ICON: Record<string, typeof IconHash> = {
+  number: IconHash,
+  name: IconUser,
+  phone: IconPhone,
+  email: IconAt,
+  summary: IconFileText,
+  fuel: IconGasStation,
+  loyalty: IconGift,
+};
 const SOURCES = ['voice', 'webchat', 'app', 'telegram', 'email', 'review', 'api'] as const;
 const GUILT = ['yes', 'no', 'unknown'] as const;
 
@@ -309,21 +324,23 @@ function PeopleFilter({
         // «Я» активно, если среди выбранных есть я (в том числе через предприятие или подразделение).
         const meOn = !!me && usersOf(tree, draft).includes(me.id);
         return (
-          <Group justify="space-between">
+          <Stack gap={6}>
             <Text size="sm" fw={600}>
               {label}
             </Text>
             <Button
-              size="compact-xs"
+              fullWidth
+              size="sm"
               variant={meOn ? 'filled' : 'light'}
+              leftSection={kind === 'responsible' ? <IconUserCheck size={18} /> : <IconUserStar size={18} />}
               onClick={() =>
                 me && set(meOn ? draft.filter((v) => v !== `u:${me.id}`) : [...draft, `u:${me.id}`])
               }
               data-testid={`${testId}-me`}
             >
-              {t.tickets.fltMe}
+              {kind === 'responsible' ? t.tickets.fltMeResp : t.tickets.fltMeCur}
             </Button>
-          </Group>
+          </Stack>
         );
       }}
       target={(open, opened) => (
@@ -343,13 +360,11 @@ function PeopleFilter({
 export function TicketFilters({
   value: f,
   onChange,
-  onReset,
   onExport,
   exporting,
 }: {
   value: TicketFilter;
   onChange(f: TicketFilter): void;
-  onReset(): void;
   onExport?(): void;
   exporting?: boolean;
 }) {
@@ -377,38 +392,49 @@ export function TicketFilters({
   const qIn = new Set(f.qIn);
   return (
     <Stack gap={6} data-testid="ticket-filters">
-      <Group gap={6} wrap="nowrap" align="center">
-        <TextInput
-          size="xs"
-          style={{ flex: 1, minWidth: 140 }}
-          placeholder={t.tickets.fltSearch}
-          leftSection={<IconSearch size={14} />}
-          value={f.q}
-          onChange={(e) => set({ q: e.currentTarget.value })}
-          data-testid="flt-q"
-        />
-        {/* Индикаторы полей поиска: по умолчанию все включены, щелчок — выключить/включить. */}
-        <Group gap={3} wrap="wrap" maw={300} data-testid="flt-q-fields">
-          {SEARCH_FIELDS.map((k) => (
-            <Tooltip key={k} label={t.tickets.qFieldHint[k]} withArrow>
-              <Badge
-                size="sm"
-                variant={qIn.has(k) ? 'filled' : 'outline'}
-                color={qIn.has(k) ? 'blue' : 'gray'}
-                style={{ cursor: 'pointer', textTransform: 'none' }}
-                onClick={() => {
-                  const next = qIn.has(k) ? f.qIn.filter((x) => x !== k) : [...f.qIn, k];
-                  set({ qIn: next.length ? next : [...SEARCH_FIELDS] });
-                }}
-                data-testid={`flt-q-${k}`}
-                data-on={qIn.has(k) || undefined}
-              >
-                {t.tickets.qField[k]}
-              </Badge>
-            </Tooltip>
-          ))}
-        </Group>
-      </Group>
+      <TextInput
+        size="xs"
+        placeholder={t.tickets.fltSearch}
+        leftSection={<IconSearch size={14} />}
+        value={f.q}
+        onChange={(e) => set({ q: e.currentTarget.value })}
+        data-testid="flt-q"
+        rightSectionWidth={SEARCH_FIELDS.length * 21 + 8}
+        rightSectionPointerEvents="all"
+        rightSection={
+          // Поля поиска: по умолчанию все включены (синие), щелчок — выключить (серый) / включить.
+          <Group gap={1} wrap="nowrap" pr={4} data-testid="flt-q-fields">
+            {SEARCH_FIELDS.map((k) => {
+              const Icon = SEARCH_ICON[k] ?? IconSearch;
+              const on = qIn.has(k);
+              return (
+                <Tooltip
+                  key={k}
+                  label={`${t.tickets.qFieldHint[k]}: ${on ? t.tickets.qOn : t.tickets.qOff}`}
+                  withArrow
+                >
+                  <ActionIcon
+                    size={20}
+                    variant="subtle"
+                    color={on ? 'blue' : 'gray'}
+                    style={{ opacity: on ? 0.85 : 0.35 }}
+                    aria-label={t.tickets.qFieldHint[k]}
+                    aria-pressed={on}
+                    onClick={() => {
+                      const next = on ? f.qIn.filter((x) => x !== k) : [...f.qIn, k];
+                      set({ qIn: next.length ? next : [...SEARCH_FIELDS] });
+                    }}
+                    data-testid={`flt-q-${k}`}
+                    data-on={on || undefined}
+                  >
+                    <Icon size={14} stroke={1.6} />
+                  </ActionIcon>
+                </Tooltip>
+              );
+            })}
+          </Group>
+        }
+      />
       <Group gap={8}>
         <PeopleFilter
           kind="responsible"
@@ -612,30 +638,19 @@ export function TicketFilters({
         >
           <IconAlertTriangle size={20} />
         </FilterButton>
-        <Tooltip label={t.tickets.fltReset} withArrow>
-          <ActionIcon
-            variant="subtle"
-            color="gray"
-            size="lg"
-            aria-label={t.tickets.fltReset}
-            onClick={onReset}
-            data-testid="flt-reset"
-          >
-            <IconFilterOff size={20} />
-          </ActionIcon>
-        </Tooltip>
         {onExport && (
           <Tooltip label={t.tickets.exportXlsx} withArrow>
             <ActionIcon
-              variant="light"
-              color="green"
-              size="lg"
+              ml="auto"
+              variant="subtle"
+              color="gray"
+              size="sm"
               aria-label={t.tickets.exportXlsx}
               onClick={onExport}
               loading={exporting}
               data-testid="ticket-export"
             >
-              <IconFileSpreadsheet size={20} />
+              <IconDownload size={16} stroke={1.6} />
             </ActionIcon>
           </Tooltip>
         )}
