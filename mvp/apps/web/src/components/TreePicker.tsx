@@ -17,7 +17,7 @@ import { IconChevronDown, IconChevronRight, IconSearch } from '@tabler/icons-rea
 import { type ReactNode, useMemo, useState } from 'react';
 import { t } from '../lib/i18n';
 
-/** Узел справочника: первый уровень (тема, предприятие) и вложенные (подтема, подразделение). */
+/** Узел справочника: первый уровень (тема, предприятие) и вложенные (подтема, подразделение, сотрудник). */
 export interface TreeNode {
   value: string;
   label: string;
@@ -34,17 +34,32 @@ interface Indexed {
 const norm = (s: string) =>
   s.toLowerCase().replace(new RegExp(String.fromCharCode(1105), 'g'), String.fromCharCode(1077));
 
+/** Индекс по значению; одно значение может встречаться в нескольких ветках (сотрудник в нескольких отделах). */
 function indexTree(nodes: TreeNode[]): Map<string, Indexed> {
   const m = new Map<string, Indexed>();
   const walk = (list: TreeNode[], path: TreeNode[]) => {
     for (const n of list) {
       const p = [...path, n];
-      m.set(n.value, { node: n, path: p, text: norm(p.map((x) => x.label).join(' ')) });
+      if (!m.has(n.value)) m.set(n.value, { node: n, path: p, text: norm(p.map((x) => x.label).join(' ')) });
       if (n.children?.length) walk(n.children, p);
     }
   };
   walk(nodes, []);
   return m;
+}
+
+/** Все значения внутри узла (с ним самим). */
+export function treeValuesUnder(nodes: TreeNode[], value: string): string[] {
+  const out: string[] = [];
+  const walk = (list: TreeNode[], inside: boolean) => {
+    for (const n of list) {
+      const now = inside || n.value === value;
+      if (now) out.push(n.value);
+      if (n.children?.length) walk(n.children, now);
+    }
+  };
+  walk(nodes, false);
+  return [...new Set(out)];
 }
 
 /** Подпись выбранного значения с родителями: «Тема › Подтема». */
@@ -66,35 +81,55 @@ interface Base {
   size?: 'xs' | 'sm' | 'md';
   /** Выбирать можно только последний уровень (например, подразделение, а не предприятие). */
   leafOnly?: boolean;
-  /** Кнопка-значок вместо поля (фильтры списка): содержимое — значок. */
-  target?: (open: () => void) => ReactNode;
+  /** Кнопка-значок вместо поля (фильтры списка): `opened` — окно этого фильтра открыто (кнопку выделить). */
+  target?: (open: () => void, opened: boolean) => ReactNode;
   testId?: string;
 }
 type Single = Base & { multiple?: false; value: string | null; onChange(v: string | null): void };
-type Multi = Base & { multiple: true; value: string[]; onChange(v: string[]): void };
+type Multi = Base & {
+  multiple: true;
+  value: string[];
+  onChange(v: string[]): void;
+  /** Выбор применяется кнопкой «Применить» (окно закрывается), «Сбросить» очищает; без неё — сразу. */
+  apply?: boolean;
+  /** Над поиском (например, быстрый выбор «Я»): работает с текущим (ещё не применённым) выбором. */
+  header?: (ctx: { value: string[]; set(v: string[]): void }) => ReactNode;
+};
 
 /**
  * Двухуровневый (и глубже) справочник с поиском: сначала виден первый уровень, любую строку можно развернуть
  * стрелкой и увидеть вложенные; развернуть можно сразу несколько. Поиск — по словам в подписях всех уровней
  * («север клиент» найдёт «Отдел по работе с клиентами» предприятия «Север»), найденное раскрывается само.
- * Множественный выбор: отмеченная строка первого уровня включает все вложенные.
+ * Множественный выбор: отмеченная строка верхнего уровня включает все вложенные.
  */
 export function TreePicker(props: Single | Multi) {
   const { data, size = 'xs', leafOnly, testId } = props;
+  const multi = props.multiple === true;
+  const applyMode = multi && !!(props as Multi).apply;
   const [opened, setOpened] = useState(false);
   const [q, setQ] = useState('');
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [draft, setDraft] = useState<string[]>([]);
   const index = useMemo(() => indexTree(data), [data]);
-  const selected = props.multiple ? props.value : props.value ? [props.value] : [];
+  const committed = props.multiple ? props.value : props.value ? [props.value] : [];
+  const selected = applyMode ? draft : committed;
   const selSet = new Set(selected);
+  const setSelected = (v: string[]) => {
+    if (applyMode) setDraft(v);
+    else if (props.multiple) props.onChange(v);
+  };
 
   const open = () => {
     if (props.disabled) return;
     // Раскрыть ветки выбранных значений — текущий выбор сразу виден.
     const exp = new Set<string>();
-    for (const v of selected) for (const p of index.get(v)?.path.slice(0, -1) ?? []) exp.add(p.value);
+    for (const v of committed) {
+      const path = (index.get(v)?.path ?? []).map((x) => x.value);
+      for (let k = 1; k < path.length; k++) exp.add(path.slice(0, k).join('/'));
+    }
     setExpanded(exp);
     setQ('');
+    setDraft(committed);
     setOpened(true);
   };
   const toggleExp = (v: string) => {
@@ -103,53 +138,55 @@ export function TreePicker(props: Single | Multi) {
     else next.add(v);
     setExpanded(next);
   };
-  /** Отмечен через родителя (множественный выбор): строку отдельно не снять. */
-  const coveredByParent = (v: string) =>
-    !!props.multiple && (index.get(v)?.path.slice(0, -1) ?? []).some((p) => selSet.has(p.value));
 
-  const choose = (n: TreeNode) => {
+  const choose = (n: TreeNode, ancestors: TreeNode[]) => {
     if (leafOnly && n.children?.length) {
       toggleExp(n.value);
       return;
     }
-    if (props.multiple) {
-      if (coveredByParent(n.value)) return;
-      if (selSet.has(n.value)) props.onChange(props.value.filter((v) => v !== n.value));
+    if (multi) {
+      // Отмечен через родителя — отдельно не снимается.
+      if (ancestors.some((a) => selSet.has(a.value))) return;
+      if (selSet.has(n.value)) setSelected(selected.filter((v) => v !== n.value));
       else {
         // Отмеченный родитель заменяет отдельно отмеченные вложенные.
-        const inside = (v: string) => index.get(v)?.path.some((p) => p.value === n.value) ?? false;
-        props.onChange([...props.value.filter((v) => !inside(v)), n.value]);
+        const inside = new Set(treeValuesUnder(data, n.value));
+        setSelected([...selected.filter((v) => !inside.has(v) || v === n.value), n.value]);
       }
-    } else {
+    } else if (!props.multiple) {
       props.onChange(n.value);
       setOpened(false);
     }
   };
 
   const words = norm(q).split(/\s+/).filter(Boolean);
-  const matches = (n: TreeNode) => {
-    const text = index.get(n.value)?.text ?? '';
+  const matches = (n: TreeNode, path: TreeNode[]) => {
+    const text = norm([...path, n].map((x) => x.label).join(' '));
     return words.every((w) => text.includes(w));
   };
-  const hasMatchBelow = (n: TreeNode): boolean =>
-    (n.children ?? []).some((c) => matches(c) || hasMatchBelow(c));
+  const hasMatchBelow = (n: TreeNode, path: TreeNode[]): boolean =>
+    (n.children ?? []).some((c) => matches(c, [...path, n]) || hasMatchBelow(c, [...path, n]));
 
   const rows: ReactNode[] = [];
-  let firstPick: TreeNode | null = null;
-  const render = (list: TreeNode[], depth: number, all: boolean) => {
+  let firstPick: { n: TreeNode; anc: TreeNode[] } | null = null;
+  const render = (list: TreeNode[], ancestors: TreeNode[], all: boolean) => {
+    const depth = ancestors.length;
     for (const n of list) {
-      const self = all || !words.length || matches(n);
-      const below = words.length > 0 && hasMatchBelow(n);
+      const key = [...ancestors.map((a) => a.value), n.value].join('/');
+      const self = all || !words.length || matches(n, ancestors);
+      const below = words.length > 0 && hasMatchBelow(n, ancestors);
       if (!self && !below) continue;
       const kids = n.children ?? [];
       // При поиске ветка с найденными вложенными раскрыта; совпавшая сама — раскрывается вручную.
-      const isOpen = expanded.has(n.value) || (below && !expanded.has(`-${n.value}`) && !all);
+      const isOpen = expanded.has(key) || (below && !expanded.has(`-${key}`) && !all);
       const pickable = !(leafOnly && kids.length);
-      const isSel = selSet.has(n.value) || coveredByParent(n.value);
-      if (pickable && !firstPick && (!words.length || matches(n))) firstPick = n;
+      const covered = multi && ancestors.some((a) => selSet.has(a.value));
+      const isSel = selSet.has(n.value) || covered;
+      if (pickable && !firstPick && (!words.length || matches(n, ancestors)))
+        firstPick = { n, anc: ancestors };
       rows.push(
         <Group
-          key={n.value}
+          key={key}
           gap={4}
           wrap="nowrap"
           pl={depth * 22}
@@ -157,7 +194,7 @@ export function TreePicker(props: Single | Multi) {
           py={2}
           style={{
             borderRadius: 4,
-            background: isSel && !props.multiple ? 'var(--mantine-color-blue-light)' : undefined,
+            background: isSel && !multi ? 'var(--mantine-color-blue-light)' : undefined,
           }}
         >
           {kids.length ? (
@@ -169,11 +206,11 @@ export function TreePicker(props: Single | Multi) {
               onClick={() => {
                 const next = new Set(expanded);
                 if (isOpen) {
-                  next.delete(n.value);
-                  if (below) next.add(`-${n.value}`);
+                  next.delete(key);
+                  if (below) next.add(`-${key}`);
                 } else {
-                  next.add(n.value);
-                  next.delete(`-${n.value}`);
+                  next.add(key);
+                  next.delete(`-${key}`);
                 }
                 setExpanded(next);
               }}
@@ -184,12 +221,12 @@ export function TreePicker(props: Single | Multi) {
           ) : (
             <Box w={22} />
           )}
-          {props.multiple && (
+          {multi && (
             <Checkbox
               size="xs"
               checked={isSel}
-              disabled={coveredByParent(n.value)}
-              onChange={() => choose(n)}
+              disabled={covered}
+              onChange={() => choose(n, ancestors)}
               aria-hidden
               tabIndex={-1}
             />
@@ -198,26 +235,27 @@ export function TreePicker(props: Single | Multi) {
             size="sm"
             role="option"
             aria-selected={isSel}
-            fw={depth === 0 ? 600 : 400}
+            fw={kids.length ? 600 : 400}
             c={pickable ? undefined : 'dimmed'}
             style={{ cursor: 'pointer', flex: 1 }}
-            onClick={() => choose(n)}
+            onClick={() => choose(n, ancestors)}
           >
             {n.label}
           </Text>
           {kids.length && !isOpen ? (
-            <Text size="xs" c="dimmed" style={{ cursor: 'pointer' }} onClick={() => toggleExp(n.value)}>
+            <Text size="xs" c="dimmed" style={{ cursor: 'pointer' }} onClick={() => toggleExp(key)}>
               {kids.length}
             </Text>
           ) : null}
         </Group>,
       );
-      if (kids.length && isOpen) render(kids, depth + 1, all || (words.length > 0 && matches(n)));
+      if (kids.length && isOpen)
+        render(kids, [...ancestors, n], all || (words.length > 0 && matches(n, ancestors)));
     }
   };
-  render(data, 0, false);
+  render(data, [], false);
 
-  const shown = selected
+  const shown = committed
     .map(
       (v) =>
         index
@@ -226,27 +264,28 @@ export function TreePicker(props: Single | Multi) {
           .join(' › ') ?? '',
     )
     .filter(Boolean);
-  const text = props.multiple
+  const text = multi
     ? shown.length > 2
       ? t.tree.selected(shown.length)
       : shown.join('; ')
     : (shown[0] ?? '');
-  const clear = () => (props.multiple ? props.onChange([]) : props.onChange(null));
-  const canClear = !!props.clearable && selected.length > 0 && !props.disabled;
+  const clearAll = () => (props.multiple ? props.onChange([]) : props.onChange(null));
+  const canClear = !!props.clearable && committed.length > 0 && !props.disabled;
+  const header = props.multiple ? props.header : undefined;
 
   return (
     <Popover
       opened={opened}
       onChange={setOpened}
       position="bottom-start"
-      width={props.target ? 380 : 'target'}
+      width={props.target ? 400 : 'target'}
       shadow="md"
       trapFocus
       returnFocus
     >
       <Popover.Target>
         {props.target ? (
-          <Box display="inline-block">{props.target(open)}</Box>
+          <Box display="inline-block">{props.target(open, opened)}</Box>
         ) : (
           <InputBase
             component="button"
@@ -261,7 +300,7 @@ export function TreePicker(props: Single | Multi) {
             onClick={() => (opened ? setOpened(false) : open())}
             rightSection={
               canClear ? (
-                <CloseButton size="sm" aria-label={t.tree.clear} onClick={clear} />
+                <CloseButton size="sm" aria-label={t.tree.clear} onClick={clearAll} />
               ) : (
                 <IconChevronDown size={14} />
               )
@@ -277,6 +316,7 @@ export function TreePicker(props: Single | Multi) {
       </Popover.Target>
       <Popover.Dropdown p="xs" miw={340}>
         <Stack gap={6}>
+          {header?.({ value: selected, set: setSelected })}
           <TextInput
             size="xs"
             placeholder={t.tree.search}
@@ -286,14 +326,14 @@ export function TreePicker(props: Single | Multi) {
             onKeyDown={(e) => {
               if (e.key === 'Enter' && firstPick) {
                 e.preventDefault();
-                choose(firstPick);
+                choose(firstPick.n, firstPick.anc);
               }
             }}
             data-autofocus
             data-testid={testId ? `${testId}-search` : undefined}
           />
           <ScrollArea.Autosize mah={360} type="auto">
-            <Stack gap={0} role="listbox" aria-multiselectable={!!props.multiple}>
+            <Stack gap={0} role="listbox" aria-multiselectable={multi}>
               {rows.length ? (
                 rows
               ) : (
@@ -303,14 +343,33 @@ export function TreePicker(props: Single | Multi) {
               )}
             </Stack>
           </ScrollArea.Autosize>
-          {props.multiple && selected.length > 0 && (
+          {multi && (applyMode || selected.length > 0) && (
             <Group justify="space-between">
               <Text size="xs" c="dimmed">
-                {t.tree.selected(selected.length)}
+                {selected.length ? t.tree.selected(selected.length) : ''}
               </Text>
-              <Button size="compact-xs" variant="subtle" onClick={clear}>
-                {t.tree.clear}
-              </Button>
+              <Group gap="xs">
+                <Button
+                  size="compact-xs"
+                  variant="subtle"
+                  onClick={() => setSelected([])}
+                  data-testid={testId ? `${testId}-reset` : undefined}
+                >
+                  {t.tree.clear}
+                </Button>
+                {applyMode && (
+                  <Button
+                    size="compact-xs"
+                    onClick={() => {
+                      if (props.multiple) props.onChange(draft);
+                      setOpened(false);
+                    }}
+                    data-testid={testId ? `${testId}-apply` : undefined}
+                  >
+                    {t.tree.apply}
+                  </Button>
+                )}
+              </Group>
             </Group>
           )}
         </Stack>

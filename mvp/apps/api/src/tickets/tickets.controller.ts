@@ -34,6 +34,7 @@ import { ensureRequiredTag } from '../chat/required-tag';
 import { APP_CONTEXT, type AppContext } from '../context';
 import { audit } from '../lib/audit';
 import { saveUpload, sendAttachment } from '../lib/attachments';
+import { buildXlsx } from '../lib/xlsx';
 import { one, rows, toApi, withTx } from '../lib/db';
 import { ApiError, badRequest, forbidden, notFound, parse } from '../lib/errors';
 
@@ -239,6 +240,16 @@ export class TicketsController {
   @Get('tickets')
   @RequirePerm('conversations.work', 'tickets.work', 'supervisor.approvals', 'admin.matrix')
   async list(@CurrentUser() p: Principal, @Query() q: Record<string, string>) {
+    const f = await this.listQuery(p, q);
+    const list = await rows(this.ctx.pool, `${LIST_SQL} WHERE ${f.where} ${f.order} LIMIT 500`, f.params);
+    return list.map((r) => toApi(r));
+  }
+
+  /** Условия списка обращений 2-й линии (список и выгрузка в Excel): вид, права, фильтры, поиск, порядок. */
+  private async listQuery(
+    p: Principal,
+    q: Record<string, string>,
+  ): Promise<{ where: string; params: unknown[]; order: string }> {
     const tz = await systemTimezone(this.ctx.pool);
     const today = localDate(new Date(), tz);
     const params: unknown[] = [p.id, today];
@@ -329,35 +340,349 @@ export class TicketsController {
         orgs.filter((v) => !v.includes('/')),
         orgs.filter((v) => v.includes('/')).map((v) => v.toLowerCase()),
       );
-    if (q.overdue === 'true')
-      where.push(`t.status IN ('new', 'in_work', 'rework') AND t.due_date < $2::date`);
+    // Только просроченные (на просроченные фильтр по дате поступления не действует — они видны всегда).
+    const OVERDUE = `(t.status IN ('new', 'in_work', 'rework') AND t.due_date < $2::date)`;
+    if (q.overdue === 'true') where.push(OVERDUE);
     if (q.important === 'true') where.push('t.is_important');
     if (q.enterpriseId) add('t.enterprise_id = ?', q.enterpriseId);
     if (q.departmentId) add('t.department_id = ?', q.departmentId);
     if (q.topicId) add('? = ANY(t.topic_path)', q.topicId);
     if (q.dueFrom) add('t.due_date >= ?::date', parse(day, q.dueFrom));
     if (q.dueTo) add('t.due_date <= ?::date', parse(day, q.dueTo));
-    // Дата передачи на 2-ю линию — по местному времени системы.
-    if (q.createdFrom) add('(t.created_at AT TIME ZONE ?)::date >= ?::date', tz, parse(day, q.createdFrom));
-    if (q.createdTo) add('(t.created_at AT TIME ZONE ?)::date <= ?::date', tz, parse(day, q.createdTo));
-    if (q.q)
-      add(
-        `(t.number::text = ? OR ct.display_name ILIKE ? OR ct.phone ILIKE ? OR ct.email ILIKE ? OR t.summary ILIKE ?)`,
-        q.q.replace(/^№/, ''),
-        `%${q.q}%`,
-        `%${q.q}%`,
-        `%${q.q}%`,
-        `%${q.q}%`,
+    // Дата поступления на 2-ю линию — по местному времени системы; просроченные — всегда.
+    const dates: string[] = [];
+    const dparams: unknown[] = [];
+    if (q.createdFrom) {
+      dates.push('(t.created_at AT TIME ZONE ?)::date >= ?::date');
+      dparams.push(tz, parse(day, q.createdFrom));
+    }
+    if (q.createdTo) {
+      dates.push('(t.created_at AT TIME ZONE ?)::date <= ?::date');
+      dparams.push(tz, parse(day, q.createdTo));
+    }
+    if (dates.length) add(`((${dates.join(' AND ')}) OR ${OVERDUE})`, ...dparams);
+    // Источник (канал обращения), способ ответа, вина работника.
+    const sources = (q.sources ?? '').split(',').filter((v) => /^[a-z_]{2,20}$/.test(v));
+    if (sources.length) add('c.channel_kind = ANY(?::text[])', sources);
+    const methods = idList(q.answerMethods);
+    if (methods.length) add('t.answer_method_id = ANY(?::uuid[])', methods);
+    const guilt = (q.guilt ?? '').split(',').filter((v) => ['yes', 'no', 'unknown'].includes(v));
+    if (guilt.length && guilt.length < 3)
+      where.push(
+        `(${guilt
+          .map((g) =>
+            g === 'yes' ? 't.staff_guilty' : g === 'no' ? 't.staff_guilty = false' : 't.staff_guilty IS NULL',
+          )
+          .join(' OR ')})`,
       );
+    // Поиск — по выбранным полям (по умолчанию по всем): номер, клиент, телефон, e-mail, суть,
+    // топливная карта (вместе с № договора), карта лояльности.
+    const text = (q.q ?? '').trim();
+    if (text) {
+      const all = ['number', 'name', 'phone', 'email', 'summary', 'fuel', 'loyalty'];
+      const inFields = q.qIn ? q.qIn.split(',').filter((f) => all.includes(f)) : all;
+      const like = `%${text.replace(/[%_\\]/g, (m) => `\\${m}`)}%`;
+      const digits = text.replace(/\D/g, '');
+      const parts: string[] = [];
+      const vals: unknown[] = [];
+      const field = (k: string) => `(c.fields ->> '${k}')`;
+      for (const f of inFields) {
+        if (f === 'number') {
+          parts.push('t.number::text = ?');
+          vals.push(text.replace(/^№\s*/, ''));
+        } else if (f === 'name') {
+          parts.push(`(ct.display_name ILIKE ? OR ${field('client_name')} ILIKE ?)`);
+          vals.push(like, like);
+        } else if (f === 'phone') {
+          parts.push(`(ct.phone ILIKE ? OR ${field('client_phone')} ILIKE ?)`);
+          vals.push(digits.length >= 3 ? `%${digits}%` : like, like);
+        } else if (f === 'email') {
+          parts.push('ct.email ILIKE ?');
+          vals.push(like);
+        } else if (f === 'summary') {
+          parts.push('t.summary ILIKE ?');
+          vals.push(like);
+        } else if (f === 'fuel') {
+          parts.push(
+            `(${field('fuel_card')} ILIKE ? OR ${field('card_number')} ILIKE ? OR ${field('contract_no')} ILIKE ?)`,
+          );
+          vals.push(like, like, like);
+        } else if (f === 'loyalty') {
+          parts.push(`${field('bonus_card')} ILIKE ?`);
+          vals.push(like);
+        }
+      }
+      if (parts.length) add(`(${parts.join(' OR ')})`, ...vals);
+    }
+    // Порядок: просроченные; требующие закрытия (новые, в работе, на доработке); на согласовании; остальные.
+    // Внутри — по дате поступления, свежие сверху.
+    const order = `ORDER BY ${OVERDUE} DESC, (t.status IN ('new', 'in_work', 'rework')) DESC, (t.status = 'approval') DESC,
+                   t.created_at DESC, t.number DESC`;
+    return { where: where.join(' AND '), params, order };
+  }
+
+  /**
+   * Выгрузка в Excel (п. 12): все поля каждого обращения 2-й линии с учётом фильтров списка (до 10 000 строк).
+   * Выгрузка персональных данных — в журнал аудита.
+   */
+  @Get('tickets/export')
+  @RequirePerm('conversations.work', 'tickets.work', 'supervisor.approvals', 'admin.matrix')
+  async export(@CurrentUser() p: Principal, @Query() q: Record<string, string>, @Res() reply: FastifyReply) {
+    const f = await this.listQuery(p, q);
+    const ids = (
+      await rows<{ id: string }>(
+        this.ctx.pool,
+        `SELECT t.id FROM ticket t JOIN conversation c ON c.id = t.conversation_id JOIN contact ct ON ct.id = c.contact_id
+          WHERE ${f.where} ${f.order} LIMIT 10000`,
+        f.params,
+      )
+    ).map((r) => r.id);
+    const tz = await systemTimezone(this.ctx.pool);
+    const data = ids.length
+      ? await rows<Record<string, unknown>>(
+          this.ctx.pool,
+          `SELECT t.id, t.number, t.status, t.is_important, t.summary, t.returns_count, t.staff_guilty, t.measures,
+                  t.answer_summary, t.closed_in_time,
+                  to_char(t.created_at AT TIME ZONE $2, 'DD.MM.YYYY HH24:MI') AS created,
+                  to_char(c.created_at AT TIME ZONE $2, 'DD.MM.YYYY HH24:MI') AS received,
+                  to_char(t.due_date, 'DD.MM.YYYY') AS due,
+                  to_char(t.answered_at AT TIME ZONE $2, 'DD.MM.YYYY HH24:MI') AS answered,
+                  to_char(t.closed_at AT TIME ZONE $2, 'DD.MM.YYYY HH24:MI') AS closed,
+                  (t.due_date - (now() AT TIME ZONE $2)::date) AS days_left,
+                  (t.status IN ('new', 'in_work', 'rework') AND t.due_date < (now() AT TIME ZONE $2)::date) AS overdue,
+                  (SELECT string_agg(x.name, ' / ' ORDER BY array_position(t.topic_path, x.id)) FROM topic x
+                    WHERE x.id = ANY(t.topic_path)) AS topic,
+                  e.name AS enterprise, d.name AS department,
+                  (SELECT o.name FROM service_object o WHERE o.id = c.object_id) AS object,
+                  c.channel_kind, c.fields, ct.display_name, ct.phone, ct.email,
+                  cu.full_name AS creator, ap.full_name AS approver,
+                  (SELECT m.name FROM answer_method m WHERE m.id = t.answer_method_id) AS answer_method,
+                  (SELECT string_agg(u.full_name, ', ' ORDER BY u.full_name) FROM ticket_assignee a
+                     JOIN app_user u ON u.id = a.user_id WHERE a.ticket_id = t.id AND a.is_active AND a.kind = 'responsible') AS responsible,
+                  (SELECT string_agg(u.full_name, ', ' ORDER BY u.full_name) FROM ticket_assignee a
+                     JOIN app_user u ON u.id = a.user_id WHERE a.ticket_id = t.id AND a.is_active AND a.kind = 'curator') AS curators,
+                  (SELECT string_agg(split_part(u.full_name, ' ', 1) || ' (' || to_char(cm.created_at AT TIME ZONE $2, 'DD.MM.YYYY') || '): ' || cm.body,
+                                     E'\n' ORDER BY cm.created_at)
+                     FROM ticket_comment cm LEFT JOIN app_user u ON u.id = cm.author_id
+                    WHERE cm.ticket_id = t.id AND cm.kind = 'comment') AS notes,
+                  (SELECT string_agg(a->>'filename', ', ') FROM ticket_comment cm, jsonb_array_elements(cm.attachments) a
+                    WHERE cm.ticket_id = t.id) AS documents
+             FROM ticket t
+             JOIN conversation c ON c.id = t.conversation_id
+             JOIN contact ct ON ct.id = c.contact_id
+             JOIN enterprise e ON e.id = t.enterprise_id
+             JOIN department d ON d.id = t.department_id
+             JOIN app_user cu ON cu.id = t.created_by
+             LEFT JOIN app_user ap ON ap.id = t.approved_by
+            WHERE t.id = ANY($1)
+            ORDER BY array_position($1::uuid[], t.id)`,
+          [ids, tz],
+        )
+      : [];
+    // Поля карточек тем — отдельными колонками (подписи по ключам), кроме общих полей (у них свои колонки).
+    const COMMON: [string, string][] = [
+      ['feedback_channel', 'Предпочтительный способ обратной связи'],
+      ['eq_number', '№ электронной очереди'],
+      ['company_name', 'Предприятие клиента'],
+      ['bonus_card', '№ карты лояльности'],
+      ['fuel_card', '№ топливной карты'],
+      ['contract_no', '№ договора'],
+    ];
+    const commonKeys = new Set(COMMON.map(([k]) => k));
+    const extraKeys = [
+      ...new Set(
+        data
+          .flatMap((r) => Object.keys((r.fields as Record<string, unknown> | null) ?? {}))
+          .filter((k) => !commonKeys.has(k)),
+      ),
+    ].sort();
+    const labels = new Map(
+      (
+        await rows<{ key: string; label: string }>(
+          this.ctx.pool,
+          `SELECT DISTINCT ON (key) key, label FROM field_def WHERE key = ANY($1) ORDER BY key, is_active DESC`,
+          [extraKeys],
+        )
+      ).map((r) => [r.key, r.label]),
+    );
+    const STATUS: Record<string, string> = {
+      new: 'Новое',
+      in_work: 'В работе',
+      rework: 'На доработке',
+      approval: 'На согласовании',
+      closed: 'Закрыто',
+    };
+    const CHANNEL: Record<string, string> = {
+      voice: 'Звонок',
+      webchat: 'Сайт',
+      app: 'Приложение',
+      telegram: 'Telegram',
+      email: 'E-mail',
+      review: 'Отзыв на картах',
+      api: 'Внешняя система',
+    };
+    const MEASURE: Record<string, string> = {
+      none: 'Не применялись',
+      remark: 'Замечание',
+      reprimand: 'Выговор',
+      depremium: 'Депремирование',
+      dismissal: 'Увольнение',
+    };
+    const yesNo = (v: unknown) => (v === true ? 'Да' : v === false ? 'Нет' : '');
+    const str = (v: unknown) =>
+      v === null || v === undefined ? '' : typeof v === 'object' ? JSON.stringify(v) : String(v);
+    const header = [
+      '№ обращения (2 линия)',
+      'Статус',
+      'Просрочено',
+      'Осталось дней',
+      'Срок ответа',
+      'Поступило на 2-ю линию',
+      'Обращение поступило',
+      'Источник',
+      'Особо важное',
+      'Тема / подтема',
+      'Предприятие',
+      'Подразделение',
+      'Объект',
+      'Суть обращения',
+      'Клиент',
+      'Телефон',
+      'E-mail',
+      ...COMMON.map(([, l]) => l),
+      'Ответственные',
+      'Кураторы',
+      'Передал (оператор)',
+      'Способ ответа',
+      'Суть ответа',
+      'Ответ дан',
+      'Вина работника',
+      'Принятые меры',
+      'Документы',
+      'Возвратов на доработку',
+      'Закрыто',
+      'Закрыто в срок',
+      'Принял ответ',
+      'Заметки',
+      ...extraKeys.map((k) => labels.get(k) ?? k),
+    ];
+    const body = data.map((r) => {
+      const fields = (r.fields as Record<string, unknown> | null) ?? {};
+      return [
+        Number(r.number),
+        STATUS[str(r.status)] ?? str(r.status),
+        yesNo(r.overdue),
+        ['new', 'in_work', 'rework'].includes(str(r.status)) ? Number(r.days_left) : '',
+        str(r.due),
+        str(r.created),
+        str(r.received),
+        CHANNEL[str(r.channel_kind)] ?? str(r.channel_kind),
+        yesNo(r.is_important),
+        str(r.topic),
+        str(r.enterprise),
+        str(r.department),
+        str(r.object),
+        str(r.summary),
+        str(r.display_name),
+        str(r.phone),
+        str(r.email),
+        ...COMMON.map(([k]) => str(fields[k])),
+        str(r.responsible),
+        str(r.curators),
+        str(r.creator),
+        str(r.answer_method),
+        str(r.answer_summary),
+        str(r.answered),
+        yesNo(r.staff_guilty),
+        ((r.measures as string[] | null) ?? []).map((m) => MEASURE[m] ?? m).join(', '),
+        str(r.documents),
+        Number(r.returns_count ?? 0),
+        str(r.closed),
+        yesNo(r.closed_in_time),
+        str(r.approver),
+        str(r.notes),
+        ...extraKeys.map((k) => str(fields[k])),
+      ];
+    });
+    await withTx(this.ctx.pool, (tx) =>
+      audit(
+        tx,
+        p,
+        'export',
+        'ticket',
+        null,
+        null,
+        { rows: body.length, filters: q },
+        { configChanged: false },
+      ),
+    );
+    const file = buildXlsx('Обращения 2-й линии', header, body);
+    const name = `obrashcheniya-2-linii-${localDate(new Date(), tz)}.xlsx`;
+    reply
+      .header('content-type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+      .header('content-disposition', `attachment; filename="${name}"`)
+      .header('content-length', file.length);
+    return reply.send(file);
+  }
+
+  /** Сотрудник щёлкнул обращение — для него оно больше не «Новое». */
+  @Post('tickets/:id/seen')
+  @HttpCode(200)
+  @RequirePerm('conversations.work', 'tickets.work', 'supervisor.approvals', 'admin.matrix')
+  async seen(@CurrentUser() p: Principal, @Param('id') id: string) {
+    await this.visible(p, id);
+    await this.ctx.pool.query(
+      `INSERT INTO ticket_view (ticket_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+      [id, p.id],
+    );
+    return { ok: true };
+  }
+
+  /**
+   * Дерево для фильтров «Ответственный»/«Куратор»: предприятие → подразделение → сотрудник (по матрице
+   * ответственности); сотрудники 2-й линии без назначений в матрице — отдельной строкой без предприятия.
+   */
+  @Get('tickets/assignee-tree')
+  @RequirePerm('conversations.work', 'tickets.work', 'supervisor.approvals', 'admin.matrix')
+  async assigneeTree(@Query('kind') kindRaw?: string) {
+    const kind = kindRaw === 'curator' ? 'curator' : 'responsible';
     const list = await rows(
       this.ctx.pool,
-      `${LIST_SQL} WHERE ${where.join(' AND ')}
-        ORDER BY (t.status IN ('new', 'in_work', 'rework') AND t.due_date < $2::date) DESC,
-                 (t.status IN ('new', 'in_work', 'rework')) DESC, (t.status = 'approval') DESC, t.due_date, t.number
-        LIMIT 300`,
-      params,
+      `SELECT DISTINCT e.id AS enterprise_id, e.name AS enterprise_name, ed.id AS ed_id, d.name AS department_name,
+              u.id AS user_id, u.full_name
+         FROM responsibility r
+         JOIN enterprise_department ed ON ed.id = r.enterprise_department_id AND ed.is_active
+         JOIN enterprise e ON e.id = ed.enterprise_id AND e.is_active
+         JOIN department d ON d.id = ed.department_id AND d.is_active
+         JOIN app_user u ON u.id = r.user_id AND u.is_active
+        WHERE r.is_active AND r.kind = $1
+       UNION ALL
+       SELECT NULL, NULL, NULL, NULL, u.id, u.full_name FROM app_user u
+        WHERE u.is_active AND u.can_login
+          AND EXISTS (SELECT 1 FROM user_role ur JOIN role ro ON ro.code = ur.role_code
+                       WHERE ur.user_id = u.id AND 'tickets.work' = ANY(ro.permissions))
+          AND NOT EXISTS (SELECT 1 FROM responsibility r WHERE r.user_id = u.id AND r.is_active AND r.kind = $1)
+        ORDER BY 2 NULLS LAST, 4, 6`,
+      [kind],
     );
     return list.map((r) => toApi(r));
+  }
+
+  /** Кем сотрудник обычно бывает на 2-й линии — для фильтра по умолчанию («я ответственный» / «я куратор»). */
+  @Get('tickets/my-kind')
+  @RequirePerm('conversations.work', 'tickets.work', 'supervisor.approvals', 'admin.matrix')
+  async myKind(@CurrentUser() p: Principal) {
+    const r = await one<{ resp: number; cur: number }>(
+      this.ctx.pool,
+      `SELECT (SELECT count(*)::int FROM responsibility WHERE user_id = $1 AND is_active AND kind = 'responsible')
+            + (SELECT count(*)::int FROM ticket_assignee WHERE user_id = $1 AND is_active AND kind = 'responsible') AS resp,
+              (SELECT count(*)::int FROM responsibility WHERE user_id = $1 AND is_active AND kind = 'curator')
+            + (SELECT count(*)::int FROM ticket_assignee WHERE user_id = $1 AND is_active AND kind = 'curator') AS cur`,
+      [p.id],
+    );
+    const resp = r?.resp ?? 0;
+    const cur = r?.cur ?? 0;
+    return { kind: cur > resp ? 'curator' : 'responsible' };
   }
 
   /** «Требуют переназначения» (M-TKT-12a) — без активного ответственного. Короткий путь для админки. */
@@ -752,11 +1077,6 @@ export class TicketsController {
         WHERE f.topic_id = ANY($1) AND f.is_active ORDER BY f.key, f.sort_order`,
       [t.topic_path],
     );
-    // Открыл — обращение больше не «Новое» для этого сотрудника.
-    await this.ctx.pool.query(
-      `INSERT INTO ticket_view (ticket_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
-      [id, p.id],
-    );
     const approvalMode = await one<{ v: string }>(
       this.ctx.pool,
       `SELECT value #>> '{}' AS v FROM system_setting WHERE key = 'ticket.approval_mode'`,
@@ -799,6 +1119,8 @@ const LIST_SQL = `SELECT t.id, t.number, t.status, to_char(t.due_date, 'YYYY-MM-
     (SELECT string_agg(u.full_name, ', ' ORDER BY u.full_name) FROM ticket_assignee a JOIN app_user u ON u.id = a.user_id
       WHERE a.ticket_id = t.id AND a.is_active AND a.kind = 'responsible') AS responsible_names,
     (t.due_date - $2::date) AS days_left,
+    (t.due_date - t.created_at::date) AS total_days,
+    NOT EXISTS (SELECT 1 FROM ticket_view v WHERE v.ticket_id = t.id AND v.user_id = $1) AS is_new,
     (t.status IN ('new', 'in_work', 'rework') AND t.due_date < $2::date) AS is_overdue,
     CASE WHEN t.status = 'approval' THEN floor(EXTRACT(EPOCH FROM (now() - t.approval_wait_since)) / 86400)::int END AS approval_wait_days
   FROM ticket t

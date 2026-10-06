@@ -397,6 +397,51 @@ describe.skipIf(!ADMIN_URL)('Вторая линия Ф8 (интеграция)'
     expect(hist.slice(-2)).toEqual(['opened', 'answered']);
   });
 
+  it('список 2-й линии: поиск по полям, источник, «Новое», порядок, дерево сотрудников, выгрузка в Excel', async () => {
+    const { ticket } = await newTicket('op1');
+    const tid = ticket.id as string;
+    const num = String(ticket.number);
+    const ids = (r: { body: { id: string }[] }) => r.body.map((x) => x.id);
+    // поиск по номеру: найден; если поле «номер» выключено — нет
+    expect(ids(await call('GET', `/tickets?view=cabinet&q=${num}`, 'r1'))).toContain(tid);
+    expect(ids(await call('GET', `/tickets?view=cabinet&q=${num}&qIn=summary`, 'r1'))).not.toContain(tid);
+    // источник: чат на сайте — есть, звонок — нет
+    expect(ids(await call('GET', `/tickets?view=cabinet&sources=webchat`, 'r1'))).toContain(tid);
+    expect(ids(await call('GET', `/tickets?view=cabinet&sources=voice`, 'r1'))).not.toContain(tid);
+    // вина ещё не указана
+    expect(ids(await call('GET', `/tickets?view=cabinet&guilt=unknown`, 'r1'))).toContain(tid);
+    expect(ids(await call('GET', `/tickets?view=cabinet&guilt=yes`, 'r1'))).not.toContain(tid);
+    // «Новое» — пока сотрудник не щёлкнул; чтение карточки «новизну» не снимает
+    const row = (await call('GET', `/tickets?view=cabinet&q=${num}`, 'r1')).body.find(
+      (x: { id: string }) => x.id === tid,
+    );
+    expect(row.isNew).toBe(true);
+    await call('GET', `/tickets/${tid}`, 'r1');
+    expect((await call('GET', `/tickets?view=cabinet&q=${num}`, 'r1')).body[0].isNew).toBe(true);
+    expect((await call('POST', `/tickets/${tid}/seen`, 'r1')).status).toBe(200);
+    expect((await call('GET', `/tickets?view=cabinet&q=${num}`, 'r1')).body[0].isNew).toBe(false);
+    // дата поступления: вчерашний день — не попадает (обращение не просрочено)
+    const y = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
+    expect(
+      ids(await call('GET', `/tickets?view=cabinet&createdFrom=${y}&createdTo=${y}`, 'r1')),
+    ).not.toContain(tid);
+    // дерево «предприятие → подразделение → сотрудник» и роль по умолчанию
+    const tree = await call('GET', '/tickets/assignee-tree?kind=responsible', 'r1');
+    expect(tree.status).toBe(200);
+    expect(tree.body.some((r: { userId: string }) => r.userId === id.r1)).toBe(true);
+    expect((await call('GET', '/tickets/my-kind', 'r1')).body.kind).toBe('responsible');
+    // выгрузка в Excel: файл .xlsx с этим обращением
+    const res = await t.http().inject({
+      method: 'GET',
+      url: `/api/v1/tickets/export?view=cabinet&q=${num}`,
+      headers: { authorization: `Bearer ${tok.r1}` },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['content-type']).toContain('spreadsheetml');
+    expect(res.rawPayload.subarray(0, 2).toString()).toBe('PK');
+    expect(res.rawPayload.toString('utf8')).toContain(num);
+  });
+
   it('конкурентное закрытие двумя ответственными: один успех, второй — «тикет уже изменён»', async () => {
     const { ticket } = await newTicket('op1');
     const tid = ticket.id as string;

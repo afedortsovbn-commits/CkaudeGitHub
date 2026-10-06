@@ -14,6 +14,7 @@ export const PERMISSIONS = [
   'matrix.view',
   'conversations.work',
   'tickets.work',
+  'tickets.edit',
   'supervisor.monitor',
   'supervisor.approvals',
   'reports.view',

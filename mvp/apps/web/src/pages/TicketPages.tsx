@@ -28,7 +28,7 @@ import {
 } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import { api, authBlobUrl, errorText, get, post, upload } from '../lib/api';
 import { useAuth } from '../lib/auth';
@@ -36,10 +36,11 @@ import { type Row, options, useAction, useList, useRequired } from '../lib/data'
 import { t } from '../lib/i18n';
 import { OrgPicker, TopicPicker } from '../components/DictPickers';
 import { COMMON_FIELD_KEYS, isCommonField } from '../lib/common-fields';
-import { DEFAULT_FILTER, filterQuery, type TicketFilter, TicketFilters } from '../components/TicketFilters';
+import { defaultFilter, filterQuery, type TicketFilter, TicketFilters } from '../components/TicketFilters';
 import {
   IconAlertTriangle,
   IconArrowForwardUp,
+  IconArrowUp,
   IconCircleCheck,
   IconClockPlus,
   IconExternalLink,
@@ -339,13 +340,29 @@ export function EscalateModal({ conv, opened, onClose }: { conv: Row; opened: bo
 
 // ---------------------------------------------------------------- списки
 
+/**
+ * Фон по оставшемуся сроку (п. 18): в работе — от светло-жёлтого через оранжевый к красному по мере приближения
+ * срока; просроченные — красные; на согласовании и закрытые — без цвета.
+ */
+function deadlineColor(tk: Row): string | undefined {
+  if (!['new', 'in_work', 'rework'].includes(String(tk.status))) return undefined;
+  if (tk.isOverdue) return 'hsl(0, 85%, 80%)';
+  const total = Math.max(1, Number(tk.totalDays ?? 15));
+  const left = Math.min(total, Math.max(0, Number(tk.daysLeft ?? total)));
+  const used = 1 - left / total; // 0 — только поступило, 1 — срок сегодня
+  const hue = 52 - used * 52; // жёлтый → оранжевый → красный
+  const light = 94 - used * 10; // светлее → насыщеннее
+  return `hsl(${Math.round(hue)}, 90%, ${Math.round(light)}%)`;
+}
+
 function TicketCard({ t: tk, selected, onOpen }: { t: Row; selected?: boolean; onOpen(id: string): void }) {
   const mine = tk.myRole as string | null;
   const status = String(tk.status);
-  // Закрытые и на согласовании (работа ответственного завершена) — светло-серым; просроченные — красным.
+  // Закрытые и на согласовании (работа ответственного завершена) — светло-серым.
   const dim = status === 'closed' || status === 'approval';
   const overdue = !!tk.isOverdue;
   const c = dim ? 'dimmed' : undefined;
+  const fresh = !!tk.isNew;
   return (
     <Card
       withBorder
@@ -353,24 +370,25 @@ function TicketCard({ t: tk, selected, onOpen }: { t: Row; selected?: boolean; o
       onClick={() => onOpen(tk.id)}
       style={{
         cursor: 'pointer',
-        borderLeft: `4px solid ${overdue ? 'var(--mantine-color-red-6)' : mine === 'responsible' ? 'var(--mantine-color-blue-6)' : mine === 'curator' ? 'var(--mantine-color-gray-5)' : 'transparent'}`,
-        // Выбранное — заметно: заливка и толстая рамка.
-        borderColor: selected ? 'var(--mantine-color-blue-6)' : undefined,
-        borderWidth: selected ? 2 : undefined,
-        boxShadow: selected ? '0 0 0 2px var(--mantine-color-blue-3)' : undefined,
-        background: selected
-          ? 'var(--mantine-color-blue-light)'
-          : overdue
-            ? 'var(--mantine-color-red-light)'
-            : undefined,
+        borderLeft: `4px solid ${overdue ? 'var(--mantine-color-red-7)' : mine === 'responsible' ? 'var(--mantine-color-blue-6)' : mine === 'curator' ? 'var(--mantine-color-gray-5)' : 'transparent'}`,
+        background: deadlineColor(tk),
+        // Выбранное — заметно: толстая синяя рамка и тень.
+        outline: selected ? '3px solid var(--mantine-color-blue-6)' : undefined,
+        boxShadow: selected ? '0 2px 10px rgba(34, 139, 230, 0.45)' : undefined,
         opacity: dim && !selected ? 0.75 : undefined,
       }}
       data-testid="ticket-item"
       data-selected={selected || undefined}
       data-overdue={overdue || undefined}
+      data-new={fresh || undefined}
     >
       <Group justify="space-between" wrap="nowrap">
         <Group gap={6} wrap="nowrap">
+          {fresh && (
+            <Badge color="pink" size="sm" variant="filled" data-testid="ticket-new">
+              {t.tickets.newMark}
+            </Badge>
+          )}
           <Text fw={700} size="sm" c={c}>
             №{String(tk.number)}
           </Text>
@@ -394,7 +412,7 @@ function TicketCard({ t: tk, selected, onOpen }: { t: Row; selected?: boolean; o
       <Text size="xs" lineClamp={1} c={c}>
         {String(tk.topicName)} · {String(tk.enterpriseName)} / {String(tk.departmentName)}
       </Text>
-      <Text size="xs" c="dimmed" lineClamp={1}>
+      <Text size="xs" c={dim ? 'dimmed' : 'dark.4'} lineClamp={2} data-testid="ticket-item-summary">
         {String(tk.contactName)}: {String(tk.summary)}
       </Text>
       <Group justify="space-between">
@@ -457,18 +475,83 @@ export function useTicketCount(view: string, extra = ''): number {
 
 // ---------------------------------------------------------------- обращения на 2-й линии
 
-/** Обращения на 2-й линии (M-TKT-05): список с фильтрами значками, краткая информация, переход в обращение. */
+/** Прокручиваемый блок со стрелкой «В начало» (появляется, когда прокручено вниз). */
+function ScrollBlock({ children, h, testId }: { children: React.ReactNode; h: string; testId: string }) {
+  const viewport = useRef<HTMLDivElement>(null);
+  const [scrolled, setScrolled] = useState(false);
+  return (
+    <Box pos="relative">
+      <ScrollArea
+        h={h}
+        viewportRef={viewport}
+        onScrollPositionChange={({ y }) => setScrolled(y > 150)}
+        data-testid={testId}
+      >
+        {children}
+      </ScrollArea>
+      {scrolled && (
+        <Tooltip label={t.tickets.toTop} withArrow>
+          <ActionIcon
+            pos="absolute"
+            bottom={12}
+            right={16}
+            radius="xl"
+            size="lg"
+            variant="filled"
+            onClick={() => viewport.current?.scrollTo({ top: 0, behavior: 'smooth' })}
+            aria-label={t.tickets.toTop}
+            data-testid={`${testId}-top`}
+          >
+            <IconArrowUp size={18} />
+          </ActionIcon>
+        </Tooltip>
+      )}
+    </Box>
+  );
+}
+
+/**
+ * Обращения на 2-й линии (M-TKT-05): список с фильтрами значками и справа — сведения о выбранном. Ответственному и
+ * куратору сразу открыто верхнее обращение; по умолчанию — «я ответственный»/«я куратор» и последние 30 дней.
+ */
 export function CabinetPage() {
-  const [filter, setFilter] = useState<TicketFilter>(DEFAULT_FILTER);
+  const { me, can } = useAuth();
+  const qc = useQueryClient();
+  // Только 2-я линия (не оператор, не супервизор, не администратор): по умолчанию — «я», верхнее открыто.
+  const secondLine =
+    can('tickets.work') && !can('conversations.work', 'supervisor.monitor', 'supervisor.approvals');
+  const myKind = useQuery({
+    queryKey: ['/tickets/my-kind'],
+    queryFn: () => get<{ kind: 'responsible' | 'curator' }>('/tickets/my-kind'),
+    enabled: secondLine,
+  });
+  const defaults = useMemo(
+    () => defaultFilter(secondLine && me ? { id: me.id, kind: myKind.data?.kind ?? null } : undefined),
+    [secondLine, me, myKind.data],
+  );
+  const [filter, setFilter] = useState<TicketFilter | null>(null);
+  const f = filter ?? defaults;
+  const ready = !secondLine || !!myKind.data || myKind.isError;
   const [selected, setSelected] = useState<string | null>(null);
+  const [picked, setPicked] = useState(false);
   const [dialog, setDialog] = useState<Dialog>(null);
-  const list = useList(`/tickets?view=cabinet${filterQuery(filter)}`);
+  const [exporting, setExporting] = useState(false);
+  const list = useList(`/tickets?view=cabinet${filterQuery(f)}`, ready);
   const preview = useQuery({
     queryKey: [`/tickets/${selected}`],
     queryFn: () => get<Row>(`/tickets/${selected}`),
     enabled: !!selected,
   });
-  // Выбрал «Новое» (или возвращённое) — оно взято в работу (M-TKT-03): полной карточки из списка больше нет.
+  // Ответственному и куратору сразу открыто верхнее обращение (не взятое в работу и не отмеченное просмотренным).
+  useEffect(() => {
+    const rows = list.data ?? [];
+    if (!secondLine || !rows.length) return;
+    if (!selected || !rows.some((r) => r.id === selected)) {
+      setSelected(rows[0]!.id);
+      setPicked(false);
+    }
+  }, [list.data, secondLine, selected]);
+  // Щелчок: обращение больше не «Новое»; «Новое» (или возвращённое) — берётся в работу (M-TKT-03).
   const openTicket = useTicketAction(
     (tid: string) => post(`/tickets/${tid}/open`),
     t.tickets.tiketVzyatVRabotu,
@@ -476,20 +559,46 @@ export function CabinetPage() {
   const autoOpened = useRef<string | null>(null);
   useEffect(() => {
     const d = preview.data;
-    if (!d || autoOpened.current === d.id) return;
+    if (!d || !picked || autoOpened.current === d.id) return;
     autoOpened.current = String(d.id);
     if ((d.can as Record<string, boolean> | undefined)?.open) openTicket.mutate(String(d.id));
-  }, [preview.data, openTicket]);
+  }, [preview.data, picked, openTicket]);
+  const pick = (id: string) => {
+    setSelected(id);
+    setPicked(true);
+    void post(`/tickets/${id}/seen`)
+      .then(() => qc.invalidateQueries({ predicate: (x) => String(x.queryKey[0]).startsWith('/tickets?') }))
+      .catch(() => undefined);
+  };
+  const exportXlsx = async () => {
+    setExporting(true);
+    try {
+      const url = await authBlobUrl(`/tickets/export?view=cabinet${filterQuery(f)}`);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `obrashcheniya-2-linii-${new Date().toISOString().slice(0, 10)}.xlsx`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      notifications.show({ color: 'green', message: t.tickets.exportDone });
+    } catch (e) {
+      notifications.show({ color: 'red', title: t.error, message: errorText(e), autoClose: 8000 });
+    } finally {
+      setExporting(false);
+    }
+  };
   return (
     <Grid gutter="sm">
       <Grid.Col span={{ base: 12, md: 5 }}>
-        <Title order={3} mb="xs">
-          {t.tickets.kabinet2YLinii}
-        </Title>
         <Box mb="xs">
-          <TicketFilters value={filter} onChange={setFilter} />
+          <TicketFilters
+            value={f}
+            onChange={setFilter}
+            onReset={() => setFilter(defaults)}
+            onExport={() => void exportXlsx()}
+            exporting={exporting}
+          />
         </Box>
-        <ScrollArea h="calc(100vh - 250px)">
+        <ScrollBlock h="calc(100vh - 200px)" testId="ticket-list-scroll">
           <Stack gap={6} p={4} data-testid="ticket-list">
             {(list.data ?? []).length === 0 && (
               <Text c="dimmed" size="sm">
@@ -497,26 +606,28 @@ export function CabinetPage() {
               </Text>
             )}
             {(list.data ?? []).map((tk) => (
-              <TicketCard key={tk.id} t={tk} selected={selected === tk.id} onOpen={setSelected} />
+              <TicketCard key={tk.id} t={tk} selected={selected === tk.id} onOpen={pick} />
             ))}
           </Stack>
-        </ScrollArea>
+        </ScrollBlock>
       </Grid.Col>
       <Grid.Col span={{ base: 12, md: 7 }}>
         {preview.data ? (
-          <Paper withBorder p="md" data-testid="ticket-preview">
-            <Group justify="space-between" mb="xs">
-              <Title order={4} data-testid="ticket-title">
-                {t.tickets.tiket}
-                {String(preview.data.number)}
-              </Title>
-              <StatusBadge status={String(preview.data.status)} />
-            </Group>
-            <TicketActions t={preview.data} onDialog={setDialog} />
-            <ExtensionNotice t={preview.data} />
-            <TicketFacts t={preview.data} />
-            <TicketDialogs t={preview.data} dialog={dialog} onClose={() => setDialog(null)} />
-          </Paper>
+          <ScrollBlock h="calc(100vh - 100px)" testId="ticket-preview-scroll">
+            <Paper withBorder p="md" data-testid="ticket-preview">
+              <Group justify="space-between" mb="xs">
+                <Title order={4} data-testid="ticket-title">
+                  {t.tickets.tiket}
+                  {String(preview.data.number)}
+                </Title>
+                <StatusBadge status={String(preview.data.status)} />
+              </Group>
+              <TicketActions t={preview.data} onDialog={setDialog} />
+              <ExtensionNotice t={preview.data} />
+              <TicketFacts t={preview.data} />
+              <TicketDialogs t={preview.data} dialog={dialog} onClose={() => setDialog(null)} />
+            </Paper>
+          </ScrollBlock>
         ) : (
           <Text c="dimmed">{t.tickets.vyberiteTiketSlevaZdes}</Text>
         )}
@@ -540,6 +651,7 @@ const ACTION: Record<string, string> = {
   assignee_removed: t.tickets.isklyuchenIzNaznachennykh,
   needs_reassign: t.tickets.trebuetPerenaznacheniya,
   matrix_applied: t.tickets.primenenaMatritsa,
+  edited: t.tickets.histEdited,
   extension_requested: t.tickets.histExtRequested,
   extension_declined: t.tickets.histExtDeclined,
 };
