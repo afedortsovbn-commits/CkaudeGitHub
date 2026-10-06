@@ -99,9 +99,9 @@ export async function lockTicket(tx: PoolClient, id: string, expectedVersion?: n
     [id],
   );
   const t = rows[0];
-  if (!t) throw notFound('Тикет');
+  if (!t) throw notFound('Обращение');
   if (expectedVersion !== undefined && t.version !== expectedVersion)
-    throw conflict('ticket_changed', 'Тикет уже изменён другим сотрудником — обновите страницу');
+    throw conflict('ticket_changed', 'Обращение уже изменено другим сотрудником — обновите страницу');
   return t;
 }
 
@@ -173,7 +173,7 @@ async function emitTicket(
 
 async function reload(tx: PoolClient, id: string): Promise<TicketRow> {
   const t = await loadTicket(tx, id);
-  if (!t) throw notFound('Тикет');
+  if (!t) throw notFound('Обращение');
   return t;
 }
 
@@ -633,8 +633,10 @@ export async function closeTicketByResponsible(
 ): Promise<TicketRow> {
   const now = i.now ?? new Date();
   const t = await lockTicket(tx, id, i.version);
-  if (t.status !== 'in_work' && t.status !== 'rework')
-    throw conflict('bad_status', 'Закрыть можно обращение «В работе» или «На доработке»');
+  if (t.status !== 'new' && t.status !== 'in_work' && t.status !== 'rework')
+    throw conflict('bad_status', 'Закрыть можно обращение «Новое», «В работе» или «На доработке»');
+  // «Новое» закрывается сразу (ответ дан из списка, без открытия карточки) — в истории фиксируется взятие в работу.
+  if (t.status === 'new') await transition(tx, t, actorId, 'opened', 'new', 'in_work');
   const summary = i.answerSummary.trim();
   if (!summary) throw bad('Опишите суть ответа клиенту');
   const method = await tx.query('SELECT 1 FROM answer_method WHERE id = $1 AND is_active', [
@@ -781,6 +783,94 @@ export async function commentTicket(
   });
   await emitTicket(tx, TICKET_EVENTS.comment, t, actorId, to);
   return cid;
+}
+
+// ------------------------------------------------------------------ продление срока
+
+export interface ExtensionRequestInput {
+  dueDate: string;
+  reason: string;
+}
+
+/**
+ * Запрос продления срока ответственным: комментарий в обращении и уведомление (интерфейс и email) тем, кто
+ * меняет срок, — создателю и супервизорам в области. Срок меняется только их решением («Ответственные и срок»).
+ */
+export async function requestExtension(
+  tx: PoolClient,
+  id: string,
+  actorId: string,
+  i: ExtensionRequestInput,
+): Promise<void> {
+  const t = await lockTicket(tx, id);
+  if (!['new', 'in_work', 'rework'].includes(t.status))
+    throw conflict('bad_status', 'Продлить срок можно только у обращения, которое в работе');
+  if (i.dueDate <= t.due) throw bad('Новый срок должен быть позже текущего');
+  const reason = i.reason.trim();
+  if (!reason) throw bad('Укажите причину продления');
+  const shown = i.dueDate.split('-').reverse().join('.');
+  const cid = await addComment(
+    tx,
+    id,
+    actorId,
+    'comment',
+    `Запрошено продление срока до ${shown}: ${reason}`,
+  );
+  await transition(tx, t, actorId, 'extension_requested', t.status, t.status, {
+    dueDate: i.dueDate,
+    comment: reason,
+    commentId: cid,
+  });
+  const deciders = uniq([t.created_by, ...(await supervisorsFor(tx, t))]).filter((u) => u !== actorId);
+  await queueNotifications(tx, {
+    ticketId: id,
+    userIds: deciders,
+    kind: 'extension_request',
+    dedupe: `extension:${cid}`,
+    card: await loadCard(tx, id),
+    extra: { comment: `до ${shown}: ${reason}`, actorName: await actorName(tx, actorId) },
+    email: true,
+  });
+  await emitTicket(
+    tx,
+    TICKET_EVENTS.comment,
+    t,
+    actorId,
+    uniq([...deciders, ...(await participantIds(tx, t))]),
+  );
+}
+
+/** Отказ в продлении срока: комментарий и уведомление участникам; срок не меняется. */
+export async function declineExtension(
+  tx: PoolClient,
+  id: string,
+  actorId: string,
+  comment: string,
+): Promise<void> {
+  const t = await lockTicket(tx, id);
+  const text = comment.trim();
+  const cid = await addComment(
+    tx,
+    id,
+    actorId,
+    'comment',
+    `В продлении срока отказано${text ? `: ${text}` : ''}`,
+  );
+  await transition(tx, t, actorId, 'extension_declined', t.status, t.status, {
+    commentId: cid,
+    ...(text ? { comment: text } : {}),
+  });
+  const to = (await participantIds(tx, t)).filter((u) => u !== actorId);
+  await queueNotifications(tx, {
+    ticketId: id,
+    userIds: to,
+    kind: 'extension_declined',
+    dedupe: `extension-declined:${cid}`,
+    card: await loadCard(tx, id),
+    extra: { comment: text, actorName: await actorName(tx, actorId) },
+    email: true,
+  });
+  await emitTicket(tx, TICKET_EVENTS.comment, t, actorId, uniq([t.created_by, ...to]));
 }
 
 // ------------------------------------------------------------------ переадресация и замена ответственных

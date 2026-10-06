@@ -216,6 +216,8 @@ test.describe.serial('Ф8: вторая линия', () => {
     await op.getByTestId('ticket-approve').click();
     await op.getByTestId('approve-submit').click();
     await expect(op.getByTestId('ticket-status')).toHaveText('Закрыто');
+    // История свёрнута в «Подробнее».
+    await op.getByTestId('ticket-more-toggle').click();
     await expect(op.getByTestId('ticket-history')).toContainText('возвращено на доработку');
     await expect(op.getByTestId('ticket-history')).toContainText('переадресован');
     await expect(op.getByTestId('ticket-history')).toContainText('ответ принят, обращение закрыто');

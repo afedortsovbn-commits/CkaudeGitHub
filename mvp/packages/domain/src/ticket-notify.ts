@@ -21,7 +21,9 @@ export type NotificationKind =
   | 'needs_reassign'
   | 'assignees_changed'
   | 'opened'
-  | 'unassigned';
+  | 'unassigned'
+  | 'extension_request'
+  | 'extension_declined';
 
 /** Карточка тикета для текста писем и уведомлений. */
 export interface TicketCard {
@@ -116,6 +118,8 @@ export function renderMail(kind: NotificationKind, c: TicketCard, extra: MailExt
     'opened',
     'unassigned',
     'assignees_changed',
+    'extension_request',
+    'extension_declined',
   ].includes(kind);
   const withImportant = (s: string) => (high ? `Важно! ${s}` : s);
   let subject: string;
@@ -126,6 +130,12 @@ export function renderMail(kind: NotificationKind, c: TicketCard, extra: MailExt
       break;
     case 'assignees_changed':
       subject = `Обращение (2 линия) №${n}: изменены ответственные или тема`;
+      break;
+    case 'extension_request':
+      subject = `Обращение (2 линия) №${n}: запрошено продление срока`;
+      break;
+    case 'extension_declined':
+      subject = `Обращение (2 линия) №${n}: в продлении срока отказано`;
       break;
     case 'opened':
       subject = `Обращение (2 линия) №${n} взято в работу`;

@@ -7,6 +7,7 @@ import {
   closeTicketByResponsible,
   commentTicket,
   createTicket,
+  declineExtension,
   loadApprovalContext,
   localDate,
   matrixDefaults,
@@ -14,6 +15,7 @@ import {
   openTicket,
   redirectTicket,
   reassignTicket,
+  requestExtension,
   returnTicket,
   setAgentStatus,
   systemTimezone,
@@ -100,6 +102,10 @@ function idList(raw: string | undefined, me?: string): string[] {
     .filter((v) => uuid.safeParse(v).success);
 }
 
+const ExtensionBody = z
+  .object({ dueDate: day, reason: z.string().trim().min(1, 'Укажите причину продления').max(5000) })
+  .strict();
+const DeclineBody = z.object({ comment: z.string().max(5000).default('') }).strict();
 const CommentBody = z
   .object({ body: z.string().max(10000).default(''), attachmentIds: z.array(uuid).max(20).default([]) })
   .strict();
@@ -481,6 +487,31 @@ export class TicketsController {
     return this.detail(p, id);
   }
 
+  /** Запрос продления срока: ответственный или куратор; решают создатель и супервизоры. */
+  @Post('tickets/:id/extension')
+  @HttpCode(200)
+  @RequirePerm('tickets.work')
+  async extension(@CurrentUser() p: Principal, @Param('id') id: string, @Body() body: unknown) {
+    const b = parse(ExtensionBody, body);
+    await withTx(this.ctx.pool, async (tx) => {
+      this.requireParticipant(await this.visible(p, id, tx));
+      await requestExtension(tx, id, p.id, b);
+    });
+    return this.detail(p, id);
+  }
+
+  /** Отказ в продлении — тот, кто может менять срок (создатель, супервизор, администратор матрицы). */
+  @Post('tickets/:id/extension/decline')
+  @HttpCode(200)
+  async declineExtension(@CurrentUser() p: Principal, @Param('id') id: string, @Body() body: unknown) {
+    const b = parse(DeclineBody, body ?? {});
+    await withTx(this.ctx.pool, async (tx) => {
+      if (!this.canReassign(p, await this.visible(p, id, tx))) throw forbidden();
+      await declineExtension(tx, id, p.id, b.comment);
+    });
+    return this.detail(p, id);
+  }
+
   /** Замена ответственных, срока и отметки создателем тикета, супервизором или администратором. */
   @Post('tickets/:id/reassign')
   @HttpCode(200)
@@ -519,7 +550,7 @@ export class TicketsController {
     id: string,
     db: Pool | PoolClient = this.ctx.pool,
   ): Promise<VisibleTicket> {
-    if (!uuid.safeParse(id).success) throw notFound('Тикет');
+    if (!uuid.safeParse(id).success) throw notFound('Обращение');
     const sc = scopeFilter(p.scope, TICKET_SCOPE, 3);
     const t = await one<VisibleTicket>(
       db,
@@ -533,7 +564,7 @@ export class TicketsController {
            OR ${sc.sql})`,
       [id, p.id, ...sc.params],
     );
-    if (!t) throw notFound('Тикет');
+    if (!t) throw notFound('Обращение');
     return t;
   }
 
@@ -641,7 +672,8 @@ export class TicketsController {
       approvalMode: approvalMode?.v ?? 'creator',
       can: {
         open: !!t.my_role && (t.status === 'new' || t.status === 'rework'),
-        close: !!t.my_role && (t.status === 'in_work' || t.status === 'rework'),
+        close: !!t.my_role && active,
+        extend: !!t.my_role && active,
         redirect: !!t.my_role && active,
         approve: canApproveNow,
         reassign: t.status !== 'closed' && this.canReassign(p, t),

@@ -1,4 +1,5 @@
 import {
+  Accordion,
   ActionIcon,
   Alert,
   Anchor,
@@ -35,7 +36,13 @@ import { type Row, options, useAction, useList } from '../lib/data';
 import { t } from '../lib/i18n';
 import { OrgPicker, TopicPicker } from '../components/DictPickers';
 import { DEFAULT_FILTER, filterQuery, type TicketFilter, TicketFilters } from '../components/TicketFilters';
-import { IconAlertTriangle } from '@tabler/icons-react';
+import {
+  IconAlertTriangle,
+  IconArrowForwardUp,
+  IconCircleCheck,
+  IconClockPlus,
+  IconExternalLink,
+} from '@tabler/icons-react';
 
 // ---------------------------------------------------------------- общее
 
@@ -428,6 +435,7 @@ export function CabinetPage() {
   const nav = useNavigate();
   const [filter, setFilter] = useState<TicketFilter>(DEFAULT_FILTER);
   const [selected, setSelected] = useState<string | null>(null);
+  const [dialog, setDialog] = useState<Dialog>(null);
   const list = useList(`/tickets?view=cabinet${filterQuery(filter)}`);
   const preview = useQuery({
     queryKey: [`/tickets/${selected}`],
@@ -466,15 +474,14 @@ export function CabinetPage() {
               </Title>
               <StatusBadge status={String(preview.data.status)} testId="ticket-preview-status" />
             </Group>
+            <TicketActions
+              t={preview.data}
+              onDialog={setDialog}
+              onOpenFull={() => nav(`/tickets/${selected}`)}
+            />
+            <ExtensionNotice t={preview.data} />
             <TicketFacts t={preview.data} />
-            <Divider my="xs" />
-            <Text fw={600} size="sm">
-              {t.tickets.istoriya}
-            </Text>
-            <History items={(preview.data.history as Row[]).slice(-6)} />
-            <Button mt="md" onClick={() => nav(`/tickets/${selected}`)} data-testid="ticket-open-full">
-              {t.tickets.otkrytObrashchenieTselikom}
-            </Button>
+            <TicketDialogs t={preview.data} dialog={dialog} onClose={() => setDialog(null)} />
           </Paper>
         ) : (
           <Text c="dimmed">{t.tickets.vyberiteTiketSlevaZdes}</Text>
@@ -499,6 +506,8 @@ const ACTION: Record<string, string> = {
   assignee_removed: t.tickets.isklyuchenIzNaznachennykh,
   needs_reassign: t.tickets.trebuetPerenaznacheniya,
   matrix_applied: t.tickets.primenenaMatritsa,
+  extension_requested: t.tickets.histExtRequested,
+  extension_declined: t.tickets.histExtDeclined,
 };
 
 function History({ items }: { items: Row[] }) {
@@ -520,52 +529,296 @@ function History({ items }: { items: Row[] }) {
   );
 }
 
+/**
+ * Сведения об обращении: на виду — тема, подтема, суть, срок, статус, способ закрытия и суть ответа,
+ * ответственный; остальное (направлено, клиент, кураторы, кто передал, история) — свёрнуто.
+ */
 function TicketFacts({ t: tk }: { t: Row }) {
   const c = tk.conversation as Row | null;
   const assignees = ((tk.assignees as Row[]) ?? []).filter((a) => a.isActive);
+  const names = (kind: string) =>
+    assignees
+      .filter((a) => a.kind === kind)
+      .map((a) => String(a.fullName))
+      .join(', ') || '—';
+  const [topic, ...sub] = String(tk.topicName ?? '').split(' / ');
   return (
-    <Stack gap={4}>
+    <Stack gap={4} data-testid="ticket-facts">
       <Deadline t={tk} />
       <Text size="sm">
-        <b>{t.tickets.tema2}</b> {String(tk.topicName)}
+        <b>{t.tickets.tema2}</b> {topic}
       </Text>
-      <Text size="sm">
-        <b>{t.tickets.napravleno}</b> {String(tk.enterpriseName)} / {String(tk.departmentName)}
-      </Text>
+      {sub.length > 0 && (
+        <Text size="sm">
+          <b>{t.tickets.podtema}</b> {sub.join(' / ')}
+        </Text>
+      )}
       <Text size="sm">
         <b>{t.tickets.sut}</b> {String(tk.summary)}
       </Text>
       <Text size="sm">
-        <b>{t.tickets.klient}</b>{' '}
-        {[c?.displayName, c?.phone, c?.email].filter(Boolean).join(', ') || String(tk.contactName)}
+        <b>{t.tickets.otvetstvennyy}</b> {names('responsible')}
       </Text>
       <Text size="sm">
-        <b>{t.tickets.otvetstvennye2}</b>{' '}
-        {assignees
-          .filter((a) => a.kind === 'responsible')
-          .map((a) => String(a.fullName))
-          .join(', ') || '—'}
+        <b>{t.tickets.sposobZakrytiya}</b> {String(tk.answerMethodName ?? '—')}
       </Text>
-      <Text size="sm">
-        <b>{t.tickets.kuratory2}</b>{' '}
-        {assignees
-          .filter((a) => a.kind === 'curator')
-          .map((a) => String(a.fullName))
-          .join(', ') || '—'}
+      <Text size="sm" style={{ whiteSpace: 'pre-wrap' }}>
+        <b>{t.tickets.sutOtveta2}</b> {String(tk.answerSummary ?? '—')}
       </Text>
-      <Text size="sm">
-        <b>{t.tickets.peredal}</b> {String(tk.creatorName)}
-      </Text>
-      {tk.answerSummary ? (
-        <Alert
-          color="violet"
-          variant="light"
-          title={t.tickets.otvetKlientu(String(tk.answerMethodName ?? ''))}
-        >
-          {String(tk.answerSummary)}
-        </Alert>
-      ) : null}
+      <Accordion variant="contained" chevronPosition="left" mt={6}>
+        <Accordion.Item value="more" data-testid="ticket-more">
+          <Accordion.Control py={4} data-testid="ticket-more-toggle">
+            <Text size="sm">{t.tickets.more}</Text>
+          </Accordion.Control>
+          <Accordion.Panel>
+            <Stack gap={4}>
+              <Text size="sm">
+                <b>{t.tickets.napravleno}</b> {String(tk.enterpriseName)} / {String(tk.departmentName)}
+              </Text>
+              <Text size="sm">
+                <b>{t.tickets.klient}</b>{' '}
+                {[c?.displayName, c?.phone, c?.email].filter(Boolean).join(', ') || String(tk.contactName)}
+              </Text>
+              <Text size="sm">
+                <b>{t.tickets.kuratory2}</b> {names('curator')}
+              </Text>
+              <Text size="sm">
+                <b>{t.tickets.peredal}</b> {String(tk.creatorName)}
+              </Text>
+              <Divider my={4} />
+              <Text fw={600} size="sm">
+                {t.tickets.istoriya}
+              </Text>
+              <History items={(tk.history as Row[]) ?? []} />
+            </Stack>
+          </Accordion.Panel>
+        </Accordion.Item>
+      </Accordion>
     </Stack>
+  );
+}
+
+/** Последний запрос продления срока, по которому ещё нет решения (продлено или отказано). */
+function pendingExtension(tk: Row): { dueDate: string; comment: string } | null {
+  let pending: { dueDate: string; comment: string } | null = null;
+  for (const h of (tk.history as Row[]) ?? []) {
+    const d = (h.details as { dueDate?: string; comment?: string } | null) ?? {};
+    if (h.action === 'extension_requested') pending = { dueDate: d.dueDate ?? '', comment: d.comment ?? '' };
+    else if (h.action === 'extension_declined' || h.action === 'reassigned') pending = null;
+  }
+  return pending;
+}
+
+/** Запрос продления срока: решающему — «Продлить»/«Отклонить», ответственному — что запрос ждёт решения. */
+function ExtensionNotice({ t: tk }: { t: Row }) {
+  const can = (tk.can as Record<string, boolean> | undefined) ?? {};
+  const p = pendingExtension(tk);
+  const approve = useTicketAction(
+    () => post(`/tickets/${tk.id}/reassign`, { version: tk.version, dueDate: p?.dueDate }),
+    t.tickets.extApproved,
+  );
+  const decline = useTicketAction(
+    () => post(`/tickets/${tk.id}/extension/decline`, {}),
+    t.tickets.extDeclined,
+  );
+  if (!p || tk.status === 'closed') return null;
+  return (
+    <Alert color="yellow" variant="light" my="xs" data-testid="extension-notice">
+      <Text size="sm">{t.tickets.extPending(fmtDate(p.dueDate), p.comment)}</Text>
+      {can.reassign ? (
+        <Group gap="xs" mt="xs">
+          <Button
+            size="xs"
+            color="green"
+            loading={approve.isPending}
+            onClick={() => approve.mutate(undefined)}
+            data-testid="extension-approve"
+          >
+            {t.tickets.extApprove(fmtDate(p.dueDate))}
+          </Button>
+          <Button
+            size="xs"
+            variant="light"
+            color="red"
+            loading={decline.isPending}
+            onClick={() => decline.mutate(undefined)}
+            data-testid="extension-decline"
+          >
+            {t.tickets.extDecline}
+          </Button>
+        </Group>
+      ) : (
+        <Text size="xs" c="dimmed">
+          {t.tickets.extWait}
+        </Text>
+      )}
+    </Alert>
+  );
+}
+
+/** Действия над обращением кнопками со значками — по правам (`can` из API). */
+function TicketActions({
+  t: tk,
+  onDialog,
+  onOpenFull,
+}: {
+  t: Row;
+  onDialog(d: Dialog): void;
+  onOpenFull?(): void;
+}) {
+  const can = (tk.can as Record<string, boolean> | undefined) ?? {};
+  return (
+    <Group gap="xs" mb="xs" data-testid="ticket-actions">
+      {onOpenFull && (
+        <Button
+          size="xs"
+          leftSection={<IconExternalLink size={16} />}
+          onClick={onOpenFull}
+          data-testid="ticket-open-full"
+        >
+          {t.tickets.otkrytObrashchenieTselikom}
+        </Button>
+      )}
+      {can.close && (
+        <Tooltip label={t.tickets.btnCloseHint} withArrow>
+          <Button
+            size="xs"
+            color="green"
+            leftSection={<IconCircleCheck size={16} />}
+            onClick={() => onDialog('close')}
+            data-testid="ticket-close"
+          >
+            {t.tickets.btnClose}
+          </Button>
+        </Tooltip>
+      )}
+      {can.redirect && (
+        <Button
+          size="xs"
+          variant="light"
+          leftSection={<IconArrowForwardUp size={16} />}
+          onClick={() => onDialog('redirect')}
+          data-testid="ticket-redirect"
+        >
+          {t.tickets.btnRedirect}
+        </Button>
+      )}
+      {can.extend && (
+        <Button
+          size="xs"
+          variant="light"
+          color="orange"
+          leftSection={<IconClockPlus size={16} />}
+          onClick={() => onDialog('extend')}
+          data-testid="ticket-extend"
+        >
+          {t.tickets.btnExtend}
+        </Button>
+      )}
+      {can.approve && (
+        <>
+          <Button size="xs" color="green" onClick={() => onDialog('approve')} data-testid="ticket-approve">
+            {t.tickets.prinyat}
+          </Button>
+          <Button
+            size="xs"
+            color="orange"
+            variant="light"
+            onClick={() => onDialog('return')}
+            data-testid="ticket-return"
+          >
+            {t.tickets.vernutNaDorabotku}
+          </Button>
+        </>
+      )}
+      {can.reassign && (
+        <Button
+          size="xs"
+          variant="default"
+          onClick={() => onDialog('reassign')}
+          data-testid="ticket-reassign"
+        >
+          {t.tickets.otvetstvennyeISrok}
+        </Button>
+      )}
+    </Group>
+  );
+}
+
+/** Все диалоги действий над обращением. */
+function TicketDialogs({ t: tk, dialog, onClose }: { t: Row; dialog: Dialog; onClose(): void }) {
+  return (
+    <>
+      <CloseDialog t={tk} opened={dialog === 'close'} onClose={onClose} />
+      <RedirectDialog t={tk} opened={dialog === 'redirect'} onClose={onClose} />
+      <ExtensionDialog t={tk} opened={dialog === 'extend'} onClose={onClose} />
+      <ApproveDialog t={tk} mode="approve" opened={dialog === 'approve'} onClose={onClose} />
+      <ApproveDialog t={tk} mode="return" opened={dialog === 'return'} onClose={onClose} />
+      <ReassignDialog t={tk} opened={dialog === 'reassign'} onClose={onClose} />
+    </>
+  );
+}
+
+/** Запрос продления срока: новый срок и причина обязательны (звёздочки красные, пустое — подсвечено). */
+function ExtensionDialog({ t: tk, opened, onClose }: { t: Row; opened: boolean; onClose(): void }) {
+  const [due, setDue] = useState('');
+  const [reason, setReason] = useState('');
+  const [tried, setTried] = useState(false);
+  useEffect(() => {
+    if (!opened) return;
+    setDue('');
+    setReason('');
+    setTried(false);
+  }, [opened]);
+  const send = useTicketAction(
+    () => post(`/tickets/${tk.id}/extension`, { dueDate: due, reason }),
+    t.tickets.extSent,
+    onClose,
+  );
+  const minDue = String(tk.dueDate ?? '');
+  const dueBad = !due || due <= minDue;
+  const submit = () => {
+    setTried(true);
+    if (dueBad || !reason.trim()) {
+      notifications.show({ color: 'red', message: t.tickets.fillRequired });
+      return;
+    }
+    send.mutate(undefined);
+  };
+  return (
+    <Modal opened={opened} onClose={onClose} title={t.tickets.extTitle}>
+      <Stack gap="xs" data-testid="extension-form">
+        <Deadline t={tk} />
+        <TextInput
+          type="date"
+          label={t.tickets.extNewDue}
+          withAsterisk
+          min={minDue}
+          value={due}
+          onChange={(e) => setDue(e.currentTarget.value)}
+          error={tried && dueBad ? t.tickets.required : undefined}
+          data-testid="extension-due"
+        />
+        <Textarea
+          label={t.tickets.extReason}
+          withAsterisk
+          value={reason}
+          onChange={(e) => setReason(e.currentTarget.value)}
+          error={tried && !reason.trim() ? t.tickets.required : undefined}
+          minRows={2}
+          autosize
+          data-testid="extension-reason"
+        />
+        <Group justify="flex-end">
+          <Button variant="default" onClick={onClose}>
+            {t.cancel}
+          </Button>
+          <Button loading={send.isPending} onClick={submit} data-testid="extension-submit">
+            {t.tickets.extSend}
+          </Button>
+        </Group>
+      </Stack>
+    </Modal>
   );
 }
 
@@ -647,7 +900,7 @@ function Conversation({ ticketId }: { ticketId: string }) {
   );
 }
 
-type Dialog = 'close' | 'redirect' | 'return' | 'approve' | 'reassign' | null;
+type Dialog = 'close' | 'redirect' | 'return' | 'approve' | 'reassign' | 'extend' | null;
 
 /** Полный переход в обращение: суть, переписка, документы, история и действия по правам (M-TKT-05..10). */
 export function TicketPage() {
@@ -701,65 +954,13 @@ export function TicketPage() {
             </Badge>
           ) : null}
         </Group>
-        <Group gap="xs">
-          {can.close && (
-            <Button size="xs" color="green" onClick={() => setDialog('close')} data-testid="ticket-close">
-              {t.tickets.zakrytOtvetKlientuDan}
-            </Button>
-          )}
-          {can.redirect && (
-            <Button
-              size="xs"
-              variant="light"
-              onClick={() => setDialog('redirect')}
-              data-testid="ticket-redirect"
-            >
-              {t.tickets.pereadresovat}
-            </Button>
-          )}
-          {can.approve && (
-            <>
-              <Button
-                size="xs"
-                color="green"
-                onClick={() => setDialog('approve')}
-                data-testid="ticket-approve"
-              >
-                {t.tickets.prinyat}
-              </Button>
-              <Button
-                size="xs"
-                color="orange"
-                variant="light"
-                onClick={() => setDialog('return')}
-                data-testid="ticket-return"
-              >
-                {t.tickets.vernutNaDorabotku}
-              </Button>
-            </>
-          )}
-          {can.reassign && (
-            <Button
-              size="xs"
-              variant="default"
-              onClick={() => setDialog('reassign')}
-              data-testid="ticket-reassign"
-            >
-              {t.tickets.otvetstvennyeISrok}
-            </Button>
-          )}
-        </Group>
+        <TicketActions t={tk} onDialog={setDialog} />
       </Group>
+      <ExtensionNotice t={tk} />
       <Grid gutter="md">
         <Grid.Col span={{ base: 12, md: 5 }}>
           <Paper withBorder p="md">
             <TicketFacts t={tk} />
-          </Paper>
-          <Paper withBorder p="md" mt="sm">
-            <Text fw={600} size="sm" mb={4}>
-              {t.tickets.istoriya}
-            </Text>
-            <History items={(tk.history as Row[]) ?? []} />
           </Paper>
         </Grid.Col>
         <Grid.Col span={{ base: 12, md: 7 }}>
@@ -802,11 +1003,7 @@ export function TicketPage() {
           </Tabs>
         </Grid.Col>
       </Grid>
-      <CloseDialog t={tk} opened={dialog === 'close'} onClose={() => setDialog(null)} />
-      <RedirectDialog t={tk} opened={dialog === 'redirect'} onClose={() => setDialog(null)} />
-      <ApproveDialog t={tk} mode="approve" opened={dialog === 'approve'} onClose={() => setDialog(null)} />
-      <ApproveDialog t={tk} mode="return" opened={dialog === 'return'} onClose={() => setDialog(null)} />
-      <ReassignDialog t={tk} opened={dialog === 'reassign'} onClose={() => setDialog(null)} />
+      <TicketDialogs t={tk} dialog={dialog} onClose={() => setDialog(null)} />
     </Stack>
   );
 }

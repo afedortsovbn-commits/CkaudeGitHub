@@ -202,16 +202,6 @@ describe.skipIf(!ADMIN_URL)('Вторая линия Ф8 (интеграция)'
     const tid = ticket.id as string;
     // оператор не может действовать за ответственного
     expect((await call('POST', `/tickets/${tid}/open`, 'op1', {})).status).toBe(403);
-    // закрыть можно только «В работе»
-    expect(
-      (
-        await call('POST', `/tickets/${tid}/close`, 'r1', {
-          version: ticket.version,
-          answerMethodId: id.method,
-          answerSummary: 'ответ',
-        })
-      ).status,
-    ).toBe(409);
     const opened = await call('POST', `/tickets/${tid}/open`, 'c1', {}); // куратор открыл первым
     expect(opened.body.status).toBe('in_work');
     expect((await call('POST', `/tickets/${tid}/open`, 'r1', {})).body.status).toBe('in_work'); // идемпотентно
@@ -327,6 +317,41 @@ describe.skipIf(!ADMIN_URL)('Вторая линия Ф8 (интеграция)'
       (h: { action: string }) => h.action,
     );
     expect(hist).toEqual(['created', 'opened', 'answered', 'returned', 'opened', 'answered', 'approved']);
+  });
+
+  it('«Новое» закрывается сразу из списка; продление срока: запрос, отказ, продление', async () => {
+    const { ticket } = await newTicket('op1');
+    const tid = ticket.id as string;
+    // запрос продления: срок не раньше текущего, причина обязательна; решает создатель
+    const later = new Date(`${String(ticket.dueDate)}T00:00:00Z`);
+    later.setUTCDate(later.getUTCDate() + 5);
+    const due = later.toISOString().slice(0, 10);
+    const early = await call('POST', `/tickets/${tid}/extension`, 'r1', {
+      dueDate: ticket.dueDate,
+      reason: 'x',
+    });
+    expect(early.status, JSON.stringify(early.body)).toBe(400);
+    const asked = await call('POST', `/tickets/${tid}/extension`, 'r1', {
+      dueDate: due,
+      reason: 'ждём ответ АЗС',
+    });
+    expect(asked.status).toBe(200);
+    expect(asked.body.history.map((h: { action: string }) => h.action)).toContain('extension_requested');
+    // ответственный сам не отказывает и не продлевает
+    expect((await call('POST', `/tickets/${tid}/extension/decline`, 'r1', {})).status).toBe(403);
+    const declined = await call('POST', `/tickets/${tid}/extension/decline`, 'op1', { comment: 'нет' });
+    expect(declined.status).toBe(200);
+    expect(declined.body.dueDate).toBe(ticket.dueDate);
+    // закрытие «Нового» без открытия: в истории — взято в работу и закрыто ответственным
+    const closed = await call('POST', `/tickets/${tid}/close`, 'r1', {
+      version: declined.body.version,
+      answerMethodId: id.method,
+      answerSummary: 'ответ',
+    });
+    expect(closed.status).toBe(200);
+    expect(closed.body.status).toBe('approval');
+    const hist = closed.body.history.map((h: { action: string }) => h.action);
+    expect(hist.slice(-2)).toEqual(['opened', 'answered']);
   });
 
   it('конкурентное закрытие двумя ответственными: один успех, второй — «тикет уже изменён»', async () => {
@@ -548,16 +573,16 @@ describe.skipIf(!ADMIN_URL)('Вторая линия Ф8 (интеграция)'
     expect(
       (await call('POST', `/tickets/${tid}/return`, 'op2', { version: ticket.version, comment: 'х' })).status,
     ).toBe(409);
-    // нельзя закрыть «Новый» (сначала открыть)
+    // закрыть (и «Новое» тоже) может только назначенный; посторонний ответственный — нет
     expect(
       (
-        await call('POST', `/tickets/${tid}/close`, 'r1', {
+        await call('POST', `/tickets/${tid}/close`, 'r3', {
           version: ticket.version,
           answerMethodId: id.method,
           answerSummary: 'х',
         })
       ).status,
-    ).toBe(409);
+    ).toBe(403);
     // посторонний ответственный (не назначен) не действует; тикет видит по области, но действовать не может
     expect((await call('POST', `/tickets/${tid}/open`, 'r3', {})).status).toBe(403);
     // передача обращения, которое ведёт другой оператор
@@ -846,7 +871,7 @@ describe.skipIf(!ADMIN_URL)('Ежедневная рассылка Ф8 (инте
     expect(m1).toHaveLength(2);
     expect(new Set(m1.map((m) => m.user_id))).toEqual(new Set([r1, c1]));
     for (const m of m1) {
-      expect(m.subject).toMatch(/^Важно! Тикет №\d+: осталось 2 дня$/);
+      expect(m.subject).toMatch(/^Важно! Обращение \(2 линия\) №\d+: осталось 2 дня$/);
       expect(m.data.priority).toBe('high');
     }
     // повторный запуск в тот же день (второй экземпляр, повтор задачи) — без дублей
