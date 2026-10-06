@@ -90,7 +90,7 @@ type Multi = Base & {
   multiple: true;
   value: string[];
   onChange(v: string[]): void;
-  /** Выбор применяется кнопкой «Применить» (окно закрывается), «Сбросить» очищает; без неё — сразу. */
+  /** Внизу окна — «Сбросить» и «Применить» (закрыть). Выбор при этом применяется сразу, по каждому щелчку. */
   apply?: boolean;
   /** Над поиском (например, быстрый выбор «Я»): работает с текущим (ещё не применённым) выбором. */
   header?: (ctx: { value: string[]; set(v: string[]): void }) => ReactNode;
@@ -109,14 +109,12 @@ export function TreePicker(props: Single | Multi) {
   const [opened, setOpened] = useState(false);
   const [q, setQ] = useState('');
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  const [draft, setDraft] = useState<string[]>([]);
   const index = useMemo(() => indexTree(data), [data]);
   const committed = props.multiple ? props.value : props.value ? [props.value] : [];
-  const selected = applyMode ? draft : committed;
+  const selected = committed;
   const selSet = new Set(selected);
   const setSelected = (v: string[]) => {
-    if (applyMode) setDraft(v);
-    else if (props.multiple) props.onChange(v);
+    if (props.multiple) props.onChange(v);
   };
 
   const open = () => {
@@ -129,7 +127,6 @@ export function TreePicker(props: Single | Multi) {
     }
     setExpanded(exp);
     setQ('');
-    setDraft(committed);
     setOpened(true);
   };
   const toggleExp = (v: string) => {
@@ -360,10 +357,7 @@ export function TreePicker(props: Single | Multi) {
                 {applyMode && (
                   <Button
                     size="compact-xs"
-                    onClick={() => {
-                      if (props.multiple) props.onChange(draft);
-                      setOpened(false);
-                    }}
+                    onClick={() => setOpened(false)}
                     data-testid={testId ? `${testId}-apply` : undefined}
                   >
                     {t.tree.apply}

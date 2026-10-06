@@ -190,7 +190,7 @@ function FilterButton({
   );
 }
 
-/** Выпадающий фильтр с черновиком: «Сбросить» очищает, «Применить» применяет и закрывает. */
+/** Выпадающий фильтр: выбор применяется сразу по каждому щелчку; «Сбросить» очищает, «Применить» закрывает. */
 function DraftFilter<T>({
   label,
   icon,
@@ -213,7 +213,11 @@ function DraftFilter<T>({
   children(draft: T, set: (v: T) => void): ReactNode;
 }) {
   const [opened, setOpened] = useState(false);
-  const [draft, setDraft] = useState<T>(value);
+  const [draft, setLocal] = useState<T>(value);
+  const setDraft = (v: T) => {
+    setLocal(v);
+    onApply(v);
+  };
   return (
     <Popover opened={opened} onChange={setOpened} position="bottom-start" shadow="md" width={width}>
       <Popover.Target>
@@ -224,7 +228,7 @@ function DraftFilter<T>({
             opened={opened}
             testId={testId}
             onClick={() => {
-              if (!opened) setDraft(value);
+              if (!opened) setLocal(value);
               setOpened(!opened);
             }}
           >
@@ -247,14 +251,7 @@ function DraftFilter<T>({
             >
               {t.tree.clear}
             </Button>
-            <Button
-              size="compact-xs"
-              onClick={() => {
-                onApply(draft);
-                setOpened(false);
-              }}
-              data-testid={`${testId}-apply`}
-            >
+            <Button size="compact-xs" onClick={() => setOpened(false)} data-testid={`${testId}-apply`}>
               {t.tree.apply}
             </Button>
           </Group>
