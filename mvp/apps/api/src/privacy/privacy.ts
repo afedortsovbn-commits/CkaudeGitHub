@@ -10,7 +10,7 @@ import type { Storage } from '../lib/storage';
 export const ERASED_TEXT = '[удалено: обезличивание]';
 
 /**
- * Удаляет файлы записей разговоров старше срока хранения (`recording.retention_days`, по умолчанию 180 дней,
+ * Удаляет файлы записей разговоров старше срока хранения (`recording.retention_days`, по умолчанию 1825 дней — 5 лет,
  * В-11). Сначала файл, затем отметка `deleted_at` — повторный запуск после сбоя доделает недоделанное.
  */
 export async function runRecordingRetention(
@@ -22,7 +22,7 @@ export async function runRecordingRetention(
   const s = await pool.query<{ v: string | null }>(
     `SELECT value #>> '{}' AS v FROM system_setting WHERE key = 'recording.retention_days'`,
   );
-  const days = Number(s.rows[0]?.v) || 180;
+  const days = Number(s.rows[0]?.v) || 1825;
   let deleted = 0;
   for (;;) {
     const { rows } = await pool.query<{ id: string; storage_key: string | null }>(

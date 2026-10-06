@@ -42,8 +42,16 @@ x-app-env: &app-env
   ARI_PASSWORD: ${ARI_PASSWORD:-dev-only-ari-password}
   TURN_SECRET: ${TURN_SECRET:-dev-only-turn-secret-change-me}
 
+# Журналы контейнеров: не больше 3 файлов по 10 МБ на сервис — диск не забивается при работе без перерыва.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: '10m'
+    max-file: '3'
+
 services:
   traefik:
+    logging: *logging
     # v3.6+: корректное согласование версии API с Docker Engine 29+ (v3.5 обращается к API 1.24 и получает отказ).
     image: ${TRAEFIK_IMAGE:-traefik:v3.6}
     restart: unless-stopped
@@ -78,6 +86,7 @@ services:
       interval: 5s
 
   postgres:
+    logging: *logging
     image: ${POSTGRES_IMAGE:-postgres:16-alpine}
     restart: unless-stopped
     environment:
@@ -93,6 +102,7 @@ services:
       retries: 30
 
   nats-1:
+    logging: *logging
     <<: *nats
     command:
       [
@@ -114,6 +124,7 @@ services:
     volumes: [nats1:/data]
     ports: ['127.0.0.1:4222:4222']
   nats-2:
+    logging: *logging
     <<: *nats
     command:
       [
@@ -135,6 +146,7 @@ services:
     volumes: [nats2:/data]
     ports: ['127.0.0.1:4223:4222']
   nats-3:
+    logging: *logging
     <<: *nats
     command:
       [
@@ -159,6 +171,7 @@ services:
   # S3-совместимое хранилище (записи разговоров, вложения, аудио IVR). SeaweedFS — Apache 2.0,
   # выбран вместо MinIO из-за рисков смены лицензии/политики сборок (В-36).
   s3:
+    logging: *logging
     image: ${S3_IMAGE:-chrislusf/seaweedfs:4.47}
     restart: unless-stopped
     command: ['server', '-dir=/data', '-s3', '-s3.port=8333', '-volume.max=0']
@@ -170,6 +183,7 @@ services:
       retries: 20
 
   migrate:
+    logging: *logging
     image: cc/api:${API_TAG:-dev}
     environment:
       <<: *app-env
@@ -192,6 +206,7 @@ services:
     healthcheck: { disable: true }
 
   api:
+    logging: *logging
     image: cc/api:${API_TAG:-dev}
     restart: unless-stopped
     deploy:
@@ -228,6 +243,7 @@ services:
       traefik.http.services.api.loadbalancer.healthcheck.timeout: 1s
 
   worker:
+    logging: *logging
     image: cc/worker:${WORKER_TAG:-${API_TAG:-dev}}
     restart: unless-stopped
     deploy:
@@ -257,6 +273,7 @@ services:
       nats-3: { condition: service_healthy }
 
   router:
+    logging: *logging
     image: cc/router:${ROUTER_TAG:-${API_TAG:-dev}}
     restart: unless-stopped
     deploy:
@@ -270,6 +287,7 @@ services:
       migrate: { condition: service_completed_successfully }
 
   realtime:
+    logging: *logging
     image: cc/realtime:${REALTIME_TAG:-${API_TAG:-dev}}
     restart: unless-stopped
     deploy:
@@ -290,6 +308,7 @@ services:
       traefik.http.services.realtime.loadbalancer.healthcheck.timeout: 1s
 
   web:
+    logging: *logging
     image: cc/web:${WEB_TAG:-${API_TAG:-dev}}
     restart: unless-stopped
     deploy:
@@ -305,6 +324,7 @@ services:
 
   # --- коннекторы каналов (Ф4): ≥2 экземпляра; приём каждого бота/ящика ведёт владелец аренды в NATS KV ---
   connector-telegram:
+    logging: *logging
     image: cc/connector-telegram:${CONNECTOR_TELEGRAM_TAG:-${API_TAG:-dev}}
     restart: unless-stopped
     deploy:
@@ -331,6 +351,7 @@ services:
       traefik.http.services.connector-telegram.loadbalancer.healthcheck.timeout: 1s
 
   connector-email:
+    logging: *logging
     image: cc/connector-email:${CONNECTOR_EMAIL_TAG:-${API_TAG:-dev}}
     restart: unless-stopped
     deploy:
@@ -350,6 +371,7 @@ services:
 
   # Ф13: отзывы с карт через Rocket Data (M-CH-10). Опрос ведёт владелец аренды, ответы доставляют оба экземпляра.
   connector-rocketdata:
+    logging: *logging
     image: cc/connector-rocketdata:${CONNECTOR_ROCKETDATA_TAG:-${API_TAG:-dev}}
     restart: unless-stopped
     deploy:
@@ -379,6 +401,7 @@ services:
 
   # --- телефония (Ф5): Kamailio (SIP-периметр), Asterisk ×2 (медиа), coturn ×2 (TURN) ---
   kamailio:
+    logging: *logging
     image: cc/kamailio:${KAMAILIO_TAG:-${MEDIA_TAG:-dev}}
     restart: unless-stopped
     environment:
@@ -404,6 +427,7 @@ services:
 
   # Управление вызовами (ARI): на каждый узел Asterisk — активный экземпляр (аренда в NATS KV) и резервный.
   call-control:
+    logging: *logging
     image: cc/call-control:${CALL_CONTROL_TAG:-${API_TAG:-dev}}
     restart: unless-stopped
     deploy:
@@ -425,6 +449,7 @@ services:
       asterisk-2: { condition: service_healthy }
 
   asterisk-1:
+    logging: *logging
     <<: *asterisk
     environment:
       NODE_NAME: asterisk-1
@@ -435,6 +460,7 @@ services:
     volumes: ['ast1spool:/var/spool/asterisk']
 
   asterisk-2:
+    logging: *logging
     <<: *asterisk
     environment:
       NODE_NAME: asterisk-2
@@ -447,6 +473,7 @@ services:
   # TURN для удалённых операторов за NAT; учётные данные — короткоживущие (TURN REST API), выдаёт api
   # перед каждым вызовом, поэтому экземпляр можно вывести из списка и обновить без обрыва (02-архитектура 6.5).
   coturn-1:
+    logging: *logging
     <<: *coturn
     command: [
         '-n',
@@ -466,6 +493,7 @@ services:
       ]
     ports: ['${TURN1_PORT:-3478}:3478/udp', '${TURN1_PORT:-3478}:3478/tcp']
   coturn-2:
+    logging: *logging
     <<: *coturn
     command: [
         '-n',
@@ -487,6 +515,7 @@ services:
 
   # --- профиль test: заглушки внешних систем для e2e (в поставку не входят) ---
   mock-telegram:
+    logging: *logging
     profiles: [test]
     image: cc/mock-telegram:${MOCK_TELEGRAM_TAG:-dev}
     restart: unless-stopped
@@ -495,6 +524,7 @@ services:
   # Мок внешней системы самообслуживания (баланс бонусов, история заправок) — демо-сценарий IVR и панель
   # внешних данных клиента (Ф6), LLM (Ф7), приёмник webhooks, анализатор и внешний бот (Ф9). Профили test и demo.
   mock-selfservice:
+    logging: *logging
     profiles: [test, demo]
     image: cc/mock-selfservice:${MOCK_SELFSERVICE_TAG:-${MOCK_TELEGRAM_TAG:-dev}}
     restart: unless-stopped
@@ -506,6 +536,7 @@ services:
     # Управление приёмником webhooks из e2e (POST /control, GET /hooks/<имя>).
     ports: ['127.0.0.1:${MOCK_SELFSERVICE_PORT:-8082}:3000']
   mail:
+    logging: *logging
     profiles: [test]
     # GreenMail: тестовый SMTP (3025) + IMAP (3143), ящики создаются при первом входе.
     image: ${GREENMAIL_IMAGE:-greenmail/standalone:2.1.5}
@@ -516,6 +547,7 @@ services:
     ports: ['127.0.0.1:${MAIL_SMTP_PORT:-3025}:3025', '127.0.0.1:${MAIL_IMAP_PORT:-3143}:3143']
   # Имитация SIP-транка оператора связи для исходящих вызовов (SIPp UAS: отвечает и ждёт BYE).
   trunk-sim:
+    logging: *logging
     profiles: [test]
     image: ${SIPP_IMAGE:-ctaloi/sipp:latest}
     restart: unless-stopped
@@ -524,16 +556,19 @@ services:
 
   # --- профиль observability ---
   prometheus:
+    logging: *logging
     profiles: [observability]
     image: ${PROMETHEUS_IMAGE:-prom/prometheus:v3.5.0}
     volumes: ['../observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro']
     networks: [cc]
     ports: ['127.0.0.1:9090:9090']
   loki:
+    logging: *logging
     profiles: [observability]
     image: ${LOKI_IMAGE:-grafana/loki:3.5.3}
     networks: [cc]
   promtail:
+    logging: *logging
     profiles: [observability]
     image: ${PROMTAIL_IMAGE:-grafana/promtail:3.5.3}
     command: ['-config.file=/etc/promtail/config.yml']
@@ -542,6 +577,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     networks: [cc]
   grafana:
+    logging: *logging
     profiles: [observability]
     image: ${GRAFANA_IMAGE:-grafana/grafana:12.1.0}
     environment:

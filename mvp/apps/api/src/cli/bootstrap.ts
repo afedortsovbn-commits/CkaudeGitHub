@@ -59,7 +59,18 @@ async function main(): Promise<void> {
         accessKey: process.env.S3_ACCESS_KEY ?? 'cc',
         secretKey: process.env.S3_SECRET_KEY ?? 'cc-secret',
       });
-      await storage.ensureBucket();
+      // Файловый порт S3 поднимается чуть позже, чем проходит его проверка готовности (порт кластера): при
+      // одновременном пересоздании всех контейнеров ждём до минуты, а не падаем (иначе не стартуют api и worker).
+      for (let attempt = 1; ; attempt++) {
+        try {
+          await storage.ensureBucket();
+          break;
+        } catch (e) {
+          if (attempt >= 30) throw e;
+          log(`хранилище файлов ещё не готово — повтор через 2 с (${attempt}/30)`);
+          await new Promise((r) => setTimeout(r, 2000));
+        }
+      }
       const ivr = await withTx(pool, (tx) =>
         seedIvrDemo(tx, storage, {
           assetsDir: join(__dirname, '../../assets/ivr-demo'),

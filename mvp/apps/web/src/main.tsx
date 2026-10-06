@@ -8,6 +8,7 @@ import { createRoot } from 'react-dom/client';
 import { BrowserRouter, Route, Routes, useLocation } from 'react-router';
 import { AuthProvider, useAuth } from './lib/auth';
 import { AuditPage, SettingsPage } from './pages/AdminPages';
+import { ResourcesPage } from './pages/ResourcesPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { PrivacyPage } from './pages/PrivacyPage';
 import { HomePage, Layout } from './pages/Layout';
@@ -62,6 +63,7 @@ function App() {
         <Route path="workspace" element={<WorkspacePage />} />
         <Route path="supervisor" element={<SupervisorPage />} />
         <Route path="reports" element={<ReportsPage />} />
+        <Route path="resources" element={<ResourcesPage />} />
         <Route path="tickets" element={<CabinetPage />} />
         <Route path="tickets/:id" element={<TicketPage />} />
         <Route path="tickets-control" element={<TicketControlPage />} />

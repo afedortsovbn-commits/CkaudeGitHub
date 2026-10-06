@@ -24,6 +24,7 @@ import { extApps } from './i18n/extApps';
 import { hintPanel } from './i18n/hintPanel';
 import { profilePage } from './i18n/profilePage';
 import { reports } from './i18n/reports';
+import { resources } from './i18n/resources';
 import { reviews } from './i18n/reviews';
 import { settingsPage } from './i18n/settingsPage';
 import { softphoneLib } from './i18n/softphoneLib';
@@ -155,6 +156,7 @@ const ru = {
   privacy,
   profilePage,
   reports,
+  resources,
   settingsPage,
   softphoneLib,
   softphoneUi,

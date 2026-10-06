@@ -100,7 +100,7 @@ export function NotificationBell() {
                 gap={0}
                 p={6}
                 style={{
-                  cursor: n.ticketId ? 'pointer' : undefined,
+                  cursor: n.ticketId || (n.data as { path?: string } | null)?.path ? 'pointer' : undefined,
                   background: n.readAt ? undefined : 'var(--mantine-color-blue-0)',
                   borderRadius: 4,
                 }}
@@ -108,9 +108,14 @@ export function NotificationBell() {
                   void post('/notifications/read', { ids: [n.id] }).then(() =>
                     qc.invalidateQueries({ queryKey: ['/notifications'] }),
                   );
+                  // Обращение 2-й линии — в карточку; прочие (ресурсы сервера) — на свою страницу.
+                  const path = (n.data as { path?: string } | null)?.path;
                   if (n.ticketId) {
                     setOpened(false);
                     nav(`/tickets/${String(n.ticketId)}`);
+                  } else if (path) {
+                    setOpened(false);
+                    nav(path);
                   }
                 }}
                 data-testid="bell-item"

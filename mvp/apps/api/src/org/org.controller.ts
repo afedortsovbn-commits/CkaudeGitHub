@@ -83,6 +83,9 @@ const SETTINGS: Record<string, z.ZodTypeAny> = {
   // Ф12: безопасность и ПДн.
   'security.admin_2fa_required': z.boolean(),
   'recording.retention_days': z.number().int().min(1).max(3650),
+  // Контроль ресурсов сервера: пороги «внимание» и «критично», % занятого.
+  'resource.warn_pct': z.number().int().min(50).max(99),
+  'resource.crit_pct': z.number().int().min(50).max(99),
   'report.sl_count_ivr_returns': z.boolean(),
   'report.sl_transfer_new_arrival': z.boolean(),
   // Ф11: экземпляры coturn, выведенные из выдачи ICE на время обновления (ops/update-media.sh coturn-N).
@@ -449,6 +452,17 @@ export class OrgController {
       `SELECT key, value FROM system_setting WHERE key <> 'objects.sync' ORDER BY key`,
     );
     return Object.fromEntries(list.map((r) => [r.key, r.value]));
+  }
+
+  /** Последний замер ресурсов сервера (worker, каждые 5 минут) и пороги уведомлений. */
+  @Get('resources')
+  @RequirePerm('settings.manage', 'supervisor.monitor', 'admin.users')
+  async resources() {
+    const r = await one<{ value: unknown }>(
+      this.ctx.pool,
+      `SELECT value FROM system_setting WHERE key = 'resource.last'`,
+    );
+    return r?.value ?? null;
   }
 
   @Patch('settings')

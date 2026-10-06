@@ -23,6 +23,7 @@ import {
   IconPlug,
   IconRefresh,
   IconRobot,
+  IconServer,
   IconSettings,
   IconShieldLock,
   IconSitemap,
@@ -102,6 +103,13 @@ export const MENU: MenuItem[] = [
     icon: IconChecklist,
   },
   { to: '/reports', label: t.layout.otchety, perms: ['reports.view'], group: 'control', icon: IconChartBar },
+  {
+    to: '/resources',
+    label: t.resources.title,
+    perms: ['settings.manage', 'supervisor.monitor', 'admin.users'],
+    group: 'control',
+    icon: IconServer,
+  },
   // Каналы и сценарии
   {
     to: '/channels',

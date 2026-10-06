@@ -36,6 +36,11 @@ export interface StreamSpec {
   replicas?: number;
   /** Окно дедупликации по Nats-Msg-Id. Главная защита от дублей — уникальные ключи в БД. */
   duplicateWindowMs?: number;
+  /**
+   * Срок хранения сообщений в потоке (по умолчанию 14 дней): обработанные сообщения не копятся на диске бесконечно.
+   * История — в БД (журнал событий), поток — только доставка.
+   */
+  maxAgeMs?: number;
 }
 
 /** Временная недоступность JetStream (выборы лидера, формирование группы RAFT) — стоит повторить. */
@@ -95,6 +100,7 @@ async function ensureStreamOnce(jsm: JetStreamManager, spec: StreamSpec): Promis
     storage: StorageType.File,
     num_replicas: spec.replicas ?? 3,
     duplicate_window: (spec.duplicateWindowMs ?? 120_000) * 1_000_000,
+    max_age: (spec.maxAgeMs ?? 14 * 86_400_000) * 1_000_000,
   };
   try {
     await jsm.streams.info(spec.name);

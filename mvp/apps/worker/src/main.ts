@@ -20,6 +20,7 @@ import { Automation } from './automation';
 import { DeliveryProcessor } from './delivery';
 import { InboundProcessor } from './inbound';
 import { ObjectSyncJob } from './objects-sync';
+import { ResourceMonitor } from './resources';
 import { TicketMailer } from './tickets';
 import { WebhookProcessor } from './webhooks';
 
@@ -52,6 +53,8 @@ const ConfigSchema = BaseConfigSchema.extend({
   WEBHOOK_MAX_BACKOFF_S: z.coerce.number().int().min(1).default(300),
   /** Сколько часов доставка ждёт восстановления получателя, прежде чем получить статус «не доставлено». */
   WEBHOOK_MAX_AGE_H: z.coerce.number().min(0.01).default(72),
+  /** Каталог для замера свободного места (контроль ресурсов): «/» контейнера — диск, где Docker хранит данные. */
+  RESOURCE_DISK_PATH: z.string().default('/'),
 });
 
 /**
@@ -133,6 +136,8 @@ async function main(): Promise<void> {
   // Ф13: ежедневная синхронизация справочника объектов из внешней системы (M-ORG-06).
   const objectSync = new ObjectSyncJob({ pool, boss, logger, secretsKey: config.SECRETS_KEY });
   await objectSync.start();
+  // Контроль ресурсов сервера с уведомлениями администраторам и супервизорам, ночная чистка outbox.
+  await new ResourceMonitor({ pool, boss, logger, diskPath: config.RESOURCE_DISK_PATH }).start();
 
   lifecycle.onShutdown('inbound', 20, () => inbound.stop());
   lifecycle.onShutdown('delivery', 20, () => delivery.stop());

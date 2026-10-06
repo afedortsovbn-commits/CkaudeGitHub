@@ -1,4 +1,15 @@
-import { Badge, Button, NumberInput, Select, Stack, Switch, Table, TextInput, Title } from '@mantine/core';
+import {
+  Badge,
+  Button,
+  Group,
+  NumberInput,
+  Select,
+  Stack,
+  Switch,
+  Table,
+  TextInput,
+  Title,
+} from '@mantine/core';
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { get, patch } from '../lib/api';
@@ -86,10 +97,30 @@ export function SettingsPage() {
         description={t.settingsPage.zapisiStarsheSrokaUdalyayutsya}
         min={1}
         max={3650}
-        value={Number(v['recording.retention_days'] ?? 180)}
+        value={Number(v['recording.retention_days'] ?? 1825)}
         onChange={(x) => setV({ ...v, 'recording.retention_days': Number(x) })}
         data-testid="setting-recording-retention"
       />
+      <Group grow>
+        <NumberInput
+          label={t.resources.warnPct}
+          description={t.resources.pctHint}
+          min={50}
+          max={99}
+          value={Number(v['resource.warn_pct'] ?? 80)}
+          onChange={(x) => setV({ ...v, 'resource.warn_pct': Number(x) })}
+          data-testid="setting-resource-warn"
+        />
+        <NumberInput
+          label={t.resources.critPct}
+          description={t.resources.pctHint}
+          min={50}
+          max={99}
+          value={Number(v['resource.crit_pct'] ?? 90)}
+          onChange={(x) => setV({ ...v, 'resource.crit_pct': Number(x) })}
+          data-testid="setting-resource-crit"
+        />
+      </Group>
       <Title order={5} mt="md">
         {t.settingsPage.panelSupervizoraIOtchety}
       </Title>
