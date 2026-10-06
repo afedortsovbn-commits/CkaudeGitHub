@@ -20,13 +20,40 @@ import { type Row, type TicketRef, options, useAction, useList } from '../lib/da
 import { t } from '../lib/i18n';
 
 export function EnterprisesPage() {
+  // Второй уровень справочника: подразделения предприятия (связки «подразделение на предприятии»).
+  const links = useList('/enterprise-departments');
+  const byEnt = new Map<string, string[]>();
+  for (const l of links.data ?? [])
+    byEnt.set(String(l.enterpriseId), [
+      ...(byEnt.get(String(l.enterpriseId)) ?? []),
+      String(l.departmentName),
+    ]);
   return (
     <DictPage
       kind="enterprises"
       title={t.nav.enterprises}
+      expand={(r) => (
+        <Stack gap={2} data-testid="enterprise-departments">
+          {(byEnt.get(r.id) ?? []).map((n) => (
+            <Text size="sm" key={n}>
+              {n}
+            </Text>
+          ))}
+          {!(byEnt.get(r.id) ?? []).length && (
+            <Text size="sm" c="dimmed">
+              {t.tree.nothing}
+            </Text>
+          )}
+        </Stack>
+      )}
       columns={[
         { key: 'code', label: t.org.kod },
         { key: 'name', label: t.org.nazvanie },
+        {
+          key: 'deps',
+          label: t.nav.departments,
+          render: (r) => String((byEnt.get(r.id) ?? []).length),
+        },
         { key: 'email', label: 'Email' },
         { key: 'phone', label: t.org.telefon },
       ]}

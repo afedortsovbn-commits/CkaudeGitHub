@@ -44,7 +44,7 @@ async function handle(op: Page, client: string, enterprise: string, topic: strin
   const item = op.getByTestId('conv-item').filter({ hasText: client });
   await expect(item).toBeVisible({ timeout: 15_000 });
   await item.getByTestId('take').click();
-  await op.getByRole('textbox', { name: 'Предприятие', exact: true }).click();
+  await op.getByTestId('org').click();
   await op.getByRole('option', { name: enterprise, exact: true }).click();
   await choose(op, 'topic', topic);
   if (station) {

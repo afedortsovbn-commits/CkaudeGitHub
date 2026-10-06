@@ -36,6 +36,7 @@ import { softphone, useSoftphone } from '../lib/softphone';
 import { setDraft } from '../lib/app-version';
 import { EscalateModal, SubstitutesPanel, TicketList, useTicketCount } from './TicketPages';
 import { MergeContactModal } from '../components/MergeContactModal';
+import { OrgPicker, TopicPicker } from '../components/DictPickers';
 import { t } from '../lib/i18n';
 import { orderTabs } from '../lib/nav';
 
@@ -843,13 +844,6 @@ function ExtraFields({ fields, defined }: { fields: Record<string, unknown>; def
 
 function ConversationCard({ conv }: { conv: Row }) {
   const topics = useList('/topics');
-  const enterprises = useList('/dict/enterprises');
-  const eds = useList(
-    conv.enterpriseId
-      ? `/enterprise-departments?enterpriseId=${String(conv.enterpriseId)}`
-      : '/enterprise-departments?enterpriseId=none',
-    !!conv.enterpriseId,
-  );
   const objects = useList(
     conv.enterpriseId ? `/dict/objects?enterpriseId=${String(conv.enterpriseId)}` : '/dict/objects',
     !!conv.enterpriseId,
@@ -949,19 +943,16 @@ function ConversationCard({ conv }: { conv: Row }) {
         p="xs"
         style={!conv.topicId && !closed ? { borderColor: 'var(--mantine-color-blue-4)' } : undefined}
       >
-        <Select
+        <TopicPicker
           size="sm"
           label={t.workspace.stepTopic}
           description={!conv.topicId && !closed ? t.workspace.stepTopicHint : undefined}
           placeholder={t.workspace.stepTopicPlaceholder}
-          data={topicOptions}
           value={(conv.topicId as string) ?? null}
           onChange={(v) => upd.mutate({ topicId: v })}
-          searchable
           clearable
           disabled={closed}
-          maxDropdownHeight={360}
-          data-testid="topic"
+          testId="topic"
         />
         {conv.topicId ? (
           <Text size="xs" c="dimmed" mt={4} data-testid="topic-full">
@@ -1018,41 +1009,30 @@ function ConversationCard({ conv }: { conv: Row }) {
           {t.workspace.stepWhere}
         </Text>
         <Stack gap={6}>
+          <OrgPicker
+            enterpriseId={(conv.enterpriseId as string) ?? null}
+            departmentId={(conv.departmentId as string) ?? null}
+            onChange={(e, d) =>
+              upd.mutate({
+                enterpriseId: e,
+                departmentId: d,
+                ...(e !== conv.enterpriseId ? { objectId: null } : {}),
+              })
+            }
+            clearable
+            disabled={closed}
+            testId="org"
+          />
           <Select
             size="xs"
-            label={t.workspace.predpriyatie}
-            data={options(enterprises.data)}
-            value={(conv.enterpriseId as string) ?? null}
-            onChange={(v) => upd.mutate({ enterpriseId: v, departmentId: null, objectId: null })}
+            label={t.workspace.obekt}
+            data={options(objects.data)}
+            value={(conv.objectId as string) ?? null}
+            onChange={(v) => upd.mutate({ objectId: v })}
             clearable
             searchable
-            disabled={closed}
+            disabled={closed || !conv.enterpriseId}
           />
-          <Group grow>
-            <Select
-              size="xs"
-              label={t.workspace.podrazdelenie}
-              data={(eds.data ?? []).map((e) => ({
-                value: String(e.departmentId),
-                label: String(e.departmentName),
-              }))}
-              value={(conv.departmentId as string) ?? null}
-              onChange={(v) => upd.mutate({ departmentId: v })}
-              clearable
-              searchable
-              disabled={closed || !conv.enterpriseId}
-            />
-            <Select
-              size="xs"
-              label={t.workspace.obekt}
-              data={options(objects.data)}
-              value={(conv.objectId as string) ?? null}
-              onChange={(v) => upd.mutate({ objectId: v })}
-              clearable
-              searchable
-              disabled={closed || !conv.enterpriseId}
-            />
-          </Group>
         </Stack>
       </Paper>
       <Accordion variant="contained" defaultValue={extrasOpen ? 'extra' : null} chevronPosition="left">

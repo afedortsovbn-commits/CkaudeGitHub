@@ -32,6 +32,7 @@ import { supervisor } from './i18n/supervisor';
 import { supervisorNotices } from './i18n/supervisorNotices';
 import { tickets } from './i18n/tickets';
 import { topics } from './i18n/topics';
+import { tree } from './i18n/tree';
 import { updateBannerUi } from './i18n/updateBannerUi';
 import { users } from './i18n/users';
 import { workspace } from './i18n/workspace';
@@ -161,6 +162,7 @@ const ru = {
   supervisorNotices,
   tickets,
   topics,
+  tree,
   updateBannerUi,
   users,
   workspace,

@@ -9,8 +9,10 @@ import {
   Switch,
   Table,
   Text,
+  TextInput,
   Title,
 } from '@mantine/core';
+import { IconChevronDown, IconChevronRight, IconSearch } from '@tabler/icons-react';
 import { useMemo, useState } from 'react';
 import { FormModal } from '../components/FormModal';
 import { patch, post } from '../lib/api';
@@ -134,6 +136,15 @@ export function TopicsPage() {
   const list = useList(`/topics?active=${showInactive ? 'all' : 'true'}`);
   const [editing, setEditing] = useState<{ row?: Row; parentId?: string | null } | null>(null);
   const [selected, setSelected] = useState<Row | null>(null);
+  // Двухуровневый справочник: сначала видны темы, любую можно развернуть; поиск раскрывает найденное.
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [q, setQ] = useState('');
+  const toggleExp = (id: string) => {
+    const next = new Set(expanded);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    setExpanded(next);
+  };
   const children = useMemo(() => {
     const m = new Map<string | null, Row[]>();
     for (const r of list.data ?? [])
@@ -150,68 +161,112 @@ export function TopicsPage() {
   );
   const toggle = useAction((r: Row) => post(`/topics/${r.id}/${r.isActive ? 'deactivate' : 'activate'}`));
 
-  const render = (parent: string | null, depth: number): React.ReactNode =>
-    (children.get(parent) ?? []).map((r) => (
-      <Box key={r.id}>
-        <Group
-          gap="xs"
-          pl={depth * 24}
-          py={4}
-          opacity={r.isActive ? 1 : 0.5}
-          data-testid={`topic-${String(r.name)}`}
-        >
-          <Text fw={depth === 0 ? 600 : 400} style={{ cursor: 'pointer' }} onClick={() => setSelected(r)}>
-            {String(r.name)}
-          </Text>
-          {r.isImportant ? (
-            <Badge color="red" size="xs">
-              {t.topics.osoboVazhnaya}
-            </Badge>
-          ) : null}
-          {r.defaultResponseDays ? (
-            <Badge variant="outline" size="xs">
-              {t.topics.srok}
-              {String(r.defaultResponseDays)}
-              {t.topics.dn}
-            </Badge>
-          ) : null}
-          {Number(r.fieldCount) > 0 && (
-            <Badge variant="light" size="xs">
-              {t.topics.poley}
-              {String(r.fieldCount)}
-            </Badge>
-          )}
-          {Number(r.level) < 3 && r.isActive ? (
-            <ActionIcon
-              size="sm"
-              variant="light"
-              title={t.topics.dobavitPodtemu}
-              onClick={() => setEditing({ parentId: r.id })}
-            >
-              +
-            </ActionIcon>
-          ) : null}
-          <Button size="compact-xs" variant="subtle" onClick={() => setEditing({ row: r })}>
-            {t.edit}
-          </Button>
-          <Button
-            size="compact-xs"
-            variant="subtle"
-            color={r.isActive ? 'red' : 'green'}
-            onClick={() => toggle.mutate(r)}
+  const norm = (v: string) => v.toLowerCase();
+  const words = norm(q).split(/\s+/).filter(Boolean);
+  const selfMatch = (r: Row) => words.every((w) => norm(String(r.name)).includes(w));
+  const matchBelow = (id: string): boolean =>
+    (children.get(id) ?? []).some((c) => selfMatch(c) || matchBelow(c.id));
+  const render = (parent: string | null, depth: number, all = false): React.ReactNode =>
+    (children.get(parent) ?? []).map((r) => {
+      const self = all || !words.length || selfMatch(r);
+      const below = words.length > 0 && matchBelow(r.id);
+      if (!self && !below) return null;
+      const kids = (children.get(r.id) ?? []).length;
+      const open = expanded.has(r.id) || below;
+      return (
+        <Box key={r.id}>
+          <Group
+            gap="xs"
+            pl={depth * 24}
+            py={4}
+            wrap="nowrap"
+            align="flex-start"
+            opacity={r.isActive ? 1 : 0.5}
+            data-testid={`topic-${String(r.name)}`}
           >
-            {r.isActive ? t.deactivate : t.activate}
-          </Button>
-        </Group>
-        {render(r.id, depth + 1)}
-      </Box>
-    ));
+            {kids ? (
+              <ActionIcon
+                size="sm"
+                variant="subtle"
+                color="gray"
+                aria-label={open ? t.tree.collapse : t.tree.expand}
+                onClick={() => toggleExp(r.id)}
+              >
+                {open ? <IconChevronDown size={14} /> : <IconChevronRight size={14} />}
+              </ActionIcon>
+            ) : (
+              <Box w={28} />
+            )}
+            <Group gap="xs" style={{ flex: 1 }}>
+              <Text fw={depth === 0 ? 600 : 400} style={{ cursor: 'pointer' }} onClick={() => setSelected(r)}>
+                {String(r.name)}
+              </Text>
+              {kids > 0 && !open ? (
+                <Text size="xs" c="dimmed">
+                  ({kids})
+                </Text>
+              ) : null}
+              {r.isImportant ? (
+                <Badge color="red" size="xs">
+                  {t.topics.osoboVazhnaya}
+                </Badge>
+              ) : null}
+              {r.defaultResponseDays ? (
+                <Badge variant="outline" size="xs">
+                  {t.topics.srok}
+                  {String(r.defaultResponseDays)}
+                  {t.topics.dn}
+                </Badge>
+              ) : null}
+              {Number(r.fieldCount) > 0 && (
+                <Badge variant="light" size="xs">
+                  {t.topics.poley}
+                  {String(r.fieldCount)}
+                </Badge>
+              )}
+              {Number(r.level) < 3 && r.isActive ? (
+                <ActionIcon
+                  size="sm"
+                  variant="light"
+                  title={t.topics.dobavitPodtemu}
+                  onClick={() => {
+                    setEditing({ parentId: r.id });
+                    setExpanded(new Set([...expanded, r.id]));
+                  }}
+                >
+                  +
+                </ActionIcon>
+              ) : null}
+              <Button size="compact-xs" variant="subtle" onClick={() => setEditing({ row: r })}>
+                {t.edit}
+              </Button>
+              <Button
+                size="compact-xs"
+                variant="subtle"
+                color={r.isActive ? 'red' : 'green'}
+                onClick={() => toggle.mutate(r)}
+              >
+                {r.isActive ? t.deactivate : t.activate}
+              </Button>
+            </Group>
+          </Group>
+          {open && render(r.id, depth + 1, all || (words.length > 0 && selfMatch(r)))}
+        </Box>
+      );
+    });
 
   return (
     <>
       <Group justify="space-between" mb="md">
         <Title order={3}>{t.nav.topics}</Title>
         <Group>
+          <TextInput
+            placeholder={t.tree.search}
+            leftSection={<IconSearch size={14} />}
+            value={q}
+            onChange={(e) => setQ(e.currentTarget.value)}
+            data-testid="topics-search"
+          />
           <Switch
             label={t.showInactive}
             checked={showInactive}

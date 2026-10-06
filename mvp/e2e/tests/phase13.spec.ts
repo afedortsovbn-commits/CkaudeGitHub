@@ -92,9 +92,7 @@ test.describe.serial('Ф13: отзывы с карт (Rocket Data) и синхр
     await expect(op.getByTestId('review-station')).toContainText('АЗС №1, Предприятие «Север»');
     await expect(op.getByTestId('review-link')).toHaveAttribute('href', /yandex/);
     await expect(op.getByTestId('messages')).toContainText(text);
-    await expect(op.getByRole('textbox', { name: 'Предприятие', exact: true })).toHaveValue(
-      'Предприятие «Север»',
-    );
+    await expect(op.getByTestId('org')).toContainText('Предприятие «Север»');
 
     // Ответ на отзыв уходит в сервис ответов Rocket Data: статус доставки и ответ в моке.
     const answer = `Спасибо за отзыв, ${author}! Разобрались с сотрудником.`;

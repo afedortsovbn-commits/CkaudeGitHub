@@ -1,5 +1,5 @@
 import { createHmac } from 'node:crypto';
-import { expect, type Page } from '@playwright/test';
+import { expect, type Locator, type Page } from '@playwright/test';
 
 export const ADMIN = {
   email: process.env.E2E_ADMIN_EMAIL ?? 'admin@cc.local',
@@ -31,6 +31,22 @@ export async function nav(page: Page, name: string) {
       .catch(() => undefined);
   }
   await link.click();
+}
+
+/**
+ * Выбор в двухуровневом справочнике (TreePicker: темы/подтемы, предприятия/подразделения): открыть поле,
+ * найти по словам (раскрывает найденное), выбрать строку.
+ */
+export async function tree(
+  page: Page,
+  testId: string,
+  search: string,
+  option: string,
+  scope: Locator = page.locator('body'),
+) {
+  await scope.getByTestId(testId).click();
+  await page.getByTestId(`${testId}-search`).fill(search);
+  await page.getByRole('option', { name: option, exact: true }).first().click();
 }
 
 /** Выбор значения в Select/MultiSelect Mantine по подписи поля. */

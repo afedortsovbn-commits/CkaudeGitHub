@@ -1,5 +1,5 @@
 import { type Browser, type BrowserContext, expect, type Page, test } from '@playwright/test';
-import { DEMO_PASSWORD, login, nav } from './helpers';
+import { DEMO_PASSWORD, login, nav, tree } from './helpers';
 import { readMailbox } from './mail';
 
 const stamp = Date.now().toString().slice(-6);
@@ -94,8 +94,7 @@ test.describe.serial('Ф8: вторая линия', () => {
     await op.getByTestId('escalate').click();
 
     const form = op.getByTestId('escalate-form');
-    await select(op, 'esc-enterprise', 'Предприятие «Север»', form);
-    await select(op, 'esc-department', 'Отдел по работе с клиентами', form);
+    await tree(op, 'esc-org', 'Север клиент', 'Отдел по работе с клиентами', form);
     // Подстановка по матрице: ответственный и куратор, срок темы (10 дней).
     await expect(form.getByTestId('esc-responsible').locator('..')).toContainText('Васильев Андрей');
     await expect(form.getByTestId('esc-curators').locator('..')).toContainText('Козлов Дмитрий');
@@ -149,7 +148,7 @@ test.describe.serial('Ф8: вторая линия', () => {
     // Переадресация другому ответственному сменой подразделения (комментарий обязателен).
     await r3.getByTestId('ticket-redirect').click();
     const rf = r3.getByTestId('redirect-form');
-    await select(r3, 'redirect-department', 'Служба эксплуатации АЗС', rf);
+    await tree(r3, 'redirect-org', 'Север эксплуатации', 'Служба эксплуатации АЗС', rf);
     await rf.getByTestId('redirect-responsible').click();
     await r3.getByRole('option', { name: 'Васильев Андрей (ответственный)' }).click();
     await r3.keyboard.press('Escape');

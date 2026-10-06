@@ -32,6 +32,7 @@ import { api, authBlobUrl, errorText, get, post, upload } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { type Row, options, useAction, useList } from '../lib/data';
 import { t } from '../lib/i18n';
+import { OrgPicker, TopicPicker } from '../components/DictPickers';
 
 // ---------------------------------------------------------------- общее
 
@@ -173,8 +174,6 @@ function Files({ value, onChange }: { value: Uploaded[]; onChange(v: Uploaded[])
 
 /** Форма «Передать на 2-ю линию» (M-TKT-01): предприятие и подразделение, ответственные и срок с подстановкой. */
 export function EscalateModal({ conv, opened, onClose }: { conv: Row; opened: boolean; onClose(): void }) {
-  const enterprises = useList('/dict/enterprises');
-  const topics = useList('/topics');
   const people = useList('/tickets/assignable');
   const [enterpriseId, setEnterpriseId] = useState<string | null>(null);
   const [departmentId, setDepartmentId] = useState<string | null>(null);
@@ -190,12 +189,6 @@ export function EscalateModal({ conv, opened, onClose }: { conv: Row; opened: bo
     setTopicId((conv.topicId as string) ?? null);
     setSummary('');
   }, [opened, conv.id, conv.enterpriseId, conv.departmentId, conv.topicId]);
-  const eds = useList(
-    enterpriseId
-      ? `/enterprise-departments?enterpriseId=${enterpriseId}`
-      : '/enterprise-departments?enterpriseId=none',
-    !!enterpriseId,
-  );
   const ready = !!enterpriseId && !!departmentId && !!topicId;
   const defaults = useQuery({
     queryKey: ['/tickets/defaults', enterpriseId, departmentId, topicId],
@@ -232,45 +225,22 @@ export function EscalateModal({ conv, opened, onClose }: { conv: Row; opened: bo
     t.tickets.obrashcheniePeredanoNa2,
     onClose,
   );
-  const topicOptions = (topics.data ?? []).map((topic) => ({
-    value: topic.id,
-    label: `${'— '.repeat(Number(topic.level) - 1)}${String(topic.name)}`,
-  }));
   const peopleOptions = (people.data ?? []).map((p) => ({ value: p.id, label: String(p.fullName) }));
   return (
     <Modal opened={opened} onClose={onClose} title={t.tickets.peredatNa2Yu} size="lg">
       <Stack gap="xs" data-testid="escalate-form">
-        <Group grow>
-          <Select
-            label={t.tickets.predpriyatie}
-            data={options(enterprises.data)}
-            value={enterpriseId}
-            onChange={(v) => {
-              setEnterpriseId(v);
-              setDepartmentId(null);
-            }}
-            data-testid="esc-enterprise"
-          />
-          <Select
-            label={t.tickets.podrazdelenie}
-            data={(eds.data ?? []).map((e) => ({
-              value: String(e.departmentId),
-              label: String(e.departmentName),
-            }))}
-            value={departmentId}
-            onChange={setDepartmentId}
-            disabled={!enterpriseId}
-            data-testid="esc-department"
-          />
-        </Group>
-        <Select
-          label={t.tickets.tema}
-          data={topicOptions}
-          value={topicId}
-          onChange={setTopicId}
-          searchable
-          data-testid="esc-topic"
+        <OrgPicker
+          size="sm"
+          enterpriseId={enterpriseId}
+          departmentId={departmentId}
+          onChange={(e, d) => {
+            setEnterpriseId(e);
+            setDepartmentId(d);
+          }}
+          requireDepartment
+          testId="esc-org"
         />
+        <TopicPicker size="sm" value={topicId} onChange={setTopicId} testId="esc-topic" />
         <Textarea
           label={t.tickets.sutObrashcheniyaDlyaOtvetstvennykh}
           description={t.tickets.otvetstvennyeVidyatEtuSut}
@@ -1035,8 +1005,6 @@ function ApproveDialog({
 }
 
 function RedirectDialog({ t: tk, opened, onClose }: { t: Row; opened: boolean; onClose(): void }) {
-  const enterprises = useList('/dict/enterprises');
-  const topics = useList('/topics');
   const people = useList('/tickets/assignable');
   const [enterpriseId, setEnterpriseId] = useState<string | null>(null);
   const [departmentId, setDepartmentId] = useState<string | null>(null);
@@ -1051,12 +1019,6 @@ function RedirectDialog({ t: tk, opened, onClose }: { t: Row; opened: boolean; o
     setResponsible([]);
     setComment('');
   }, [opened, tk.enterpriseId, tk.departmentId, tk.topicId]);
-  const eds = useList(
-    enterpriseId
-      ? `/enterprise-departments?enterpriseId=${enterpriseId}`
-      : '/enterprise-departments?enterpriseId=none',
-    !!enterpriseId,
-  );
   const dims: Record<string, string> = {};
   if (enterpriseId && enterpriseId !== tk.enterpriseId) dims.enterpriseId = enterpriseId;
   if (departmentId && departmentId !== tk.departmentId) dims.departmentId = departmentId;
@@ -1079,37 +1041,18 @@ function RedirectDialog({ t: tk, opened, onClose }: { t: Row; opened: boolean; o
         <Text size="xs" c="dimmed">
           {t.tickets.smenaTemyPodrazdeleniyaIli}
         </Text>
-        <Group grow>
-          <Select
-            label={t.tickets.predpriyatie}
-            data={options(enterprises.data)}
-            value={enterpriseId}
-            onChange={(v) => {
-              setEnterpriseId(v);
-              setDepartmentId(null);
-            }}
-          />
-          <Select
-            label={t.tickets.podrazdelenie}
-            data={(eds.data ?? []).map((e) => ({
-              value: String(e.departmentId),
-              label: String(e.departmentName),
-            }))}
-            value={departmentId}
-            onChange={setDepartmentId}
-            data-testid="redirect-department"
-          />
-        </Group>
-        <Select
-          label={t.tickets.tema}
-          data={(topics.data ?? []).map((x) => ({
-            value: x.id,
-            label: `${'— '.repeat(Number(x.level) - 1)}${String(x.name)}`,
-          }))}
-          value={topicId}
-          onChange={setTopicId}
-          searchable
+        <OrgPicker
+          size="sm"
+          enterpriseId={enterpriseId}
+          departmentId={departmentId}
+          onChange={(e, d) => {
+            setEnterpriseId(e);
+            setDepartmentId(d);
+          }}
+          requireDepartment
+          testId="redirect-org"
         />
+        <TopicPicker size="sm" value={topicId} onChange={setTopicId} testId="redirect-topic" />
         <MultiSelect
           label={t.tickets.otvetstvennyyVruchnuyu}
           description={

@@ -1,5 +1,6 @@
-import { Badge, Button, Group, Switch, Table, TextInput, Title } from '@mantine/core';
-import { type ReactNode, useMemo, useState } from 'react';
+import { ActionIcon, Badge, Button, Group, Switch, Table, TextInput, Title } from '@mantine/core';
+import { IconChevronDown, IconChevronRight } from '@tabler/icons-react';
+import { Fragment, type ReactNode, useMemo, useState } from 'react';
 import { patch, post } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { type Row, useAction, useList } from '../lib/data';
@@ -28,6 +29,8 @@ interface Props {
   hideTitle?: boolean;
   /** Начальные значения формы новой записи. */
   createDefaults?: Record<string, unknown>;
+  /** Второй уровень: строку можно развернуть стрелкой (например, подразделения предприятия). */
+  expand?(row: Row): ReactNode;
 }
 
 /** Право на изменение справочника по виду (как writePerm в api, org/dictionaries.ts). */
@@ -57,7 +60,15 @@ export function DictPage({
   fromForm,
   hideTitle,
   createDefaults,
+  expand,
 }: Props) {
+  const [opened, setOpened] = useState<Set<string>>(new Set());
+  const toggleRow = (id: string) => {
+    const next = new Set(opened);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    setOpened(next);
+  };
   const { can } = useAuth();
   const [showInactive, setShowInactive] = useState(false);
   const [q, setQ] = useState('');
@@ -98,6 +109,7 @@ export function DictPage({
       <Table striped highlightOnHover data-testid={`dict-${kind}`}>
         <Table.Thead>
           <Table.Tr>
+            {expand && <Table.Th w={36} />}
             {columns.map((c) => (
               <Table.Th key={c.key}>{c.label}</Table.Th>
             ))}
@@ -107,38 +119,59 @@ export function DictPage({
         </Table.Thead>
         <Table.Tbody>
           {(list.data ?? []).map((r) => (
-            <Table.Tr key={r.id}>
-              {columns.map((c) => (
-                <Table.Td key={c.key}>{c.render ? c.render(r) : String(r[c.key] ?? '')}</Table.Td>
-              ))}
-              <Table.Td>
-                {r.isActive ? (
-                  <Badge color="green">{t.active}</Badge>
-                ) : (
-                  <Badge color="gray">{t.inactive}</Badge>
+            <Fragment key={r.id}>
+              <Table.Tr>
+                {expand && (
+                  <Table.Td>
+                    <ActionIcon
+                      size="sm"
+                      variant="subtle"
+                      color="gray"
+                      aria-label={opened.has(r.id) ? t.tree.collapse : t.tree.expand}
+                      onClick={() => toggleRow(r.id)}
+                    >
+                      {opened.has(r.id) ? <IconChevronDown size={14} /> : <IconChevronRight size={14} />}
+                    </ActionIcon>
+                  </Table.Td>
                 )}
-              </Table.Td>
-              <Table.Td>
-                <Group gap="xs" justify="flex-end">
-                  {rowActions?.(r)}
-                  {writable && (
-                    <>
-                      <Button size="xs" variant="light" onClick={() => setEditing(r)}>
-                        {t.edit}
-                      </Button>
-                      <Button
-                        size="xs"
-                        variant="subtle"
-                        color={r.isActive ? 'red' : 'green'}
-                        onClick={() => toggle.mutate(r)}
-                      >
-                        {r.isActive ? t.deactivate : t.activate}
-                      </Button>
-                    </>
+                {columns.map((c) => (
+                  <Table.Td key={c.key}>{c.render ? c.render(r) : String(r[c.key] ?? '')}</Table.Td>
+                ))}
+                <Table.Td>
+                  {r.isActive ? (
+                    <Badge color="green">{t.active}</Badge>
+                  ) : (
+                    <Badge color="gray">{t.inactive}</Badge>
                   )}
-                </Group>
-              </Table.Td>
-            </Table.Tr>
+                </Table.Td>
+                <Table.Td>
+                  <Group gap="xs" justify="flex-end">
+                    {rowActions?.(r)}
+                    {writable && (
+                      <>
+                        <Button size="xs" variant="light" onClick={() => setEditing(r)}>
+                          {t.edit}
+                        </Button>
+                        <Button
+                          size="xs"
+                          variant="subtle"
+                          color={r.isActive ? 'red' : 'green'}
+                          onClick={() => toggle.mutate(r)}
+                        >
+                          {r.isActive ? t.deactivate : t.activate}
+                        </Button>
+                      </>
+                    )}
+                  </Group>
+                </Table.Td>
+              </Table.Tr>
+              {expand && opened.has(r.id) && (
+                <Table.Tr>
+                  <Table.Td />
+                  <Table.Td colSpan={columns.length + 2}>{expand(r)}</Table.Td>
+                </Table.Tr>
+              )}
+            </Fragment>
           ))}
         </Table.Tbody>
       </Table>
