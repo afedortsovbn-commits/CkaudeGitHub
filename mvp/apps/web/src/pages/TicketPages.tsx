@@ -42,6 +42,7 @@ import {
   IconCircleCheck,
   IconClockPlus,
   IconExternalLink,
+  IconTemplate,
 } from '@tabler/icons-react';
 
 // ---------------------------------------------------------------- общее
@@ -587,6 +588,7 @@ function TicketFacts({ t: tk }: { t: Row }) {
       <Text size="sm" style={{ whiteSpace: 'pre-wrap' }}>
         <b>{t.tickets.sutOtveta2}</b> {String(tk.answerSummary ?? '—')}
       </Text>
+      {tk.answerSummary ? <AnswerToTemplate t={tk} /> : null}
       <Accordion variant="contained" chevronPosition="left" mt={6}>
         <Accordion.Item value="more" data-testid="ticket-more">
           <Accordion.Control py={4} data-testid="ticket-more-toggle">
@@ -617,6 +619,83 @@ function TicketFacts({ t: tk }: { t: Row }) {
         </Accordion.Item>
       </Accordion>
     </Stack>
+  );
+}
+
+/** Готовый ответ ответственного — в шаблоны 2-й линии по теме обращения (для всех предприятий). */
+function AnswerToTemplate({ t: tk }: { t: Row }) {
+  const { can } = useAuth();
+  const [opened, setOpened] = useState(false);
+  const topicShort =
+    String(tk.topicName ?? '')
+      .split(' / ')
+      .pop() ?? '';
+  const [title, setTitle] = useState('');
+  const [body, setBody] = useState('');
+  const req = useRequired();
+  const save = useAction(
+    () => post('/templates', { title, body, topicId: tk.topicId, line: 'second' }),
+    t.tickets.tplSaved,
+  );
+  if (!can('tickets.work', 'templates.manage')) return null;
+  return (
+    <>
+      <Group>
+        <Button
+          size="compact-xs"
+          variant="subtle"
+          leftSection={<IconTemplate size={14} />}
+          onClick={() => {
+            setTitle(`${topicShort}: ${String(tk.answerSummary).slice(0, 60)}`);
+            setBody(String(tk.answerSummary));
+            req.reset();
+            setOpened(true);
+          }}
+          data-testid="answer-to-template"
+        >
+          {t.tickets.tplFromAnswer}
+        </Button>
+      </Group>
+      <Modal opened={opened} onClose={() => setOpened(false)} title={t.tickets.tplFromAnswerTitle}>
+        <Stack gap="xs">
+          <Text size="xs" c="dimmed">
+            {t.tickets.tplFromAnswerHint}
+          </Text>
+          <TextInput
+            label={t.tickets.tplName}
+            withAsterisk
+            error={req.error(!title.trim())}
+            value={title}
+            onChange={(e) => setTitle(e.currentTarget.value)}
+          />
+          <Textarea
+            label={t.tickets.sutOtveta}
+            withAsterisk
+            error={req.error(!body.trim())}
+            value={body}
+            onChange={(e) => setBody(e.currentTarget.value)}
+            autosize
+            minRows={3}
+          />
+          <Group justify="flex-end">
+            <Button variant="default" onClick={() => setOpened(false)}>
+              {t.cancel}
+            </Button>
+            <Button
+              loading={save.isPending}
+              onClick={() =>
+                req.check([
+                  ...(!title.trim() ? [t.tickets.tplName] : []),
+                  ...(!body.trim() ? [t.tickets.sutOtveta] : []),
+                ]) && save.mutate(undefined, { onSuccess: () => setOpened(false) })
+              }
+            >
+              {t.save}
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
+    </>
   );
 }
 
@@ -1036,6 +1115,15 @@ function CloseDialog({ t: tk, opened, onClose }: { t: Row; opened: boolean; onCl
   const [summary, setSummary] = useState('');
   const [files, setFiles] = useState<Att[]>([]);
   const req = useRequired();
+  // Шаблоны и примеры ответов 2-й линии по теме обращения (и темам выше), общие без темы — в конце.
+  const tpls = useList(`/templates?line=second&forTopic=${String(tk.topicId)}`, opened);
+  const [asTpl, setAsTpl] = useState(false);
+  const [tplName, setTplName] = useState('');
+  const topicShort =
+    String(tk.topicName ?? '')
+      .split(' / ')
+      .pop() ?? '';
+  const saveTpl = useAction((b: Record<string, unknown>) => post('/templates', b), t.tickets.tplSaved);
   const close = useTicketAction(
     () =>
       post(`/tickets/${tk.id}/close`, {
@@ -1046,9 +1134,18 @@ function CloseDialog({ t: tk, opened, onClose }: { t: Row; opened: boolean; onCl
       }),
     t.tickets.tiketOtpravlenNaSoglasovanie,
     () => {
+      if (asTpl && summary.trim())
+        saveTpl.mutate({
+          title: tplName.trim() || `${topicShort}: ${summary.trim().slice(0, 60)}`,
+          body: summary.trim(),
+          topicId: tk.topicId,
+          line: 'second',
+        });
       onClose();
       setSummary('');
       setFiles([]);
+      setAsTpl(false);
+      setTplName('');
     },
   );
   return (
@@ -1066,6 +1163,43 @@ function CloseDialog({ t: tk, opened, onClose }: { t: Row; opened: boolean; onCl
           error={req.error(!method)}
           data-testid="answer-method"
         />
+        <Paper withBorder p="xs" data-testid="answer-templates">
+          <Text size="sm" fw={600} mb={4}>
+            {t.tickets.tplTitle}
+          </Text>
+          {(tpls.data ?? []).length === 0 && (
+            <Text size="xs" c="dimmed">
+              {t.tickets.tplNone}
+            </Text>
+          )}
+          <ScrollArea.Autosize mah={180}>
+            <Stack gap={6}>
+              {(tpls.data ?? []).map((tp) => (
+                <Group key={tp.id} justify="space-between" wrap="nowrap" align="flex-start">
+                  <Box style={{ flex: 1 }}>
+                    <Text size="sm" fw={500}>
+                      {String(tp.title)}
+                    </Text>
+                    <Text size="xs" c="dimmed" lineClamp={2}>
+                      {String(tp.body)}
+                    </Text>
+                  </Box>
+                  <Button
+                    size="compact-xs"
+                    variant="light"
+                    onClick={() => {
+                      setSummary(String(tp.body));
+                      void post(`/templates/${tp.id}/used`).catch(() => undefined);
+                    }}
+                    data-testid="answer-template-insert"
+                  >
+                    {t.tickets.tplInsert}
+                  </Button>
+                </Group>
+              ))}
+            </Stack>
+          </ScrollArea.Autosize>
+        </Paper>
         <Textarea
           label={t.tickets.sutOtveta}
           withAsterisk
@@ -1077,6 +1211,22 @@ function CloseDialog({ t: tk, opened, onClose }: { t: Row; opened: boolean; onCl
           data-testid="answer-summary"
         />
         <Files value={files} onChange={setFiles} />
+        <Checkbox
+          label={t.tickets.tplSaveAs(topicShort)}
+          checked={asTpl}
+          onChange={(e) => setAsTpl(e.currentTarget.checked)}
+          data-testid="answer-save-template"
+        />
+        {asTpl && (
+          <TextInput
+            size="xs"
+            label={t.tickets.tplName}
+            placeholder={`${topicShort}: ${summary.trim().slice(0, 60)}`}
+            value={tplName}
+            onChange={(e) => setTplName(e.currentTarget.value)}
+            data-testid="answer-template-name"
+          />
+        )}
         <Group justify="flex-end">
           <Button variant="default" onClick={onClose}>
             {t.cancel}

@@ -19,6 +19,7 @@ import {
 } from '@mantine/core';
 import { useState } from 'react';
 import { DictPage } from '../components/DictPage';
+import { TopicPicker } from '../components/DictPickers';
 import { patch, post } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { options, type Row, useAction, useList } from '../lib/data';
@@ -35,32 +36,51 @@ const TEXT_CHANNELS = [
 
 /** Шаблоны ответов: общие (администратор) и личные (любой оператор). Быстрый вызов — «/код» в поле ответа. */
 export function TemplatesPage() {
-  const { can } = useAuth();
+  const { can, me } = useAuth();
   const admin = can('templates.manage');
+  // Линия: операторам — шаблоны 1-й линии, ответственным — 2-й; администратору — обе.
+  const first = can('conversations.work', 'templates.manage');
+  const second = can('tickets.work', 'templates.manage');
+  const [line, setLine] = useState<'first' | 'second'>(first ? 'first' : 'second');
   const [scope, setScope] = useState('all');
   const [q, setQ] = useState('');
   const [inactive, setInactive] = useState(false);
   const [editing, setEditing] = useState<Row | 'new' | null>(null);
   const list = useList(
-    `/templates?scope=${scope}${inactive ? '&active=all' : ''}${q ? `&q=${encodeURIComponent(q)}` : ''}`,
+    `/templates?line=${line}&scope=${line === 'second' ? 'all' : scope}${inactive ? '&active=all' : ''}${q ? `&q=${encodeURIComponent(q)}` : ''}`,
   );
   const toggle = useAction((r: Row) => post(`/templates/${r.id}/${r.isActive ? 'deactivate' : 'activate'}`));
-  const mayEdit = (r: Row) => (r.shared ? admin : true);
+  const mayEdit = (r: Row) =>
+    r.line === 'second' ? admin || r.createdBy === me?.id : r.shared ? admin : true;
   return (
     <>
       <Group justify="space-between" mb="md">
         <Title order={3}>{t.automation.shablonyOtvetov}</Title>
         <Group>
-          <SegmentedControl
-            size="xs"
-            value={scope}
-            onChange={setScope}
-            data={[
-              { value: 'all', label: t.all },
-              { value: 'shared', label: t.automation.obshchie },
-              { value: 'mine', label: t.automation.moi },
-            ]}
-          />
+          {first && second && (
+            <SegmentedControl
+              size="xs"
+              value={line}
+              onChange={(v) => setLine(v as 'first' | 'second')}
+              data={[
+                { value: 'first', label: t.automation.lineFirst },
+                { value: 'second', label: t.automation.lineSecond },
+              ]}
+              data-testid="template-line"
+            />
+          )}
+          {line === 'first' && (
+            <SegmentedControl
+              size="xs"
+              value={scope}
+              onChange={setScope}
+              data={[
+                { value: 'all', label: t.all },
+                { value: 'shared', label: t.automation.obshchie },
+                { value: 'mine', label: t.automation.moi },
+              ]}
+            />
+          )}
           <TextInput placeholder={t.search} value={q} onChange={(e) => setQ(e.currentTarget.value)} />
           <Switch
             label={t.showInactive}
@@ -72,17 +92,23 @@ export function TemplatesPage() {
           </Button>
         </Group>
       </Group>
-      <Text size="sm" c="dimmed" mb="sm">
-        {t.automation.peremennye}
-        <Code>{'{{client.name}}'}</Code>
-        {t.automation.imyaKlienta}
-        <Code>{'{{operator.name}}'}</Code>
-        {t.automation.operator}
-        <Code>{'{{conversation.topic}}'}</Code>
-        {t.automation.temaVPoleOtveta}
-        <Code>/</Code>
-        {t.automation.iKodShablona}
-      </Text>
+      {line === 'second' ? (
+        <Text size="sm" c="dimmed" mb="sm">
+          {t.automation.lineSecondHint}
+        </Text>
+      ) : (
+        <Text size="sm" c="dimmed" mb="sm">
+          {t.automation.peremennye}
+          <Code>{'{{client.name}}'}</Code>
+          {t.automation.imyaKlienta}
+          <Code>{'{{operator.name}}'}</Code>
+          {t.automation.operator}
+          <Code>{'{{conversation.topic}}'}</Code>
+          {t.automation.temaVPoleOtveta}
+          <Code>/</Code>
+          {t.automation.iKodShablona}
+        </Text>
+      )}
       <Table striped highlightOnHover data-testid="templates">
         <Table.Thead>
           <Table.Tr>
@@ -104,8 +130,12 @@ export function TemplatesPage() {
                   {String(r.body)}
                 </Text>
               </Table.Td>
-              <Table.Td>{String(r.topicName ?? '—')}</Table.Td>
-              <Table.Td>
+              <Table.Td style={{ maxWidth: 260 }}>
+                <Text size="sm" lineClamp={2}>
+                  {String(r.topicPathName ?? r.topicName ?? '—')}
+                </Text>
+              </Table.Td>
+              <Table.Td style={{ whiteSpace: 'nowrap' }}>
                 <Badge variant="light" color={r.shared ? 'blue' : 'grape'}>
                   {r.shared ? t.automation.obshchiy : t.automation.lichnyy}
                 </Badge>
@@ -135,6 +165,7 @@ export function TemplatesPage() {
         <TemplateForm
           row={editing === 'new' ? null : editing}
           admin={admin}
+          line={line}
           onClose={() => setEditing(null)}
         />
       )}
@@ -142,8 +173,18 @@ export function TemplatesPage() {
   );
 }
 
-function TemplateForm({ row, admin, onClose }: { row: Row | null; admin: boolean; onClose(): void }) {
-  const topics = useList('/topics');
+function TemplateForm({
+  row,
+  admin,
+  line,
+  onClose,
+}: {
+  row: Row | null;
+  admin: boolean;
+  line: 'first' | 'second';
+  onClose(): void;
+}) {
+  const second = (row?.line ?? line) === 'second';
   const [v, setV] = useState({
     title: String(row?.title ?? ''),
     shortcut: String(row?.shortcut ?? ''),
@@ -160,6 +201,10 @@ function TemplateForm({ row, admin, onClose }: { row: Row | null; admin: boolean
       topicId: v.topicId,
       channelKinds: v.channelKinds,
     };
+    if (second) {
+      const d = { title: v.title, body: v.body, topicId: v.topicId };
+      return row ? patch(`/templates/${row.id}`, d) : post('/templates', { ...d, line: 'second' });
+    }
     return row ? patch(`/templates/${row.id}`, data) : post('/templates', { ...data, shared: v.shared });
   });
   return (
@@ -177,12 +222,14 @@ function TemplateForm({ row, admin, onClose }: { row: Row | null; admin: boolean
           onChange={(e) => setV({ ...v, title: e.currentTarget.value })}
           data-testid="template-title"
         />
-        <TextInput
-          label={t.automation.kodBystrogoVyzovaBez}
-          value={v.shortcut}
-          onChange={(e) => setV({ ...v, shortcut: e.currentTarget.value })}
-          data-testid="template-shortcut"
-        />
+        {!second && (
+          <TextInput
+            label={t.automation.kodBystrogoVyzovaBez}
+            value={v.shortcut}
+            onChange={(e) => setV({ ...v, shortcut: e.currentTarget.value })}
+            data-testid="template-shortcut"
+          />
+        )}
         <Textarea
           label={t.automation.tekst}
           required
@@ -192,23 +239,25 @@ function TemplateForm({ row, admin, onClose }: { row: Row | null; admin: boolean
           onChange={(e) => setV({ ...v, body: e.currentTarget.value })}
           data-testid="template-body"
         />
-        <Select
+        <TopicPicker
+          size="sm"
           label={t.automation.tema}
-          description={t.automation.podskazkaPodnimaetShablonVyshe}
-          data={topics.data?.map((x) => ({ value: x.id, label: String(x.pathName ?? x.name) })) ?? []}
+          description={second ? undefined : t.automation.podskazkaPodnimaetShablonVyshe}
           value={v.topicId}
           onChange={(x) => setV({ ...v, topicId: x })}
           clearable
-          searchable
+          testId="template-topic"
         />
-        <MultiSelect
-          label={t.automation.kanaly}
-          description={t.automation.pustoVoVsekhTekstovykh}
-          data={TEXT_CHANNELS}
-          value={v.channelKinds}
-          onChange={(x) => setV({ ...v, channelKinds: x })}
-        />
-        {!row && admin && (
+        {!second && (
+          <MultiSelect
+            label={t.automation.kanaly}
+            description={t.automation.pustoVoVsekhTekstovykh}
+            data={TEXT_CHANNELS}
+            value={v.channelKinds}
+            onChange={(x) => setV({ ...v, channelKinds: x })}
+          />
+        )}
+        {!row && admin && !second && (
           <Switch
             label={t.automation.obshchiyShablonVidenVsem}
             checked={v.shared}

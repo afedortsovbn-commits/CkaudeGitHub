@@ -27,9 +27,11 @@ const TemplateBody = z
     channelKinds: z.array(z.enum(TEXT_KINDS)).max(10).default([]),
     /** Общий шаблон (для всех операторов) — только администратор; иначе личный. */
     shared: z.boolean().default(false),
+    /** `second` — шаблон/пример ответа 2-й линии: всегда общий, создаёт и сотрудник 2-й линии. */
+    line: z.enum(['first', 'second']).default('first'),
   })
   .strict();
-const TemplatePatch = TemplateBody.omit({ shared: true }).partial().strict();
+const TemplatePatch = TemplateBody.omit({ shared: true, line: true }).partial().strict();
 
 const ArticleBody = z
   .object({
@@ -43,7 +45,11 @@ const ArticleBody = z
 const ArticlePatch = ArticleBody.partial().strict();
 
 const TEMPLATE_COLS = `t.id, t.title, t.body, t.shortcut, t.owner_user_id, t.topic_id, t.channel_kinds, t.usage_count,
-  t.is_active, t.created_at, t.updated_at, (t.owner_user_id IS NULL) AS shared, tp.name AS topic_name`;
+  t.is_active, t.created_at, t.updated_at, (t.owner_user_id IS NULL) AS shared, tp.name AS topic_name, t.line,
+  t.created_by,
+  (SELECT string_agg(x.name, ' / ' ORDER BY array_position(tp.path, x.id)) FROM topic x WHERE x.id = ANY(tp.path)) AS topic_path_name`;
+/** Права на шаблоны: операторы и администратор — 1-я линия; сотрудники 2-й линии — шаблоны 2-й линии. */
+const TEMPLATE_PERMS = ['conversations.work', 'templates.manage', 'tickets.work'] as const;
 const ARTICLE_COLS = `a.id, a.title, a.body, a.category_id, a.topic_ids, a.keywords, a.is_active, a.created_at,
   a.updated_at, c.name AS category_name`;
 const SCOPE_COLS = {
@@ -65,10 +71,24 @@ export class AutomationController {
 
   /** Общие шаблоны и личные шаблоны сотрудника; q — поиск (по коду, названию, тексту), для «/» и панели. */
   @Get('templates')
-  @RequirePerm('conversations.work', 'templates.manage')
+  @RequirePerm(...TEMPLATE_PERMS)
   async templates(@CurrentUser() p: Principal, @Query() q: Record<string, string | undefined>) {
     const params: unknown[] = [p.id];
     const where = ['(t.owner_user_id IS NULL OR t.owner_user_id = $1)'];
+    // Линия: по умолчанию 1-я (подсказки и «/» оператора шаблонов 2-й линии не видят).
+    const line = q.line === 'second' ? 'second' : 'first';
+    where.push(`t.line = '${line}'`);
+    if (line === 'first' && !hasPerm(p, 'conversations.work', 'templates.manage')) throw forbidden();
+    // Для обращения: шаблоны его темы и тем выше (тема ← подтема) и общие без темы; сначала — точнее по теме.
+    let byTopic = '';
+    if (q.forTopic && uuid.safeParse(q.forTopic).success) {
+      params.push(q.forTopic);
+      const n = `$${params.length}`;
+      where.push(
+        `(t.topic_id IS NULL OR t.topic_id = ANY ((SELECT path FROM topic WHERE id = ${n})::uuid[]))`,
+      );
+      byTopic = `(t.topic_id = ${n}) DESC, (t.topic_id IS NULL), t.usage_count DESC, `;
+    }
     if (q.active !== 'all') where.push('t.is_active');
     if (q.scope === 'shared') where.push('t.owner_user_id IS NULL');
     if (q.scope === 'mine') where.push('t.owner_user_id = $1');
@@ -80,7 +100,7 @@ export class AutomationController {
       params.push(q.topicId);
       where.push(`t.topic_id = $${params.length}`);
     }
-    let order = 't.owner_user_id NULLS FIRST, t.title';
+    let order = `${byTopic}t.owner_user_id NULLS FIRST, t.title`;
     if (q.q?.trim()) {
       params.push(`%${q.q.trim()}%`, tsQueryOf(q.q));
       const like = `$${params.length - 1}`;
@@ -100,25 +120,32 @@ export class AutomationController {
   }
 
   @Post('templates')
-  @RequirePerm('conversations.work', 'templates.manage')
+  @RequirePerm(...TEMPLATE_PERMS)
   async createTemplate(@CurrentUser() p: Principal, @Body() body: unknown) {
     const b = parse(TemplateBody, body);
-    if (b.shared && !hasPerm(p, 'templates.manage')) throw forbidden();
-    if (!b.shared && !hasPerm(p, 'conversations.work')) throw forbidden();
+    const second = b.line === 'second';
+    if (second) {
+      // Шаблон 2-й линии — общий для всех предприятий и подразделений, привязка — тема/подтема.
+      if (!hasPerm(p, 'tickets.work', 'templates.manage')) throw forbidden();
+    } else {
+      if (b.shared && !hasPerm(p, 'templates.manage')) throw forbidden();
+      if (!b.shared && !hasPerm(p, 'conversations.work')) throw forbidden();
+    }
     const id = newId();
     return withTx(this.ctx.pool, async (tx) => {
       await tx.query(
-        `INSERT INTO reply_template (id, title, body, shortcut, owner_user_id, topic_id, channel_kinds, created_by)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        `INSERT INTO reply_template (id, title, body, shortcut, owner_user_id, topic_id, channel_kinds, created_by, line)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
         [
           id,
           b.title,
           b.body,
-          b.shortcut || null,
-          b.shared ? null : p.id,
+          second ? null : b.shortcut || null,
+          b.shared || second ? null : p.id,
           b.topicId ?? null,
-          b.channelKinds,
+          second ? [] : b.channelKinds,
           p.id,
+          b.line,
         ],
       );
       const row = await this.template(tx, id);
@@ -137,19 +164,23 @@ export class AutomationController {
     return toApi(r);
   }
 
-  /** Личный шаблон меняет только владелец; общий — администратор. Чужой личный — как несуществующий. */
+  /**
+   * Личный шаблон меняет только владелец; общий — администратор; шаблон 2-й линии — ещё и его автор.
+   * Чужой личный — как несуществующий.
+   */
   private async editable(p: Principal, db: Db, id: string) {
-    const t = await one<{ owner_user_id: string | null }>(
+    const t = await one<{ owner_user_id: string | null; line: string; created_by: string | null }>(
       db,
-      `SELECT owner_user_id FROM reply_template WHERE id = $1 FOR UPDATE`,
+      `SELECT owner_user_id, line, created_by FROM reply_template WHERE id = $1 FOR UPDATE`,
       [id],
     );
     if (!t || (t.owner_user_id && t.owner_user_id !== p.id)) throw notFound('Шаблон');
-    if (!t.owner_user_id && !hasPerm(p, 'templates.manage')) throw forbidden();
+    const author = t.line === 'second' && t.created_by === p.id && hasPerm(p, 'tickets.work');
+    if (!t.owner_user_id && !hasPerm(p, 'templates.manage') && !author) throw forbidden();
   }
 
   @Patch('templates/:id')
-  @RequirePerm('conversations.work', 'templates.manage')
+  @RequirePerm(...TEMPLATE_PERMS)
   async patchTemplate(@CurrentUser() p: Principal, @Param('id') id: string, @Body() body: unknown) {
     const b = parse(TemplatePatch, body);
     return withTx(this.ctx.pool, async (tx) => {
@@ -180,7 +211,7 @@ export class AutomationController {
 
   @Post('templates/:id/:op')
   @HttpCode(200)
-  @RequirePerm('conversations.work', 'templates.manage')
+  @RequirePerm(...TEMPLATE_PERMS)
   async templateOp(@CurrentUser() p: Principal, @Param('id') id: string, @Param('op') op: string) {
     if (op === 'used') {
       // Счётчик использования — для порядка подсказок; без аудита.

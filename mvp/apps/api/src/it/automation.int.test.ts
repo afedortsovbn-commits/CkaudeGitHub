@@ -123,6 +123,40 @@ describe.skipIf(!ADMIN_URL)('Автоматизация Ф7 (интеграци�
     expect(ev.rows[0].n).toBeGreaterThanOrEqual(2);
   });
 
+  it('шаблоны 2-й линии: создаёт ответственный (всегда общие), по теме с подтемами; операторам не видны', async () => {
+    const resp = await t.login('resp1@demo.local');
+    const fuel = await topicId('Топливо');
+    const quality = await topicId('Качество топлива');
+    const tpl = await t.call('POST', '/api/v1/templates', resp, {
+      title: 'Ответ по топливу',
+      body: 'Провели проверку качества топлива на АЗС',
+      topicId: fuel,
+      line: 'second',
+    });
+    expect(tpl.status, JSON.stringify(tpl.body)).toBe(201);
+    expect(tpl.body).toMatchObject({ shared: true, line: 'second' });
+    // ответственный не создаёт и не видит шаблоны 1-й линии; оператор не создаёт шаблоны 2-й
+    expect((await t.call('POST', '/api/v1/templates', resp, { title: 'x', body: 'y' })).status).toBe(403);
+    expect((await t.call('GET', '/api/v1/templates', resp)).status).toBe(403);
+    expect(
+      (await t.call('POST', '/api/v1/templates', op, { title: 'x', body: 'y', line: 'second' })).status,
+    ).toBe(403);
+    const ids = (r: { body: { id: string }[] }) => r.body.map((x) => x.id);
+    // подтема видит шаблон темы; оператор (1-я линия, подсказки) — нет
+    expect(ids(await t.call('GET', `/api/v1/templates?line=second&forTopic=${quality}`, resp))).toContain(
+      tpl.body.id,
+    );
+    expect(ids(await t.call('GET', '/api/v1/templates', op))).not.toContain(tpl.body.id);
+    // автор правит свой шаблон; другой ответственный — нет
+    expect(
+      (await t.call('PATCH', `/api/v1/templates/${tpl.body.id}`, resp, { title: 'Топливо' })).status,
+    ).toBe(200);
+    const resp2 = await t.login('resp2@demo.local');
+    expect(
+      (await t.call('PATCH', `/api/v1/templates/${tpl.body.id}`, resp2, { title: 'нельзя' })).status,
+    ).toBe(403);
+  });
+
   it('подсказки: шаблон и статья БЗ по тексту и теме; LLM — черновик; упавший или медленный провайдер не мешает', async () => {
     const cat = await t.call('POST', '/api/v1/dict/kb-categories', admin, { name: 'Бонусы' });
     const art = await t.call('POST', '/api/v1/kb/articles', admin, {

@@ -182,7 +182,7 @@ export async function builtinSuggest(
                 LEAST(1, CASE WHEN $1 = '' THEN 0 ELSE ts_rank(t.search, to_tsquery('russian', $1), 32) * 4 END
                   + CASE WHEN t.topic_id = ANY ($2::uuid[]) THEN 0.5 ELSE 0 END) AS score
            FROM reply_template t
-          WHERE t.is_active AND (t.owner_user_id IS NULL OR t.owner_user_id = $3)
+          WHERE t.is_active AND t.line = 'first' AND (t.owner_user_id IS NULL OR t.owner_user_id = $3)
             AND (cardinality(t.channel_kinds) = 0 OR $4 = ANY (t.channel_kinds))
             AND (($1 <> '' AND t.search @@ to_tsquery('russian', $1)) OR t.topic_id = ANY ($2::uuid[]))
           ORDER BY (CASE WHEN $1 = '' THEN 0 ELSE ts_rank(t.search, to_tsquery('russian', $1), 32) END

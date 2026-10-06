@@ -82,7 +82,7 @@ export const MENU: MenuItem[] = [
   {
     to: '/templates',
     label: t.layout.shablonyOtvetov,
-    perms: ['conversations.work', 'templates.manage'],
+    perms: ['conversations.work', 'templates.manage', 'tickets.work'],
     group: 'work',
     icon: IconTemplate,
   },
