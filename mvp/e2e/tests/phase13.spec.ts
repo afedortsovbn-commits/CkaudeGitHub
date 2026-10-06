@@ -112,7 +112,7 @@ test.describe.serial('Ф13: отзывы с карт (Rocket Data) и синхр
     // Дальше — как обычное обращение: тема, результат, закрытие.
     await choose(op, 'topic', 'Жалобы на персонал АЗС ❗');
     // Тема требует номер АЗС при закрытии (поле появляется после выбора темы).
-    const station = op.getByRole('textbox', { name: 'Номер АЗС *' });
+    const station = op.getByRole('textbox', { name: 'Номер АЗС' });
     await station.fill('1');
     await station.blur();
     await choose(op, 'disposition', 'Решено на 1-й линии');

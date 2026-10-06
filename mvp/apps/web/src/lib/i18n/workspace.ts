@@ -191,4 +191,7 @@ export const workspace = {
   stepTransfer: 'Передать коллеге или в другую очередь',
   filterImportant: 'Особо важные',
   filterCallback: 'Перезвонить',
+  prefilled: 'Подставлено из данных клиента (звонок, чат) — проверьте',
+  topicField: 'Тема обращения',
+  callbackField: 'Дата и время перезвона',
 };

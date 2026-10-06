@@ -27,7 +27,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { errorText, get, openAttachment, patch, post, recordingUrl, upload } from '../lib/api';
 import { useAuth } from '../lib/auth';
-import { type Row, options, useAction, useList } from '../lib/data';
+import { type Row, options, useAction, useList, useRequired } from '../lib/data';
 import { notify, onRealtime, useRealtime } from '../lib/realtime';
 import { ExternalDataPanel } from './IvrAdminPages';
 import { renderTemplate, SlashList, useSlashTemplates } from '../components/AssistPanel';
@@ -862,9 +862,65 @@ function ConversationCard({ conv }: { conv: Row }) {
   const [to, setTo] = useState<string | null>(null);
   useEffect(() => setVals((conv.fields as Record<string, unknown>) ?? {}), [conv.id, conv.fields]);
   const upd = useAction((b: Record<string, unknown>) => patch(`/conversations/${conv.id}`, b));
-  const isPostponed = dispositions.data?.find((d) => d.id === disp)?.behavior === 'postponed';
-  const isEscalate = dispositions.data?.find((d) => d.id === disp)?.behavior === 'escalate';
+  const behavior = dispositions.data?.find((d) => d.id === disp)?.behavior;
+  const isPostponed = behavior === 'postponed';
+  const isEscalate = behavior === 'escalate';
   const [escalating, setEscalating] = useState(false);
+  const req = useRequired();
+  useEffect(() => req.reset(), [conv.id]);
+  const empty = (k: string) => vals[k] === undefined || vals[k] === null || String(vals[k]).trim() === '';
+  const requiredNow = (f: Row) => !!f.requiredOnClose || (isEscalate && !!f.requiredOnEscalate);
+  // Что клиент сообщил сам (номер звонка, имя из чата) — подставляется в поля темы, оператор может изменить.
+  const contact = useQuery({
+    queryKey: [`/contacts/${String(conv.contactId)}`],
+    queryFn: () => get<Row>(`/contacts/${String(conv.contactId)}`),
+    enabled: !!conv.contactId,
+  });
+  const [prefilled, setPrefilled] = useState<string[]>([]);
+  const prefillFor = useRef('');
+  useEffect(() => {
+    const defs = fields.data;
+    const c = contact.data;
+    if (!defs || !c || conv.status === 'closed') return;
+    const key = `${String(conv.id)}:${String(conv.topicId)}`;
+    if (prefillFor.current === key) return;
+    prefillFor.current = key;
+    const phone = String(c.phone ?? '');
+    const email = String(c.email ?? '');
+    const name = String(c.displayName ?? '');
+    const known = (f: Row): string => {
+      const k = String(f.key);
+      if (k === 'client_phone' || f.type === 'phone') return phone;
+      if (k === 'client_email' || f.type === 'email') return email;
+      if (k === 'client_name' || k === 'fio') return name && name !== phone ? name : '';
+      return '';
+    };
+    const cur = (conv.fields as Record<string, unknown>) ?? {};
+    const next = { ...cur };
+    const filled: string[] = [];
+    for (const f of defs) {
+      const k = String(f.key);
+      const v = known(f);
+      if (v && (cur[k] === undefined || cur[k] === null || cur[k] === '')) {
+        next[k] = v;
+        filled.push(k);
+      }
+    }
+    setPrefilled(filled);
+    if (!filled.length) return;
+    setVals(next);
+    patch(`/conversations/${String(conv.id)}`, { fields: next }).catch((e: unknown) =>
+      notifications.show({ color: 'red', title: t.error, message: errorText(e) }),
+    );
+  }, [fields.data, contact.data, conv.id, conv.topicId, conv.fields, conv.status]);
+  /** Что не заполнено для передачи на 2-ю линию или для закрытия — подписи полей. */
+  const missingFor = (escalate: boolean): string[] => [
+    ...(!conv.topicId && (escalate || behavior !== 'no_reply_needed') ? [t.workspace.topicField] : []),
+    ...(fields.data ?? [])
+      .filter((f) => (escalate ? f.requiredOnEscalate : f.requiredOnClose) && empty(String(f.key)))
+      .map((f) => String(f.label)),
+    ...(!escalate && isPostponed && !callbackAt ? [t.workspace.callbackField] : []),
+  ];
   const close = useAction(
     () =>
       post(`/conversations/${conv.id}/close`, {
@@ -952,6 +1008,8 @@ function ConversationCard({ conv }: { conv: Row }) {
           onChange={(v) => upd.mutate({ topicId: v })}
           clearable
           disabled={closed}
+          withAsterisk
+          error={req.error(!conv.topicId)}
           testId="topic"
         />
         {conv.topicId ? (
@@ -971,8 +1029,10 @@ function ConversationCard({ conv }: { conv: Row }) {
           <Stack gap={6}>
             {(fields.data ?? []).map((f) => {
               const k = String(f.key);
-              const label = `${String(f.label)}${f.requiredOnClose ? ' *' : f.requiredOnEscalate ? ' ★' : ''}`;
-              const description = undefined;
+              const label = String(f.label);
+              const description = prefilled.includes(k) ? t.workspace.prefilled : undefined;
+              const must = requiredNow(f);
+              const error = req.error(must && empty(k));
               return f.type === 'select' && Array.isArray(f.options) ? (
                 <Select
                   key={String(f.id)}
@@ -984,6 +1044,8 @@ function ConversationCard({ conv }: { conv: Row }) {
                   onChange={(v) => saveField(k, v)}
                   clearable
                   disabled={closed}
+                  withAsterisk={must}
+                  error={error}
                 />
               ) : (
                 <TextInput
@@ -997,6 +1059,8 @@ function ConversationCard({ conv }: { conv: Row }) {
                   onChange={(e) => setVals({ ...vals, [k]: e.currentTarget.value })}
                   onBlur={() => upd.mutate({ fields: vals })}
                   disabled={closed}
+                  withAsterisk={must}
+                  error={error}
                 />
               );
             })}
@@ -1048,7 +1112,8 @@ function ConversationCard({ conv }: { conv: Row }) {
             <Stack gap={6}>
               <MultiSelect
                 size="xs"
-                label={conv.queueRequireTag ? t.workspace.tegi : t.workspace.tegi2}
+                label={t.workspace.tegi2}
+                withAsterisk={!!conv.queueRequireTag}
                 description={conv.queueRequireTag ? t.workspace.vEtoyOcherediTeg : undefined}
                 data={options(tags.data)}
                 value={(conv.tagIds as string[]) ?? []}
@@ -1098,6 +1163,8 @@ function ConversationCard({ conv }: { conv: Row }) {
                 label={t.workspace.dataIVremyaPerezvona}
                 value={callbackAt}
                 onChange={(e) => setCallbackAt(e.currentTarget.value)}
+                withAsterisk
+                error={req.error(!callbackAt)}
                 data-testid="callback-at"
               />
             )}
@@ -1107,7 +1174,7 @@ function ConversationCard({ conv }: { conv: Row }) {
                 fullWidth
                 color="violet"
                 disabled={tagMissing}
-                onClick={() => setEscalating(true)}
+                onClick={() => req.check(missingFor(true)) && setEscalating(true)}
                 data-testid="escalate"
               >
                 {t.workspace.peredatNa2Yu}
@@ -1117,8 +1184,8 @@ function ConversationCard({ conv }: { conv: Row }) {
                 mt="xs"
                 fullWidth
                 color="green"
-                disabled={!disp || (isPostponed && !callbackAt) || tagMissing}
-                onClick={() => close.mutate(undefined)}
+                disabled={!disp || tagMissing}
+                onClick={() => req.check(missingFor(false)) && close.mutate(undefined)}
                 data-testid="close"
               >
                 {t.workspace.zavershitObrashchenie}

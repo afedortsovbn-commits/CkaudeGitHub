@@ -87,8 +87,8 @@ test.describe.serial('Ф8: вторая линия', () => {
     await expect(item).toBeVisible({ timeout: 15_000 });
     await item.getByTestId('take').click();
     await select(op, 'topic', 'Жалобы на персонал АЗС ❗');
-    await op.getByRole('textbox', { name: 'Номер АЗС *' }).fill('12');
-    await op.getByRole('textbox', { name: 'Номер АЗС *' }).blur();
+    await op.getByRole('textbox', { name: 'Номер АЗС' }).fill('12');
+    await op.getByRole('textbox', { name: 'Номер АЗС' }).blur();
     await op.getByTestId('disposition').click();
     await op.getByRole('option', { name: 'Передать на 2-ю линию' }).click();
     await op.getByTestId('escalate').click();

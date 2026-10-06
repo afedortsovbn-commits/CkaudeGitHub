@@ -1,5 +1,6 @@
 import { notifications } from '@mantine/notifications';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useState } from 'react';
 import { errorText, get } from './api';
 import { t } from './i18n';
 
@@ -25,6 +26,31 @@ export function useAction<A>(fn: (a: A) => Promise<unknown>, okText = t.saved) {
     onError: (e) =>
       notifications.show({ color: 'red', title: t.error, message: errorText(e), autoClose: 8000 }),
   });
+}
+
+/**
+ * Обязательные поля по кнопке (во всех формах): звёздочки — красные (`withAsterisk`), после нажатия пустые
+ * поля подсвечиваются красным, а сообщение перечисляет, что заполнить. Кнопка не блокируется молча.
+ */
+export function useRequired() {
+  const [tried, setTried] = useState(false);
+  return {
+    tried,
+    reset: () => setTried(false),
+    /** true — всё заполнено; иначе подсветка и сообщение со списком. */
+    check(missing: string[]): boolean {
+      setTried(true);
+      if (!missing.length) return true;
+      notifications.show({
+        color: 'red',
+        title: t.dataLib.fillRequired,
+        message: missing.join(', '),
+        autoClose: 8000,
+      });
+      return false;
+    },
+    error: (bad: boolean) => (tried && bad ? t.dataLib.required : undefined),
+  };
 }
 
 export const options = (rows: Row[] | undefined, label = 'name') =>

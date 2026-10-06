@@ -48,8 +48,8 @@ async function handle(op: Page, client: string, enterprise: string, topic: strin
   await op.getByRole('option', { name: enterprise, exact: true }).click();
   await choose(op, 'topic', topic);
   if (station) {
-    await op.getByRole('textbox', { name: 'Номер АЗС *' }).fill(station);
-    await op.getByRole('textbox', { name: 'Номер АЗС *' }).blur();
+    await op.getByRole('textbox', { name: 'Номер АЗС' }).fill(station);
+    await op.getByRole('textbox', { name: 'Номер АЗС' }).blur();
   }
   await op.getByTestId('reply').fill('Здравствуйте! Вопрос решён.');
   await op.getByTestId('send').click();

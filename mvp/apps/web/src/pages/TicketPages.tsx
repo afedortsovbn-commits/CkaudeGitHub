@@ -32,7 +32,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import { api, authBlobUrl, errorText, get, post, upload } from '../lib/api';
 import { useAuth } from '../lib/auth';
-import { type Row, options, useAction, useList } from '../lib/data';
+import { type Row, options, useAction, useList, useRequired } from '../lib/data';
 import { t } from '../lib/i18n';
 import { OrgPicker, TopicPicker } from '../components/DictPickers';
 import { DEFAULT_FILTER, filterQuery, type TicketFilter, TicketFilters } from '../components/TicketFilters';
@@ -192,12 +192,15 @@ export function EscalateModal({ conv, opened, onClose }: { conv: Row; opened: bo
   const [responsible, setResponsible] = useState<string[]>([]);
   const [curators, setCurators] = useState<string[]>([]);
   const [due, setDue] = useState('');
+  const req = useRequired();
   useEffect(() => {
     if (!opened) return;
     setEnterpriseId((conv.enterpriseId as string) ?? null);
     setDepartmentId((conv.departmentId as string) ?? null);
     setTopicId((conv.topicId as string) ?? null);
-    setSummary('');
+    // Суть — из поля карточки «Суть обращения», если оператор его заполнил (можно изменить).
+    setSummary(String((conv.fields as Record<string, unknown> | null)?.issue_summary ?? ''));
+    req.reset();
   }, [opened, conv.id, conv.enterpriseId, conv.departmentId, conv.topicId]);
   const ready = !!enterpriseId && !!departmentId && !!topicId;
   const defaults = useQuery({
@@ -248,12 +251,23 @@ export function EscalateModal({ conv, opened, onClose }: { conv: Row; opened: bo
             setDepartmentId(d);
           }}
           requireDepartment
+          withAsterisk
+          error={req.error(!departmentId)}
           testId="esc-org"
         />
-        <TopicPicker size="sm" value={topicId} onChange={setTopicId} testId="esc-topic" />
+        <TopicPicker
+          size="sm"
+          value={topicId}
+          onChange={setTopicId}
+          withAsterisk
+          error={req.error(!topicId)}
+          testId="esc-topic"
+        />
         <Textarea
           label={t.tickets.sutObrashcheniyaDlyaOtvetstvennykh}
           description={t.tickets.otvetstvennyeVidyatEtuSut}
+          withAsterisk
+          error={req.error(!summary.trim())}
           value={summary}
           onChange={(e) => setSummary(e.currentTarget.value)}
           minRows={3}
@@ -271,6 +285,8 @@ export function EscalateModal({ conv, opened, onClose }: { conv: Row; opened: bo
           value={responsible}
           onChange={setResponsible}
           searchable
+          withAsterisk
+          error={req.error(!responsible.length)}
           data-testid="esc-responsible"
         />
         <MultiSelect
@@ -294,9 +310,15 @@ export function EscalateModal({ conv, opened, onClose }: { conv: Row; opened: bo
             {t.cancel}
           </Button>
           <Button
-            onClick={() => send.mutate(undefined)}
+            onClick={() =>
+              req.check([
+                ...(!departmentId ? [t.tree.org] : []),
+                ...(!topicId ? [t.tree.topic] : []),
+                ...(!summary.trim() ? [t.tickets.sutObrashcheniyaDlyaOtvetstvennykh] : []),
+                ...(!responsible.length ? [t.tickets.otvetstvennye] : []),
+              ]) && send.mutate(undefined)
+            }
             loading={send.isPending}
-            disabled={!ready || !summary.trim() || !responsible.length}
             data-testid="esc-submit"
           >
             {t.tickets.peredat}
@@ -1013,6 +1035,7 @@ function CloseDialog({ t: tk, opened, onClose }: { t: Row; opened: boolean; onCl
   const [method, setMethod] = useState<string | null>(null);
   const [summary, setSummary] = useState('');
   const [files, setFiles] = useState<Att[]>([]);
+  const req = useRequired();
   const close = useTicketAction(
     () =>
       post(`/tickets/${tk.id}/close`, {
@@ -1039,10 +1062,14 @@ function CloseDialog({ t: tk, opened, onClose }: { t: Row; opened: boolean; onCl
           data={options(methods.data)}
           value={method}
           onChange={setMethod}
+          withAsterisk
+          error={req.error(!method)}
           data-testid="answer-method"
         />
         <Textarea
           label={t.tickets.sutOtveta}
+          withAsterisk
+          error={req.error(!summary.trim())}
           value={summary}
           onChange={(e) => setSummary(e.currentTarget.value)}
           minRows={4}
@@ -1056,9 +1083,13 @@ function CloseDialog({ t: tk, opened, onClose }: { t: Row; opened: boolean; onCl
           </Button>
           <Button
             color="green"
-            disabled={!method || !summary.trim()}
             loading={close.isPending}
-            onClick={() => close.mutate(undefined)}
+            onClick={() =>
+              req.check([
+                ...(!method ? [t.tickets.sposobOtveta] : []),
+                ...(!summary.trim() ? [t.tickets.sutOtveta] : []),
+              ]) && close.mutate(undefined)
+            }
             data-testid="close-submit"
           >
             {t.tickets.otpravitNaSoglasovanie}
@@ -1082,6 +1113,7 @@ function ApproveDialog({
 }) {
   const [comment, setComment] = useState('');
   const [files, setFiles] = useState<Att[]>([]);
+  const req = useRequired();
   const done = () => {
     onClose();
     setComment('');
@@ -1124,6 +1156,8 @@ function ApproveDialog({
         </Text>
         <Textarea
           label={mode === 'approve' ? t.tickets.kommentariyNeobyazatelno : t.tickets.chtoNuzhnoDorabotat}
+          withAsterisk={mode === 'return'}
+          error={mode === 'return' ? req.error(!comment.trim()) : undefined}
           value={comment}
           onChange={(e) => setComment(e.currentTarget.value)}
           minRows={3}
@@ -1147,9 +1181,10 @@ function ApproveDialog({
           ) : (
             <Button
               color="orange"
-              disabled={!comment.trim()}
               loading={back.isPending}
-              onClick={() => back.mutate(undefined)}
+              onClick={() =>
+                req.check(!comment.trim() ? [t.tickets.chtoNuzhnoDorabotat] : []) && back.mutate(undefined)
+              }
               data-testid="return-submit"
             >
               {t.tickets.vernutNaDorabotku}
@@ -1168,8 +1203,10 @@ function RedirectDialog({ t: tk, opened, onClose }: { t: Row; opened: boolean; o
   const [topicId, setTopicId] = useState<string | null>(null);
   const [responsible, setResponsible] = useState<string[]>([]);
   const [comment, setComment] = useState('');
+  const req = useRequired();
   useEffect(() => {
     if (!opened) return;
+    req.reset();
     setEnterpriseId(String(tk.enterpriseId));
     setDepartmentId(String(tk.departmentId));
     setTopicId(String(tk.topicId));
@@ -1219,10 +1256,13 @@ function RedirectDialog({ t: tk, opened, onClose }: { t: Row; opened: boolean; o
           value={responsible}
           onChange={setResponsible}
           searchable
+          error={req.error(!changed && !responsible.length)}
           data-testid="redirect-responsible"
         />
         <Textarea
-          label={t.tickets.kommentariyObyazatelen}
+          label={t.tickets.kommentariy2}
+          withAsterisk
+          error={req.error(!comment.trim())}
           value={comment}
           onChange={(e) => setComment(e.currentTarget.value)}
           minRows={2}
@@ -1234,9 +1274,13 @@ function RedirectDialog({ t: tk, opened, onClose }: { t: Row; opened: boolean; o
             {t.cancel}
           </Button>
           <Button
-            disabled={!comment.trim() || (!changed && !responsible.length)}
             loading={go.isPending}
-            onClick={() => go.mutate(undefined)}
+            onClick={() =>
+              req.check([
+                ...(!changed && !responsible.length ? [t.tickets.otvetstvennyyVruchnuyu] : []),
+                ...(!comment.trim() ? [t.tickets.kommentariy2] : []),
+              ]) && go.mutate(undefined)
+            }
             data-testid="redirect-submit"
           >
             {t.tickets.pereadresovat}
@@ -1254,8 +1298,10 @@ function ReassignDialog({ t: tk, opened, onClose }: { t: Row; opened: boolean; o
   const [due, setDue] = useState('');
   const [important, setImportant] = useState(false);
   const [comment, setComment] = useState('');
+  const req = useRequired();
   useEffect(() => {
     if (!opened) return;
+    req.reset();
     const act = ((tk.assignees as Row[]) ?? []).filter((a) => a.isActive);
     setResponsible(act.filter((a) => a.kind === 'responsible').map((a) => String(a.userId)));
     setCurators(act.filter((a) => a.kind === 'curator').map((a) => String(a.userId)));
@@ -1286,6 +1332,8 @@ function ReassignDialog({ t: tk, opened, onClose }: { t: Row; opened: boolean; o
           value={responsible}
           onChange={setResponsible}
           searchable
+          withAsterisk
+          error={req.error(!responsible.length)}
           data-testid="reassign-responsible"
         />
         <MultiSelect
@@ -1319,9 +1367,10 @@ function ReassignDialog({ t: tk, opened, onClose }: { t: Row; opened: boolean; o
             {t.cancel}
           </Button>
           <Button
-            disabled={!responsible.length}
             loading={go.isPending}
-            onClick={() => go.mutate(undefined)}
+            onClick={() =>
+              req.check(!responsible.length ? [t.tickets.otvetstvennye] : []) && go.mutate(undefined)
+            }
             data-testid="reassign-submit"
           >
             {t.save}
