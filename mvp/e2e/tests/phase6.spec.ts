@@ -2,7 +2,7 @@ import { writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { type APIRequestContext, type Browser, expect, type Page, test } from '@playwright/test';
-import { ADMIN, DEMO_PASSWORD, login, nav } from './helpers';
+import { ADMIN, DEMO_PASSWORD, login, nav, setAgentStatus } from './helpers';
 
 /**
  * Ф6: IVR. Демо-сценарий IVR на номере 2000 (демо-данные): приветствие + объявление о сбое → меню
@@ -113,7 +113,7 @@ test.describe.serial('Ф6: IVR', () => {
   }) => {
     const phone = `+37529${stamp}6`;
     const op = await operator(browser, 'operator1@demo.local');
-    await op.getByTestId('agent-status').getByText('Готов').click();
+    await setAgentStatus(op, 'ready');
 
     const client = await callIvr(browser, phone, `Клиент IVR ${stamp}`);
     // Объявление о сбое и приветствие — затем главное меню: «1» — бонусная программа, «1» — баланс.
@@ -158,7 +158,7 @@ test.describe.serial('Ф6: IVR', () => {
       await op.getByTestId('tab-calls').click();
       await expect(item.getByTestId('recording-play')).toBeVisible({ timeout: 2000 });
     }).toPass({ timeout: 30_000 });
-    await op.getByTestId('agent-status').getByText('Офлайн').click();
+    await setAgentStatus(op, 'offline');
   });
 
   test('публикация новой версии не влияет на идущий звонок; откат на прежнюю версию (демо-сценарий 5)', async ({

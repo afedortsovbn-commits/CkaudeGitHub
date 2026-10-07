@@ -1,5 +1,5 @@
 import { type Browser, expect, test } from '@playwright/test';
-import { DEMO_PASSWORD, login, nav } from './helpers';
+import { DEMO_PASSWORD, login, nav, setAgentStatus } from './helpers';
 
 const stamp = Date.now().toString().slice(-6);
 
@@ -25,11 +25,7 @@ test.describe.serial('Ф3: маршрутизация (ACD), статусы оп
         .isVisible()
         .catch(() => false)
     ) {
-      await page
-        .getByTestId('agent-status')
-        .getByText('Офлайн')
-        .click()
-        .catch(() => undefined);
+      await setAgentStatus(page, 'offline').catch(() => undefined);
     }
   });
 
@@ -39,7 +35,7 @@ test.describe.serial('Ф3: маршрутизация (ACD), статусы оп
   }) => {
     await login(page, 'operator1@demo.local', DEMO_PASSWORD);
     await nav(page, 'Рабочее место оператора');
-    await page.getByTestId('agent-status').getByText('Готов').click();
+    await setAgentStatus(page, 'ready');
 
     const client = await openWidget(browser, `Клиент ACD-A ${stamp}`);
     await client.w.getByTestId('cc-input').fill(`Вопрос ACD-A ${stamp}`);
@@ -63,14 +59,14 @@ test.describe.serial('Ф3: маршрутизация (ACD), статусы оп
 
     // Постобработка (M-RT-06): статус автоматически «Постобработка», затем сам router возвращает «Готов».
     await expect(page.getByTestId('agent-status')).toContainText('Постобработка', { timeout: 5000 });
-    await expect(page.getByTestId('agent-status')).toContainText('Готов', { timeout: 25000 });
+    await expect(page.getByTestId('agent-status')).toContainText('В работе', { timeout: 25000 });
     await client.ctx.close();
   });
 
   test('отказ от предложения возвращает обращение в очередь', async ({ page, browser }) => {
     await login(page, 'operator2@demo.local', DEMO_PASSWORD);
     await nav(page, 'Рабочее место оператора');
-    await page.getByTestId('agent-status').getByText('Готов').click();
+    await setAgentStatus(page, 'ready');
 
     const client = await openWidget(browser, `Клиент ACD-B ${stamp}`);
     await client.w.getByTestId('cc-input').fill(`Вопрос ACD-B ${stamp}`);

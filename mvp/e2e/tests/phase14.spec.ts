@@ -9,7 +9,7 @@ import {
   type Page,
   test,
 } from '@playwright/test';
-import { ADMIN, DEMO_PASSWORD, login, nav } from './helpers';
+import { ADMIN, DEMO_PASSWORD, login, nav, setAgentStatus } from './helpers';
 
 /**
  * Ф14 (указания заказчика 01.10): тайм-аут молчания в боте, позиция в очереди, супервизор — прослушивание →
@@ -332,7 +332,7 @@ test.describe.serial('Ф14: бот, очередь, супервизор', () =>
     test.setTimeout(180_000);
     const op = await staff(browser, 'operator1@demo.local');
     const sup = await staff(browser, ADMIN.email, ADMIN.password);
-    await op.getByTestId('agent-status').getByText('Готов').click();
+    await setAgentStatus(op, 'ready');
     const name = `Суфлёр ${stamp}`;
     const client = await demoCall(browser, `+37529${stamp}8`, name);
     const call = op.getByTestId('softphone-call');
@@ -341,7 +341,7 @@ test.describe.serial('Ф14: бот, очередь, супервизор', () =>
     await expect(call).toHaveAttribute('data-state', 'active', { timeout: 15_000 });
     await expect(client.getByTestId('demo-state')).toHaveText('Идёт разговор');
     // «Готов» снимаем сразу: router не должен предлагать оператору новые обращения посреди проверки.
-    await op.getByTestId('agent-status').getByText('Офлайн').click();
+    await setAgentStatus(op, 'offline');
     // Клиент и оператор молчат — всё, что они слышат, — от супервизора (его микрофон — тон 440 Гц).
     await silence(client);
     await silence(op);

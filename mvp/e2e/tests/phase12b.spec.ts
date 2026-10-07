@@ -3,7 +3,7 @@ import { writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { type APIRequestContext, type Browser, expect, type Page, test } from '@playwright/test';
-import { ADMIN, DEMO_PASSWORD, login, nav } from './helpers';
+import { ADMIN, DEMO_PASSWORD, login, nav, setAgentStatus } from './helpers';
 
 /**
  * Ф12b: пробелы приёмки — обязательный тег при закрытии (опция очереди, M-CARD-06), вкладки «Удержание» и
@@ -238,7 +238,7 @@ test.describe.serial('Ф12b: пробелы приёмки', () => {
     const phone = `+37529${stamp}7`;
     // Очередь — пустая к моменту «Готов» (router предлагает накопившиеся обращения).
     await closeAll(a, await a.get<Row[]>('/conversations?tab=queue'));
-    await op1.getByTestId('agent-status').getByText('Готов').click();
+    await setAgentStatus(op1, 'ready');
     const client = await demoCall(browser, phone, name);
     try {
       const call1 = await answer(op1);
@@ -311,7 +311,7 @@ test.describe.serial('Ф12b: пробелы приёмки', () => {
         .click();
       await expect(op2.getByTestId('conv-item').filter({ hasText: name })).toBeVisible({ timeout: 15_000 });
     } finally {
-      await op1.getByTestId('agent-status').getByText('Офлайн').click();
+      await setAgentStatus(op1, 'offline');
       await closeAllOf(a, phone);
     }
   });

@@ -3,7 +3,7 @@ import { writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { type APIRequestContext, type Browser, expect, type Page, test } from '@playwright/test';
-import { ADMIN, DEMO_PASSWORD, login, nav, totpCode } from './helpers';
+import { ADMIN, DEMO_PASSWORD, login, nav, totpCode, setAgentStatus } from './helpers';
 import { sendMail } from './mail';
 
 /**
@@ -201,7 +201,7 @@ test.describe.serial('Ф12: доводка и приёмка', () => {
       // 3) Тот же клиент звонит с номера из формы — узнан по номеру: история из трёх обращений. Звонок — последним:
       // в статусе «Готов» оператору предлагаются и накопившиеся в очереди чаты (лимит одновременных чатов).
       await expect(op.getByTestId('softphone-status')).toHaveText('Телефон готов', { timeout: 20_000 });
-      await op.getByTestId('agent-status').getByText('Готов').click();
+      await setAgentStatus(op, 'ready');
       const cctx = await browser.newContext({
         ignoreHTTPSErrors: true,
         locale: 'ru-RU',
@@ -221,7 +221,7 @@ test.describe.serial('Ф12: доводка и приёмка', () => {
       await op.waitForTimeout(1500);
       await call.getByTestId('call-hangup').click();
       await expect(call).toHaveCount(0, { timeout: 10_000 });
-      await op.getByTestId('agent-status').getByText('Офлайн').click();
+      await setAgentStatus(op, 'offline');
       await cctx.close();
 
       // 4) Telegram — новое обращение в той же очереди «Общая».

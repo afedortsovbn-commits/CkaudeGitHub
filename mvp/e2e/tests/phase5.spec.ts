@@ -2,7 +2,7 @@ import { writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { type Browser, expect, type Page, test } from '@playwright/test';
-import { ADMIN, DEMO_PASSWORD, login, nav } from './helpers';
+import { ADMIN, DEMO_PASSWORD, login, nav, setAgentStatus } from './helpers';
 
 /**
  * Ф5: телефония. Браузеры с фейковым микрофоном (Chromium --use-fake-device-for-media-stream):
@@ -82,7 +82,7 @@ test.describe.serial('Ф5: телефония', () => {
   }) => {
     const op1 = await operator(browser, 'operator1@demo.local');
     const op2 = await operator(browser, 'operator2@demo.local');
-    await op1.getByTestId('agent-status').getByText('Готов').click();
+    await setAgentStatus(op1, 'ready');
 
     const client = await demoCall(browser, clientPhone);
     const call1 = op1.getByTestId('softphone-call');
@@ -126,7 +126,7 @@ test.describe.serial('Ф5: телефония', () => {
     await item.getByTestId('recording-play').click();
     await expect(item.getByTestId('recording-audio')).toBeVisible();
     // «Готов» не оставляем: последующие проверки ждут обращения в очереди, а не у оператора без софтфона.
-    await op1.getByTestId('agent-status').getByText('Офлайн').click();
+    await setAgentStatus(op1, 'offline');
   });
 
   test('исходящий звонок с нормализацией номера: абонент (транк) отвечает, обращение с журналом вызова', async ({
@@ -153,7 +153,7 @@ test.describe.serial('Ф5: телефония', () => {
   test('супервизор прослушивает идущий разговор (M-TEL-10)', async ({ browser }) => {
     const op = await operator(browser, 'operator1@demo.local');
     const sup = await operator(browser, ADMIN.email, ADMIN.password);
-    await op.getByTestId('agent-status').getByText('Готов').click();
+    await setAgentStatus(op, 'ready');
     const client = await demoCall(browser, `+37529${stamp}3`, `Слушаемый ${stamp}`);
     const call = op.getByTestId('softphone-call');
     await expect(call).toHaveAttribute('data-state', 'ringing', { timeout: 20_000 });
@@ -174,7 +174,7 @@ test.describe.serial('Ф5: телефония', () => {
     await client.getByTestId('demo-hangup').click();
     await expect(call).toHaveCount(0, { timeout: 15_000 });
     await expect(listen).toHaveCount(0, { timeout: 15_000 });
-    await op.getByTestId('agent-status').getByText('Офлайн').click();
+    await setAgentStatus(op, 'offline');
   });
 
   test('5b: устройства и тест микрофона, выбор сохраняется; качество связи; замена микрофона во время звонка; горячие клавиши', async ({
@@ -201,7 +201,7 @@ test.describe.serial('Ф5: телефония', () => {
     await expect(op.getByTestId('device-mic')).toHaveValue('Fake Audio Input 1');
     await op.keyboard.press('Escape');
 
-    await op.getByTestId('agent-status').getByText('Готов').click();
+    await setAgentStatus(op, 'ready');
     const client = await demoCall(browser, `+37529${stamp}4`, `Гарнитура ${stamp}`);
     const call = op.getByTestId('softphone-call');
     await expect(call).toHaveAttribute('data-state', 'ringing', { timeout: 20_000 });
@@ -226,6 +226,6 @@ test.describe.serial('Ф5: телефония', () => {
     await op.keyboard.press('Control+Alt+KeyH');
     await expect(call).toHaveCount(0, { timeout: 15_000 });
     await expect(client.getByTestId('demo-info')).toContainText('Звонок завершён', { timeout: 15_000 });
-    await op.getByTestId('agent-status').getByText('Офлайн').click();
+    await setAgentStatus(op, 'offline');
   });
 });

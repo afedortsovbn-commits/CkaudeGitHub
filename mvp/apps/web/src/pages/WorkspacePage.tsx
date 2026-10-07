@@ -145,72 +145,7 @@ interface Att {
   size: number;
 }
 
-const BREAK_POLL_MS = 5000;
-
 /** Статус оператора (M-OP-04): переключение «Готов»/«Перерыв»/«Офлайн»; «Постобработка» — только показ и таймер. */
-function AgentStatusBar() {
-  const reasons = useList('/dict/break-reasons');
-  const status = useQuery({
-    queryKey: ['/agent-status/me'],
-    queryFn: () => get<Row>('/agent-status/me'),
-    refetchInterval: BREAK_POLL_MS,
-  });
-  const setStatus = useAction(
-    (b: Record<string, unknown>) => post('/agent-status', b),
-    t.workspace.statusIzmenen,
-  );
-  const cur = String(status.data?.status ?? 'offline');
-  if (cur === 'wrap_up') {
-    const until = status.data?.wrapUpUntil ? new Date(String(status.data.wrapUpUntil)).getTime() : 0;
-    const left = Math.max(0, Math.round((until - Date.now()) / 1000));
-    return (
-      <Badge color="yellow" variant="light" data-testid="agent-status">
-        {t.workspace.postobrabotka}
-        {left}
-        {t.workspace.s}
-      </Badge>
-    );
-  }
-  return (
-    <Group gap={4}>
-      <SegmentedControl
-        size="xs"
-        data-testid="agent-status"
-        value={cur}
-        onChange={(v) => {
-          // Интеграция со статусом (Ф5b): «Готов» без подключённого телефона — звонки не придут, чаты — да.
-          if (v === 'ready' && softphone.getSnapshot().reg !== 'registered')
-            notifications.show({
-              color: 'yellow',
-              title: t.workspace.telefonNePodklyuchen,
-              message: t.workspace.zvonkiPostupatNeBudut,
-              autoClose: 8000,
-            });
-          setStatus.mutate(
-            v === 'break' ? { status: 'break', reasonId: reasons.data?.[0]?.id } : { status: v },
-          );
-        }}
-        data={[
-          { value: 'ready', label: t.workspace.gotov },
-          { value: 'break', label: t.workspace.pereryv },
-          { value: 'offline', label: t.workspace.oflayn },
-        ]}
-      />
-      {cur === 'break' && (
-        <Select
-          size="xs"
-          w={170}
-          placeholder={t.workspace.prichina}
-          data-testid="agent-status-reason"
-          data={options(reasons.data)}
-          value={(status.data?.reasonId as string) ?? null}
-          onChange={(v) => v && setStatus.mutate({ status: 'break', reasonId: v })}
-        />
-      )}
-    </Group>
-  );
-}
-
 /** Число обращений во вкладке (для подписи вкладки). */
 function useCount(tab: string): number {
   const q = useQuery({
@@ -1764,9 +1699,6 @@ export function WorkspacePage() {
             {rt.connected ? t.workspace.onlayn : t.workspace.netSvyazi}
           </Badge>
         </Group>
-        <Box mb="xs">
-          <AgentStatusBar />
-        </Box>
         <SegmentedControl
           fullWidth
           size="xs"

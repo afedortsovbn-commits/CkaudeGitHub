@@ -81,3 +81,9 @@ export function totpCode(secretB32: string, shift = 0): string {
   const off = h[h.length - 1]! & 0x0f;
   return String((h.readUInt32BE(off) & 0x7fffffff) % 1_000_000).padStart(6, '0');
 }
+
+/** Статус оператора (меню в шапке): «В работе», «Перерыв» (первая причина), «Завершить смену». */
+export async function setAgentStatus(page: Page, status: 'ready' | 'break' | 'offline') {
+  await page.getByTestId('agent-status').click();
+  await page.getByTestId(status === 'break' ? 'agent-status-break-0' : `agent-status-${status}`).click();
+}

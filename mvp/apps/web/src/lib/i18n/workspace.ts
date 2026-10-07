@@ -233,4 +233,10 @@ export const workspace = {
   stepAskHintRequired: 'Показаны обязательные поля; незаполненные выделены',
   fieldsShowAll: (n: number) => `Показать все поля (ещё ${n})`,
   fieldsHideOptional: 'Скрыть необязательные',
+  // Статус оператора в шапке.
+  statusWork: 'В работе',
+  statusOff: 'Не в работе',
+  statusSince: (at: string) => `с ${at}`,
+  statusEndShift: 'Завершить смену',
+  statusEndShiftHint: 'Обращения и звонки поступать не будут',
 };

@@ -22,6 +22,7 @@ import {
 } from '@tabler/icons-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Navigate, NavLink as RouterLink, Outlet, useLocation } from 'react-router';
+import { AgentStatusMenu } from '../components/AgentStatus';
 import { BrowserWarning } from '../components/BrowserWarning';
 import { NotificationBell } from '../components/NotificationBell';
 import { SupervisorNotices } from '../components/SupervisorNotices';
@@ -251,6 +252,8 @@ export function Layout() {
                 </Text>
               </Group>
             )}
+            {/* Статус оператора — в шапке рядом с названием раздела «Рабочее место оператора». */}
+            {can('conversations.work') && loc.pathname.startsWith('/workspace') && <AgentStatusMenu />}
           </Group>
           <Group gap="xs" wrap="nowrap">
             {phone && <SoftphoneStatus />}
