@@ -5,7 +5,8 @@
 http:
   routers:
     api:
-      rule: PathPrefix(`/api`)
+      # Именно «/api/»: разделы интерфейса «/api-keys», «/api-docs» при обновлении страницы не должны уходить в API.
+      rule: PathPrefix(`/api/`)
       entryPoints: [websecure]
       tls: {}
       service: api@docker
