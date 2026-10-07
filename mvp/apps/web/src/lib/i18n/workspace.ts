@@ -219,4 +219,13 @@ export const workspace = {
     'Чат в мобильном приложении',
     'Оценка в мобильном приложении',
   ],
+  // Переписка: сессии и предыдущие обращения.
+  newSession: (at: string) => `Новая сессия · ${at}`,
+  prevConv: (at: string) => `Предыдущее обращение от ${at}`,
+  prevDone: (result: string) => (result ? `завершено: ${result}` : 'завершено'),
+  prevNoAnswer: 'без ответа оператора',
+  prevOpen: 'не закрыто',
+  currentConv: (at: string) => `Текущее обращение · ${at}`,
+  prevShow: 'показать переписку',
+  prevHide: 'скрыть',
 };

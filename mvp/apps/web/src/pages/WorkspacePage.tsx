@@ -1,5 +1,6 @@
 import {
   Accordion,
+  Anchor,
   Badge,
   Box,
   Button,
@@ -24,7 +25,7 @@ import {
 } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { errorText, get, openAttachment, patch, post, recordingUrl, upload } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { type Row, options, useAction, useList, useRequired } from '../lib/data';
@@ -419,6 +420,82 @@ function Delivery({ m }: { m: Row }) {
   return null;
 }
 
+/** Пауза в переписке больше 3 часов — новая сессия (разделитель с датой). */
+const SESSION_GAP_MS = 3 * 3600_000;
+const when = (s: unknown) =>
+  new Date(String(s)).toLocaleString('ru-RU', {
+    timeZone: 'Europe/Minsk',
+    dateStyle: 'short',
+    timeStyle: 'short',
+  });
+
+function Divider2({
+  label,
+  color = 'gray',
+  right,
+}: {
+  label: string;
+  color?: string;
+  right?: React.ReactNode;
+}) {
+  return (
+    <Group gap={6} wrap="nowrap" my={4} data-testid="msg-divider">
+      <Box style={{ flex: 1, borderTop: `1px dashed var(--mantine-color-${color}-4)` }} />
+      <Text size="xs" c={`${color}.7`} fw={600}>
+        {label}
+      </Text>
+      {right}
+      <Box style={{ flex: 1, borderTop: `1px dashed var(--mantine-color-${color}-4)` }} />
+    </Group>
+  );
+}
+
+/** Предыдущие обращения клиента: свёрнуты, со статусом; по щелчку — переписка (бледнее текущей). */
+function PrevConversations({ convId, render }: { convId: string; render(m: Row): React.ReactNode }) {
+  const list = useList(`/conversations/${convId}/history`);
+  const [open, setOpen] = useState<Set<string>>(new Set());
+  return (
+    <>
+      {(list.data ?? []).map((c) => {
+        const status =
+          c.status !== 'closed'
+            ? t.workspace.prevOpen
+            : !c.answered
+              ? t.workspace.prevNoAnswer
+              : t.workspace.prevDone(String(c.dispositionName ?? ''));
+        const isOpen = open.has(c.id);
+        return (
+          <Box key={c.id} data-testid="prev-conv">
+            <Divider2
+              label={`${t.workspace.prevConv(when(c.createdAt))} · ${status}`}
+              color={c.status === 'closed' && c.answered ? 'gray' : 'orange'}
+              right={
+                <Anchor
+                  size="xs"
+                  onClick={() => {
+                    const next = new Set(open);
+                    if (isOpen) next.delete(c.id);
+                    else next.add(c.id);
+                    setOpen(next);
+                  }}
+                  data-testid="prev-conv-toggle"
+                >
+                  {isOpen ? t.workspace.prevHide : t.workspace.prevShow}
+                </Anchor>
+              }
+            />
+            {isOpen && (
+              <Stack gap={6} style={{ opacity: 0.6 }}>
+                {((c.messages as Row[]) ?? []).map((m) => render(m))}
+              </Stack>
+            )}
+          </Box>
+        );
+      })}
+    </>
+  );
+}
+
 function Messages({ conv, typing, onTyping }: { conv: Row; typing: boolean; onTyping(): void }) {
   const { me, can } = useAuth();
   const msgs = useList(`/conversations/${conv.id}/messages`);
@@ -440,9 +517,15 @@ function Messages({ conv, typing, onTyping }: { conv: Row; typing: boolean; onTy
   const viewport = useRef<HTMLDivElement>(null);
   const qc = useQueryClient();
   useEffect(() => {
+    // Открыто обращение или пришло новое — показать последнее сообщение (после отрисовки, иначе высота ещё старая).
     // scrollTo в новых браузерах возвращает Promise — из эффекта его возвращать нельзя (React ждёт функцию очистки).
-    viewport.current?.scrollTo({ top: viewport.current.scrollHeight });
-  }, [msgs.data, typing]);
+    const toEnd = () => {
+      viewport.current?.scrollTo({ top: viewport.current.scrollHeight });
+    };
+    toEnd();
+    const r = requestAnimationFrame(() => requestAnimationFrame(toEnd));
+    return () => cancelAnimationFrame(r);
+  }, [msgs.data, typing, conv.id]);
   // Неотправленный ответ откладывает автообновление интерфейса до новой версии (Ф11, M-OP-11).
   const dirty = !!text.trim() || files.length > 0;
   useEffect(() => {
@@ -487,6 +570,74 @@ function Messages({ conv, typing, onTyping }: { conv: Row; typing: boolean; onTy
         qc.invalidateQueries({ predicate: (q) => String(q.queryKey[0]).startsWith('/conversations') }),
       )
       .catch((e: unknown) => notifications.show({ color: 'red', message: errorText(e) }));
+  /** Одно сообщение переписки (и в текущем, и в предыдущих обращениях). */
+  const renderMsg = (m: Row): React.ReactNode => {
+    const isHint = !!(m.meta as { hint?: boolean } | undefined)?.hint;
+    const dir = isHint ? 'hint' : String(m.direction);
+    const style =
+      dir === 'hint'
+        ? { alignSelf: 'flex-end', background: 'var(--mantine-color-grape-1)' }
+        : dir === 'in'
+          ? { alignSelf: 'flex-start', background: 'var(--mantine-color-gray-1)' }
+          : dir === 'out'
+            ? { alignSelf: 'flex-end', background: 'var(--mantine-color-blue-1)' }
+            : dir === 'note'
+              ? { alignSelf: 'flex-end', background: 'var(--mantine-color-yellow-1)' }
+              : { alignSelf: 'center', background: 'transparent' };
+    return (
+      <Paper
+        key={m.id}
+        p={dir === 'system' ? 0 : 'xs'}
+        radius="md"
+        maw="75%"
+        style={style}
+        data-testid={`msg-${dir}`}
+      >
+        {dir !== 'system' && (
+          <Text size="xs" c="dimmed">
+            {dir === 'in'
+              ? `${String(conv.contactName)}${reviewNote(m)}`
+              : dir === 'note'
+                ? t.workspace.zametka(noteAuthor(m))
+                : dir === 'hint'
+                  ? t.workspace.podskazkaSupervizora(String(m.authorName ?? ''))
+                  : autoLabel(m) || String(m.authorName ?? '')}{' '}
+            · {time(m.sentAt)}
+            {dir === 'out' && <Delivery m={m} />}
+          </Text>
+        )}
+        <Text
+          size={dir === 'system' ? 'xs' : 'sm'}
+          c={dir === 'system' ? 'dimmed' : undefined}
+          style={{ whiteSpace: 'pre-wrap' }}
+        >
+          {String(m.body)}
+        </Text>
+        {((m.meta as { buttons?: { id: string; label: string }[] } | undefined)?.buttons ?? []).length >
+          0 && (
+          <Group gap={4} mt={4}>
+            {(m.meta as { buttons: { id: string; label: string }[] }).buttons.map((b) => (
+              <Badge key={b.id} variant="outline" size="sm">
+                {b.label}
+              </Badge>
+            ))}
+          </Group>
+        )}
+        {(m.attachments as Att[]).map((a) => (
+          <Text
+            key={a.id}
+            size="sm"
+            c="blue"
+            style={{ cursor: 'pointer' }}
+            onClick={() => void openAttachment(a.id)}
+          >
+            📎 {a.filename} ({Math.ceil(a.size / 1024)}
+            {t.workspace.kb}
+          </Text>
+        ))}
+      </Paper>
+    );
+  };
   const showHints = conv.status !== 'closed' && (voice || (!note && canWrite));
   return (
     <Stack h="100%" gap="xs">
@@ -496,71 +647,20 @@ function Messages({ conv, typing, onTyping }: { conv: Row; typing: boolean; onTy
         type="auto"
       >
         <Stack gap={6} p="xs" data-testid="messages">
-          {(msgs.data ?? []).map((m) => {
-            const isHint = !!(m.meta as { hint?: boolean } | undefined)?.hint;
-            const dir = isHint ? 'hint' : String(m.direction);
-            const style =
-              dir === 'hint'
-                ? { alignSelf: 'flex-end', background: 'var(--mantine-color-grape-1)' }
-                : dir === 'in'
-                  ? { alignSelf: 'flex-start', background: 'var(--mantine-color-gray-1)' }
-                  : dir === 'out'
-                    ? { alignSelf: 'flex-end', background: 'var(--mantine-color-blue-1)' }
-                    : dir === 'note'
-                      ? { alignSelf: 'flex-end', background: 'var(--mantine-color-yellow-1)' }
-                      : { alignSelf: 'center', background: 'transparent' };
+          <PrevConversations convId={String(conv.id)} render={(m) => renderMsg(m)} />
+          {(msgs.data ?? []).length > 0 && (
+            <Divider2 label={t.workspace.currentConv(when((msgs.data ?? [])[0]!.sentAt))} color="blue" />
+          )}
+          {(msgs.data ?? []).map((m, i, all) => {
+            const gap =
+              i > 0 &&
+              new Date(String(m.sentAt)).getTime() - new Date(String(all[i - 1]!.sentAt)).getTime() >
+                SESSION_GAP_MS;
             return (
-              <Paper
-                key={m.id}
-                p={dir === 'system' ? 0 : 'xs'}
-                radius="md"
-                maw="75%"
-                style={style}
-                data-testid={`msg-${dir}`}
-              >
-                {dir !== 'system' && (
-                  <Text size="xs" c="dimmed">
-                    {dir === 'in'
-                      ? `${String(conv.contactName)}${reviewNote(m)}`
-                      : dir === 'note'
-                        ? t.workspace.zametka(noteAuthor(m))
-                        : dir === 'hint'
-                          ? t.workspace.podskazkaSupervizora(String(m.authorName ?? ''))
-                          : autoLabel(m) || String(m.authorName ?? '')}{' '}
-                    · {time(m.sentAt)}
-                    {dir === 'out' && <Delivery m={m} />}
-                  </Text>
-                )}
-                <Text
-                  size={dir === 'system' ? 'xs' : 'sm'}
-                  c={dir === 'system' ? 'dimmed' : undefined}
-                  style={{ whiteSpace: 'pre-wrap' }}
-                >
-                  {String(m.body)}
-                </Text>
-                {((m.meta as { buttons?: { id: string; label: string }[] } | undefined)?.buttons ?? [])
-                  .length > 0 && (
-                  <Group gap={4} mt={4}>
-                    {(m.meta as { buttons: { id: string; label: string }[] }).buttons.map((b) => (
-                      <Badge key={b.id} variant="outline" size="sm">
-                        {b.label}
-                      </Badge>
-                    ))}
-                  </Group>
-                )}
-                {(m.attachments as Att[]).map((a) => (
-                  <Text
-                    key={a.id}
-                    size="sm"
-                    c="blue"
-                    style={{ cursor: 'pointer' }}
-                    onClick={() => void openAttachment(a.id)}
-                  >
-                    📎 {a.filename} ({Math.ceil(a.size / 1024)}
-                    {t.workspace.kb}
-                  </Text>
-                ))}
-              </Paper>
+              <Fragment key={m.id}>
+                {gap && <Divider2 label={t.workspace.newSession(when(m.sentAt))} />}
+                {renderMsg(m)}
+              </Fragment>
             );
           })}
         </Stack>

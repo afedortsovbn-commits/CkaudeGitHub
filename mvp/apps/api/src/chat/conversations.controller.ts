@@ -273,6 +273,39 @@ export class ConversationsController {
   }
 
   /**
+   * Предыдущие обращения клиента (до 5 последних, в области видимости сотрудника) с перепиской — оператор
+   * видит, что было раньше и чем закончилось: статус, результат, был ли ответ оператора.
+   */
+  @Get('conversations/:id/history')
+  async previousConversations(@CurrentUser() p: Principal, @Param('id') id: string) {
+    const c = (await this.visible(p, id)) as Conv & { created_at: Date };
+    const sc = scopeFilter(p.scope, SCOPE_COLS, 4);
+    const prev = await rows<Record<string, unknown>>(
+      this.ctx.pool,
+      `SELECT c.id, c.status, c.channel_kind, c.created_at, c.closed_at, d.name AS disposition_name,
+              EXISTS (SELECT 1 FROM message m WHERE m.conversation_id = c.id AND m.direction = 'out'
+                         AND m.author_user_id IS NOT NULL) AS answered
+         FROM conversation c LEFT JOIN disposition d ON d.id = c.disposition_id
+        WHERE c.contact_id = $1 AND c.id <> $2 AND c.created_at < $3 AND (${sc.sql} OR c.assignee_id = '${p.id}')
+        ORDER BY c.created_at DESC LIMIT 5`,
+      [c.contact_id, id, c.created_at, ...sc.params],
+    );
+    if (!prev.length) return [];
+    const hints = hasPerm(p, 'supervisor.monitor');
+    const msgs = await rows<Record<string, unknown>>(
+      this.ctx.pool,
+      `SELECT m.*, u.full_name AS author_name FROM message m LEFT JOIN app_user u ON u.id = m.author_user_id
+        WHERE m.conversation_id = ANY($1) AND ($2 OR NOT (m.meta ? 'hint'))
+        ORDER BY m.sent_at, m.seq`,
+      [prev.map((r) => r.id), hints],
+    );
+    return prev.reverse().map((r) => ({
+      ...toApi(r),
+      messages: msgs.filter((m) => m.conversation_id === r.id).map((m) => toApi(m)),
+    }));
+  }
+
+  /**
    * Перехват обращения супервизором (Ф14, M-TEL-10): обращение переназначается ему с записью в истории, оператору —
    * уведомление. Идущий звонок перехватывается из прослушивания (`POST /calls/:id/takeover`).
    */
