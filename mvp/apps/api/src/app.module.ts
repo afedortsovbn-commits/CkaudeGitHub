@@ -18,6 +18,7 @@ import { MatrixController } from './org/matrix.controller';
 import { ObjectSyncController } from './org/objects-sync.controller';
 import { OrgController } from './org/org.controller';
 import { ExternalAppsController } from './org/external-apps.controller';
+import { ScheduleController } from './schedule/schedule.controller';
 import { RolesController } from './org/roles.controller';
 import { UsersController } from './org/users.controller';
 import { PingController } from './ping.controller';
@@ -65,6 +66,7 @@ export class AppModule {
         ReleaseController,
         PrivacyController,
         ObjectSyncController,
+        ScheduleController,
       ],
       providers: [
         { provide: APP_CONTEXT, useValue: ctx },

@@ -10,6 +10,7 @@ import { openTicketsAffectedBy } from '@cc/domain';
 import { audit } from '../lib/audit';
 import { one, rows, toApi, withTx } from '../lib/db';
 import { badRequest, notFound, parse } from '../lib/errors';
+import { ScheduleBreaksSchema, ScheduleRulesSchema } from '../schedule/schedule.controller';
 
 const uuid = z.string().uuid();
 
@@ -71,6 +72,9 @@ const SETTINGS: Record<string, z.ZodTypeAny> = {
       idleScope: z.enum(['combined', 'split']),
     })
     .strict(),
+  // График работы: перерывы дневной/ночной смены (минуты) и нормы трудового законодательства.
+  'schedule.breaks': ScheduleBreaksSchema,
+  'schedule.rules': ScheduleRulesSchema,
   // Ф10: пороги панели супервизора и параметры отчётов.
   'supervisor.thresholds': SupervisorThresholdsSchema,
   'report.sl_voice_s': z.number().int().min(1).max(3600),

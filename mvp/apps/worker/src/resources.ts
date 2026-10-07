@@ -1,10 +1,11 @@
 import { readFile, statfs } from 'node:fs/promises';
-import { pruneOutbox, type ResourceProbe, runResourceCheck } from '@cc/domain';
+import { checkBreaks, pruneOutbox, type ResourceProbe, runResourceCheck } from '@cc/domain';
 import { ensureJobQueue, type JobQueue, type Logger } from '@cc/service-kit';
 import type { Pool } from 'pg';
 
 export const RESOURCE_QUEUE = 'worker.resources';
 export const HOUSEKEEPING_QUEUE = 'worker.housekeeping';
+export const BREAKS_QUEUE = 'worker.breaks';
 
 /** Замер диска и памяти сервера изнутри контейнера: диск — тот, на котором Docker хранит данные. */
 export async function probeResources(diskPath = '/'): Promise<ResourceProbe> {
@@ -47,5 +48,12 @@ export class ResourceMonitor {
       if (n) logger.info({ deleted: n }, 'очередь outbox очищена от отправленных событий старше 30 дней');
     });
     await boss.schedule(HOUSEKEEPING_QUEUE, '40 3 * * *');
+    // Контроль перерывов по графику: не ушёл на перерыв / не вернулся — уведомление супервизорам.
+    await ensureJobQueue(boss, BREAKS_QUEUE);
+    await boss.work(BREAKS_QUEUE, async () => {
+      const r = await checkBreaks(pool);
+      if (r.lateStart || r.lateEnd) logger.info(r, 'нарушение перерывов по графику — уведомлены супервизоры');
+    });
+    await boss.schedule(BREAKS_QUEUE, '* * * * *');
   }
 }

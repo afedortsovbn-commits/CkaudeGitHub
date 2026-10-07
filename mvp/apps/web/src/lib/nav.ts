@@ -6,6 +6,7 @@ import {
   IconBroadcast,
   IconBuildingSkyscraper,
   IconBulb,
+  IconCalendarTime,
   IconChartBar,
   IconChecklist,
   IconDeviceDesktopAnalytics,
@@ -103,6 +104,13 @@ export const MENU: MenuItem[] = [
     icon: IconChecklist,
   },
   { to: '/reports', label: t.layout.otchety, perms: ['reports.view'], group: 'control', icon: IconChartBar },
+  {
+    to: '/schedule',
+    label: t.schedule.title,
+    perms: ['schedule.manage'],
+    group: 'control',
+    icon: IconCalendarTime,
+  },
   {
     to: '/resources',
     label: t.resources.title,

@@ -14,3 +14,5 @@ export * from './queue-position';
 export * from './supervisor';
 export * from './resources';
 export * from './routing-policy';
+export * from './schedule';
+export * from './break-watch';

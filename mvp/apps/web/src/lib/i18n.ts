@@ -25,6 +25,7 @@ import { hintPanel } from './i18n/hintPanel';
 import { profilePage } from './i18n/profilePage';
 import { reports } from './i18n/reports';
 import { resources } from './i18n/resources';
+import { schedule } from './i18n/schedule';
 import { reviews } from './i18n/reviews';
 import { settingsPage } from './i18n/settingsPage';
 import { softphoneLib } from './i18n/softphoneLib';
@@ -157,6 +158,7 @@ const ru = {
   profilePage,
   reports,
   resources,
+  schedule,
   settingsPage,
   softphoneLib,
   softphoneUi,

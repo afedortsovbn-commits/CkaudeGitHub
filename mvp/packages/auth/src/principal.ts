@@ -17,6 +17,8 @@ export const PERMISSIONS = [
   'supervisor.monitor',
   'supervisor.approvals',
   'reports.view',
+  /** График работы персонала: смены, пожелания, составление графика и перерывов. */
+  'schedule.manage',
   /** Ручное слияние дублей клиентов (M-CARD-01, Ф12b). */
   'contacts.merge',
   /** Ф14 (M-TEL-10): суфлирование — супервизора слышит только оператор. */

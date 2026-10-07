@@ -1,11 +1,13 @@
 import { Badge, Button, Menu, Text } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
-import { IconChevronDown, IconCoffee, IconHeadset, IconLogout } from '@tabler/icons-react';
+import { IconCalendarTime, IconChevronDown, IconCoffee, IconHeadset, IconLogout } from '@tabler/icons-react';
 import { useQuery } from '@tanstack/react-query';
+import { useState } from 'react';
 import { get, post } from '../lib/api';
 import { type Row, useAction, useList } from '../lib/data';
 import { t } from '../lib/i18n';
 import { softphone } from '../lib/softphone';
+import { MyScheduleModal } from './MySchedule';
 
 /** Статус перерыва/постобработки опрашивается чаще (постобработка заканчивается сама). */
 const STATUS_POLL_MS = 5000;
@@ -25,6 +27,7 @@ const hhmm = (s: unknown) =>
  */
 export function AgentStatusMenu() {
   const reasons = useList('/dict/break-reasons');
+  const [myOpen, setMyOpen] = useState(false);
   const status = useQuery({
     queryKey: ['/agent-status/me'],
     queryFn: () => get<Row>('/agent-status/me'),
@@ -65,65 +68,75 @@ export function AgentStatusMenu() {
     color = 'gray';
   }
   return (
-    <Menu position="bottom-start" shadow="md" withinPortal>
-      <Menu.Target>
-        <Button
-          size="compact-sm"
-          variant="light"
-          color={color}
-          leftSection={<Badge size="xs" circle color={color} variant="filled" />}
-          rightSection={<IconChevronDown size={14} />}
-          data-testid="agent-status"
-          data-status={cur}
-        >
-          {label}
-        </Button>
-      </Menu.Target>
-      <Menu.Dropdown>
-        <Menu.Item
-          leftSection={<IconHeadset size={16} />}
-          color="green"
-          onClick={toReady}
-          disabled={cur === 'ready'}
-          data-testid="agent-status-ready"
-        >
-          {t.workspace.statusWork}
-        </Menu.Item>
-        <Menu.Label>{t.workspace.pereryv}</Menu.Label>
-        {(reasons.data ?? []).map((r, i) => (
-          <Menu.Item
-            key={r.id}
-            leftSection={<IconCoffee size={16} />}
-            color="orange"
-            onClick={() => setStatus.mutate({ status: 'break', reasonId: r.id })}
-            data-testid={`agent-status-break-${i}`}
+    <>
+      <MyScheduleModal opened={myOpen} onClose={() => setMyOpen(false)} />
+      <Menu position="bottom-start" shadow="md" withinPortal>
+        <Menu.Target>
+          <Button
+            size="compact-sm"
+            variant="light"
+            color={color}
+            leftSection={<Badge size="xs" circle color={color} variant="filled" />}
+            rightSection={<IconChevronDown size={14} />}
+            data-testid="agent-status"
+            data-status={cur}
           >
-            {String(r.name)}
-          </Menu.Item>
-        ))}
-        {!(reasons.data ?? []).length && (
+            {label}
+          </Button>
+        </Menu.Target>
+        <Menu.Dropdown>
           <Menu.Item
-            leftSection={<IconCoffee size={16} />}
-            color="orange"
-            onClick={() => setStatus.mutate({ status: 'break' })}
-            data-testid="agent-status-break-0"
+            leftSection={<IconHeadset size={16} />}
+            color="green"
+            onClick={toReady}
+            disabled={cur === 'ready'}
+            data-testid="agent-status-ready"
           >
-            {t.workspace.pereryv}
+            {t.workspace.statusWork}
           </Menu.Item>
-        )}
-        <Menu.Divider />
-        <Menu.Item
-          leftSection={<IconLogout size={16} />}
-          onClick={() => setStatus.mutate({ status: 'offline' })}
-          disabled={cur === 'offline'}
-          data-testid="agent-status-offline"
-        >
-          <Text size="sm">{t.workspace.statusEndShift}</Text>
-          <Text size="xs" c="dimmed">
-            {t.workspace.statusEndShiftHint}
-          </Text>
-        </Menu.Item>
-      </Menu.Dropdown>
-    </Menu>
+          <Menu.Label>{t.workspace.pereryv}</Menu.Label>
+          {(reasons.data ?? []).map((r, i) => (
+            <Menu.Item
+              key={r.id}
+              leftSection={<IconCoffee size={16} />}
+              color="orange"
+              onClick={() => setStatus.mutate({ status: 'break', reasonId: r.id })}
+              data-testid={`agent-status-break-${i}`}
+            >
+              {String(r.name)}
+            </Menu.Item>
+          ))}
+          {!(reasons.data ?? []).length && (
+            <Menu.Item
+              leftSection={<IconCoffee size={16} />}
+              color="orange"
+              onClick={() => setStatus.mutate({ status: 'break' })}
+              data-testid="agent-status-break-0"
+            >
+              {t.workspace.pereryv}
+            </Menu.Item>
+          )}
+          <Menu.Divider />
+          <Menu.Item
+            leftSection={<IconCalendarTime size={16} />}
+            onClick={() => setMyOpen(true)}
+            data-testid="my-schedule-open"
+          >
+            {t.schedule.my}
+          </Menu.Item>
+          <Menu.Item
+            leftSection={<IconLogout size={16} />}
+            onClick={() => setStatus.mutate({ status: 'offline' })}
+            disabled={cur === 'offline'}
+            data-testid="agent-status-offline"
+          >
+            <Text size="sm">{t.workspace.statusEndShift}</Text>
+            <Text size="xs" c="dimmed">
+              {t.workspace.statusEndShiftHint}
+            </Text>
+          </Menu.Item>
+        </Menu.Dropdown>
+      </Menu>
+    </>
   );
 }

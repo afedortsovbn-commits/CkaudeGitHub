@@ -77,6 +77,12 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
         description: 'Скрытое сообщение, клиенту не уходит',
       },
       { code: 'reports.view', title: 'Отчёты', description: 'Все отчёты и выгрузки' },
+      {
+        code: 'schedule.manage',
+        title: 'График работы',
+        description:
+          'Смены, потребность в операторах, пожелания сотрудников, составление и публикация графика',
+      },
     ],
   },
   {

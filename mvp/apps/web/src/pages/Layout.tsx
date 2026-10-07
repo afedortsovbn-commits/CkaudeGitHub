@@ -23,6 +23,7 @@ import {
 import { useEffect, useMemo, useState } from 'react';
 import { Navigate, NavLink as RouterLink, Outlet, useLocation } from 'react-router';
 import { AgentStatusMenu } from '../components/AgentStatus';
+import { BreakReminder } from '../components/MySchedule';
 import { BrowserWarning } from '../components/BrowserWarning';
 import { NotificationBell } from '../components/NotificationBell';
 import { SupervisorNotices } from '../components/SupervisorNotices';
@@ -258,6 +259,7 @@ export function Layout() {
           <Group gap="xs" wrap="nowrap">
             {phone && <SoftphoneStatus />}
             <NotificationBell />
+            {can('conversations.work') && <BreakReminder />}
             <Text
               size="sm"
               visibleFrom="sm"
