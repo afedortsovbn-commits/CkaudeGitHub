@@ -228,4 +228,9 @@ export const workspace = {
   currentConv: (at: string) => `Текущее обращение · ${at}`,
   prevShow: 'показать переписку',
   prevHide: 'скрыть',
+  escalateToggle: 'Передать на 2-ю линию',
+  escalateToggleHint: 'Включите — появятся поля, обязательные для передачи; внизу — кнопка передачи',
+  stepAskHintRequired: 'Показаны обязательные поля; незаполненные выделены',
+  fieldsShowAll: (n: number) => `Показать все поля (ещё ${n})`,
+  fieldsHideOptional: 'Скрыть необязательные',
 };

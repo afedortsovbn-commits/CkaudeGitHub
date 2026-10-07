@@ -966,6 +966,9 @@ function ConversationCard({ conv }: { conv: Row }) {
   const behavior = dispositions.data?.find((d) => d.id === disp)?.behavior;
   const isPostponed = behavior === 'postponed';
   const isEscalate = behavior === 'escalate';
+  const escalateDisp = dispositions.data?.find((d) => d.behavior === 'escalate');
+  const [showAll, setShowAll] = useState(false);
+  useEffect(() => setShowAll(false), [conv.id]);
   const [escalating, setEscalating] = useState(false);
   const req = useRequired();
   useEffect(() => req.reset(), [conv.id]);
@@ -1119,18 +1122,59 @@ function ConversationCard({ conv }: { conv: Row }) {
           </Text>
         ) : null}
       </Paper>
-      {!!conv.topicId && (fields.data ?? []).some((f) => !isCommonField(String(f.key))) && (
-        <Paper withBorder p="xs" data-testid="topic-fields">
-          <Text size="sm" fw={600}>
-            {t.workspace.stepAsk}
-          </Text>
-          <Text size="xs" c="dimmed" mb={4}>
-            {t.workspace.stepAskHint}
-          </Text>
-          <Stack gap={6}>
-            {(fields.data ?? [])
-              .filter((f) => !isCommonField(String(f.key)))
-              .map((f) => {
+      {/* Передача на 2-ю линию — заметный переключатель: с ним видны поля, обязательные для передачи. */}
+      {!closed && conv.status !== 'waiting_2nd_line' && escalateDisp && (
+        <Paper
+          withBorder
+          p="xs"
+          style={{
+            borderColor: isEscalate ? 'var(--mantine-color-violet-5)' : undefined,
+            borderWidth: isEscalate ? 2 : 1,
+          }}
+          bg={isEscalate ? 'violet.0' : undefined}
+          data-testid="escalate-toggle-box"
+        >
+          <Switch
+            size="md"
+            color="violet"
+            label={<Text fw={600}>{t.workspace.escalateToggle}</Text>}
+            description={t.workspace.escalateToggleHint}
+            checked={isEscalate}
+            onChange={(e) => setDisp(e.currentTarget.checked ? String(escalateDisp.id) : null)}
+            data-testid="escalate-toggle"
+          />
+        </Paper>
+      )}
+      {(() => {
+        // По умолчанию — только обязательные (для закрытия, а при передаче — и для 2-й линии) и уже заполненные
+        // поля; остальные — по «Показать все поля».
+        const topicDefs = (fields.data ?? []).filter((f) => !isCommonField(String(f.key)));
+        const commonMust = (k: string) => {
+          const def = (fields.data ?? []).find((f) => String(f.key) === k);
+          return !!def && requiredNow(def);
+        };
+        const shownTopic = topicDefs.filter((f) => showAll || requiredNow(f) || !empty(String(f.key)));
+        const shownCommon = COMMON_FIELD_KEYS.filter((k) => showAll || commonMust(k) || !empty(k));
+        const hidden = topicDefs.length + COMMON_FIELD_KEYS.length - shownTopic.length - shownCommon.length;
+        // Незаполненное обязательное — оранжевая рамка сразу; после нажатия «Завершить»/«Передать» — красная.
+        const soft = (must: boolean, k: string) =>
+          must && empty(k) && !closed
+            ? { input: { borderColor: 'var(--mantine-color-orange-5)', borderWidth: 2 } }
+            : undefined;
+        return (
+          <Paper withBorder p="xs" data-testid="topic-fields">
+            <Group justify="space-between" mb={4}>
+              <Box>
+                <Text size="sm" fw={600}>
+                  {t.workspace.stepAsk}
+                </Text>
+                <Text size="xs" c="dimmed">
+                  {conv.topicId ? t.workspace.stepAskHintRequired : t.workspace.stepFinishNoTopic}
+                </Text>
+              </Box>
+            </Group>
+            <Stack gap={6}>
+              {shownTopic.map((f) => {
                 const k = String(f.key);
                 const label = String(f.label);
                 const description = prefilled.includes(k) ? t.workspace.prefilled : undefined;
@@ -1149,6 +1193,7 @@ function ConversationCard({ conv }: { conv: Row }) {
                     disabled={closed}
                     withAsterisk={must}
                     error={error}
+                    styles={error ? undefined : soft(must, k)}
                   />
                 ) : (
                   <TextInput
@@ -1164,59 +1209,61 @@ function ConversationCard({ conv }: { conv: Row }) {
                     disabled={closed}
                     withAsterisk={must}
                     error={error}
+                    styles={error ? undefined : soft(must, k)}
                   />
                 );
               })}
-          </Stack>
-        </Paper>
-      )}
-      <Paper withBorder p="xs" data-testid="client-fields">
-        <Text size="sm" fw={600}>
-          {t.workspace.clientBlock}
-        </Text>
-        <Text size="xs" c="dimmed" mb={4}>
-          {t.workspace.clientBlockHint}
-        </Text>
-        <Stack gap={6}>
-          {COMMON_FIELD_KEYS.map((k) => {
-            // Обязательность — из поля темы с тем же ключом, если оно есть.
-            const def = (fields.data ?? []).find((f) => String(f.key) === k);
-            const must = !!def && requiredNow(def);
-            const error = req.error(must && empty(k));
-            const label = t.workspace.commonFields[k];
-            return k === 'feedback_channel' ? (
-              <Select
-                key={k}
-                size="xs"
-                label={label}
-                data={t.workspace.feedbackChannels}
-                value={(vals[k] as string) ?? null}
-                onChange={(v) => saveField(k, v)}
-                clearable
-                searchable
-                disabled={closed}
-                withAsterisk={must}
-                error={error}
-                data-testid={`common-${k}`}
-              />
-            ) : (
-              <TextInput
-                key={k}
-                size="xs"
-                label={label}
-                description={prefilled.includes(k) ? t.workspace.prefilled : undefined}
-                value={String(vals[k] ?? '')}
-                onChange={(e) => setVals({ ...vals, [k]: e.currentTarget.value })}
-                onBlur={() => upd.mutate({ fields: vals })}
-                disabled={closed}
-                withAsterisk={must}
-                error={error}
-                data-testid={`common-${k}`}
-              />
-            );
-          })}
-        </Stack>
-      </Paper>
+              {shownCommon.length > 0 && (
+                <Text size="xs" fw={600} c="dimmed" mt={4} data-testid="client-fields">
+                  {t.workspace.clientBlock}
+                </Text>
+              )}
+              {shownCommon.map((k) => {
+                const must = commonMust(k);
+                const error = req.error(must && empty(k));
+                const label = t.workspace.commonFields[k];
+                return k === 'feedback_channel' ? (
+                  <Select
+                    key={k}
+                    size="xs"
+                    label={label}
+                    data={t.workspace.feedbackChannels}
+                    value={(vals[k] as string) ?? null}
+                    onChange={(v) => saveField(k, v)}
+                    clearable
+                    searchable
+                    disabled={closed}
+                    withAsterisk={must}
+                    error={error}
+                    styles={error ? undefined : soft(must, k)}
+                    data-testid={`common-${k}`}
+                  />
+                ) : (
+                  <TextInput
+                    key={k}
+                    size="xs"
+                    label={label}
+                    description={prefilled.includes(k) ? t.workspace.prefilled : undefined}
+                    value={String(vals[k] ?? '')}
+                    onChange={(e) => setVals({ ...vals, [k]: e.currentTarget.value })}
+                    onBlur={() => upd.mutate({ fields: vals })}
+                    disabled={closed}
+                    withAsterisk={must}
+                    error={error}
+                    styles={error ? undefined : soft(must, k)}
+                    data-testid={`common-${k}`}
+                  />
+                );
+              })}
+              {(hidden > 0 || showAll) && (
+                <Anchor size="xs" onClick={() => setShowAll(!showAll)} data-testid="fields-show-all">
+                  {showAll ? t.workspace.fieldsHideOptional : t.workspace.fieldsShowAll(hidden)}
+                </Anchor>
+              )}
+            </Stack>
+          </Paper>
+        );
+      })()}
       <ExtraFields
         fields={(conv.fields as Record<string, unknown>) ?? {}}
         defined={[...(fields.data ?? []), ...COMMON_FIELD_KEYS.map((k) => ({ id: k, key: k }))]}
