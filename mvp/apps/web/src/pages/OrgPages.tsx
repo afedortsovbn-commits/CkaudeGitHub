@@ -11,7 +11,6 @@ import {
   Text,
   Textarea,
   TextInput,
-  Title,
 } from '@mantine/core';
 import { useEffect, useState } from 'react';
 import { DictPage } from '../components/DictPage';
@@ -332,9 +331,6 @@ export function DictionariesPage() {
   const queues = useList('/dict/queues');
   return (
     <>
-      <Title order={3} mb="md">
-        {t.nav.dictionaries}
-      </Title>
       <Tabs defaultValue="dispositions" keepMounted={false}>
         <Tabs.List mb="md">
           <Tabs.Tab value="dispositions">{t.org.rezultatyObrabotki}</Tabs.Tab>

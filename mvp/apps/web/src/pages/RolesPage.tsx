@@ -15,7 +15,6 @@ import {
   Text,
   Textarea,
   TextInput,
-  Title,
   UnstyledButton,
 } from '@mantine/core';
 import { useQuery } from '@tanstack/react-query';
@@ -173,7 +172,6 @@ export function RolesPage() {
 
   return (
     <Stack gap="sm">
-      <Title order={3}>{t.roles.title}</Title>
       <Text size="sm" c="dimmed">
         {t.roles.intro}
       </Text>

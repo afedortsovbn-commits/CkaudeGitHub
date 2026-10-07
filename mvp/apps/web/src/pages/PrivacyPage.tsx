@@ -1,4 +1,4 @@
-import { Badge, Button, Group, Stack, Table, Tabs, Text, Textarea, TextInput, Title } from '@mantine/core';
+import { Badge, Button, Group, Stack, Table, Tabs, Text, Textarea, TextInput } from '@mantine/core';
 import { useState } from 'react';
 import { post } from '../lib/api';
 import { type Row, useAction, useList } from '../lib/data';
@@ -14,7 +14,6 @@ const dt = (v: unknown) =>
 export function PrivacyPage() {
   return (
     <Stack>
-      <Title order={3}>{t.privacy.personalnyeDannye}</Title>
       <Tabs defaultValue="consents">
         <Tabs.List mb="md">
           <Tabs.Tab value="consents">{t.privacy.reestrSoglasiy}</Tabs.Tab>

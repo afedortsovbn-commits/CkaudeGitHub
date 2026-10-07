@@ -214,7 +214,6 @@ export function ObjectSyncPage() {
   if (!v) return null;
   return (
     <Stack>
-      <Title order={3}>{t.reviews.syncTitle}</Title>
       <Text size="sm" c="dimmed" maw={900}>
         {t.reviews.syncIntro}
       </Text>

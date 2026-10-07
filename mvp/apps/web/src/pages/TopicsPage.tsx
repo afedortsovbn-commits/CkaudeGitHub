@@ -10,7 +10,6 @@ import {
   Table,
   Text,
   TextInput,
-  Title,
 } from '@mantine/core';
 import { IconChevronDown, IconChevronRight, IconSearch } from '@tabler/icons-react';
 import { useMemo, useState } from 'react';
@@ -258,7 +257,7 @@ export function TopicsPage() {
   return (
     <>
       <Group justify="space-between" mb="md">
-        <Title order={3}>{t.nav.topics}</Title>
+        <span />
         <Group>
           <TextInput
             placeholder={t.tree.search}

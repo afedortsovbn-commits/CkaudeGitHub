@@ -252,7 +252,7 @@ export function MatrixPage() {
   return (
     <>
       <Group justify="space-between" mb="md">
-        <Title order={3}>{t.nav.matrix}</Title>
+        <span />
         {writable && (
           <Group>
             <Button variant="outline" onClick={() => setModal('copy')}>

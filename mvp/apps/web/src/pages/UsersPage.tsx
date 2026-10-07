@@ -15,7 +15,6 @@ import {
   Tabs,
   Text,
   TextInput,
-  Title,
 } from '@mantine/core';
 import { useEffect, useState } from 'react';
 import { FormModal } from '../components/FormModal';
@@ -400,7 +399,7 @@ export function UsersPage() {
   return (
     <>
       <Group justify="space-between" mb="md">
-        <Title order={3}>{t.nav.users}</Title>
+        <span />
         <Group>
           <TextInput placeholder={t.search} value={q} onChange={(e) => setQ(e.currentTarget.value)} />
           <Switch

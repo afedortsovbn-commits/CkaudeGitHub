@@ -12,7 +12,6 @@ import {
   Stack,
   Text,
   TextInput,
-  Title,
 } from '@mantine/core';
 import { IconExternalLink, IconRefresh, IconTrash } from '@tabler/icons-react';
 import { useQuery } from '@tanstack/react-query';
@@ -139,7 +138,6 @@ export function ExternalAppsPage() {
 
   return (
     <Stack gap="sm" maw={1100}>
-      <Title order={3}>{t.extApps.title}</Title>
       <Text size="sm" c="dimmed">
         {t.extApps.intro}
       </Text>

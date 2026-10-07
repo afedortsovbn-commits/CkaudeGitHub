@@ -35,7 +35,6 @@ export function SettingsPage() {
   const thresholds = (v['supervisor.thresholds'] ?? {}) as Record<string, number>;
   return (
     <Stack maw={520}>
-      <Title order={3}>{t.nav.settings}</Title>
       <NumberInput
         label={t.settingsPage.srokOtveta2Y}
         description={t.settingsPage.deystvuetEsliUTemy}
@@ -323,9 +322,6 @@ export function AuditPage() {
   const list = useList<Row>(`/audit?limit=200${entity ? `&entity=${entity}` : ''}`);
   return (
     <>
-      <Title order={3} mb="md">
-        {t.nav.audit}
-      </Title>
       <TextInput
         mb="md"
         maw={300}

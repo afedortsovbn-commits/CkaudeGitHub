@@ -1,4 +1,4 @@
-import { ActionIcon, Badge, Button, Group, Switch, Table, TextInput, Title } from '@mantine/core';
+import { ActionIcon, Badge, Button, Group, Switch, Table, TextInput } from '@mantine/core';
 import { IconChevronDown, IconChevronRight } from '@tabler/icons-react';
 import { Fragment, type ReactNode, useMemo, useState } from 'react';
 import { patch, post } from '../lib/api';
@@ -26,6 +26,7 @@ interface Props {
   toForm?(row: Row): Record<string, unknown>;
   /** Преобразование значений формы перед отправкой (например, сборка вложенного config). */
   fromForm?(values: Record<string, unknown>, editing: Row | null): Record<string, unknown>;
+  /** Устарело: название раздела теперь всегда в шапке, на странице заголовка нет. */
   hideTitle?: boolean;
   /** Начальные значения формы новой записи. */
   createDefaults?: Record<string, unknown>;
@@ -58,7 +59,6 @@ export function DictPage({
   rowActions,
   toForm,
   fromForm,
-  hideTitle,
   createDefaults,
   expand,
 }: Props) {
@@ -94,7 +94,7 @@ export function DictPage({
   return (
     <>
       <Group justify="space-between" mb="md">
-        {!hideTitle && <Title order={3}>{title}</Title>}
+        <span />
         <Group>
           <TextInput placeholder={t.search} value={q} onChange={(e) => setQ(e.currentTarget.value)} />
           <Switch

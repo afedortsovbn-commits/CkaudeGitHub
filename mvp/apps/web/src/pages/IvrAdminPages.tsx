@@ -87,7 +87,7 @@ export function AudioLibraryPage() {
   return (
     <>
       <Group justify="space-between" mb="md">
-        <Title order={3}>{t.ivr.audiobibliotekaIvr}</Title>
+        <span />
         <Group>
           <Switch label={t.showInactive} checked={all} onChange={(e) => setAll(e.currentTarget.checked)} />
           {writable && (

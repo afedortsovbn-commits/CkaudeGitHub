@@ -92,7 +92,7 @@ export function FlowListPage({ kind = 'voice' }: { kind?: FlowKind }) {
   return (
     <>
       <Group justify="space-between" mb="md">
-        <Title order={3}>{text ? t.flowEditor.botyTekstovykhKanalov : t.flowEditor.stsenariiIvr}</Title>
+        <span />
         {can(text ? 'bots.manage' : 'ivr.manage') && (
           <Button onClick={() => setOpen(true)} data-testid="flow-new">
             {t.flowEditor.novyyStsenariy}

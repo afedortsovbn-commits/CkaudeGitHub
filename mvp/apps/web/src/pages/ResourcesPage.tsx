@@ -1,4 +1,4 @@
-import { Alert, Badge, Group, Paper, Progress, Stack, Text, Title } from '@mantine/core';
+import { Alert, Badge, Group, Paper, Progress, Stack, Text } from '@mantine/core';
 import { useQuery } from '@tanstack/react-query';
 import { get } from '../lib/api';
 import { t } from '../lib/i18n';
@@ -28,7 +28,6 @@ export function ResourcesPage() {
   const stale = s ? Date.now() - Date.parse(s.at) > 15 * 60_000 : false;
   return (
     <Stack maw={760}>
-      <Title order={3}>{t.resources.title}</Title>
       <Text size="sm" c="dimmed">
         {t.resources.intro}
       </Text>

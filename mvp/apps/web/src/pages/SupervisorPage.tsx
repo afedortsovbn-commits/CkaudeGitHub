@@ -134,9 +134,6 @@ export function SupervisorPage() {
       : 0;
   return (
     <>
-      <Title order={3} mb="md">
-        {t.supervisor.supervizorOcherediIOperatory}
-      </Title>
       <SimpleGrid cols={{ base: 2, sm: 3, md: 6 }} mb="lg" data-testid="supervisor-summary">
         <Tile
           label={t.supervisor.ozhidayutVOcheredyakh}

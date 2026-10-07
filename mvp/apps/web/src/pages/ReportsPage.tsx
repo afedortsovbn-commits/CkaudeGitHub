@@ -10,7 +10,6 @@ import {
   Table,
   Text,
   TextInput,
-  Title,
 } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { useQuery } from '@tanstack/react-query';
@@ -164,7 +163,6 @@ export function ReportsPage() {
   const r = report.data;
   return (
     <Stack>
-      <Title order={3}>{t.reports.otchety}</Title>
       <Group align="flex-end">
         <Select
           label={t.reports.otchet}

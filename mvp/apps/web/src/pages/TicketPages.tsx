@@ -2123,7 +2123,6 @@ export function TicketControlPage() {
   );
   return (
     <Stack>
-      <Title order={3}>{t.tickets.kontrol2YLinii}</Title>
       <Tabs value={tab} onChange={setTab}>
         <Tabs.List mb="sm">
           {can('supervisor.approvals') && (

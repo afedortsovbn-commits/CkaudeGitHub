@@ -15,7 +15,6 @@ import {
   Text,
   Textarea,
   TextInput,
-  Title,
 } from '@mantine/core';
 import { useState } from 'react';
 import { DictPage } from '../components/DictPage';
@@ -55,7 +54,7 @@ export function TemplatesPage() {
   return (
     <>
       <Group justify="space-between" mb="md">
-        <Title order={3}>{t.automation.shablonyOtvetov}</Title>
+        <span />
         <Group>
           {first && second && (
             <SegmentedControl
@@ -288,9 +287,6 @@ export function KnowledgePage() {
   const { can } = useAuth();
   return (
     <>
-      <Title order={3} mb="md">
-        {t.automation.bazaZnaniy}
-      </Title>
       <Tabs defaultValue="articles">
         <Tabs.List mb="md">
           <Tabs.Tab value="articles">{t.automation.stati}</Tabs.Tab>

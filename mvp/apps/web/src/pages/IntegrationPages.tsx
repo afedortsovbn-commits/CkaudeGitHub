@@ -123,7 +123,7 @@ export function ApiKeysPage() {
   return (
     <>
       <Group justify="space-between" mb="md">
-        <Title order={3}>{t.integrations.klyuchiApi}</Title>
+        <span />
         <Button onClick={() => open('new')} data-testid="key-create">
           {t.integrations.vypustitKlyuch}
         </Button>
@@ -459,7 +459,7 @@ function SubscriptionsPage({ kind }: { kind: 'events' | 'bot' }) {
   return (
     <>
       <Group justify="space-between" mb="md">
-        <Title order={3}>{bot ? t.integrations.vneshnieBoty : 'Webhooks'}</Title>
+        <span />
         <Button onClick={() => open('new')} data-testid="sub-create">
           {bot ? t.integrations.podklyuchitBota : t.integrations.dobavitPodpisku}
         </Button>
@@ -666,7 +666,6 @@ export function ConfigTransferPage() {
   };
   return (
     <Stack maw={900}>
-      <Title order={3}>{t.integrations.eksportIImportKonfiguratsii}</Title>
       <Paper withBorder p="md">
         <Stack>
           <Text fw={600}>{t.integrations.eksport}</Text>
