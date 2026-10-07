@@ -350,12 +350,16 @@ describe.skipIf(!ADMIN_URL)('Вторая линия Ф8 (интеграция)'
     const declined = await call('POST', `/tickets/${tid}/extension/decline`, 'op1', { comment: 'нет' });
     expect(declined.status).toBe(200);
     expect(declined.body.dueDate).toBe(ticket.dueDate);
-    // суть исправляет только сотрудник с правом «Редактирование обращений 2-й линии» (администратор)
+    // суть исправляет только оператор, передавший обращение (op1); ответственный и администратор — нет
     expect(
       (await call('POST', `/tickets/${tid}/edit`, 'r1', { version: declined.body.version, summary: 'х' }))
         .status,
     ).toBe(403);
-    const edited = await call('POST', `/tickets/${tid}/edit`, 'admin', {
+    expect(
+      (await call('POST', `/tickets/${tid}/edit`, 'admin', { version: declined.body.version, summary: 'х' }))
+        .status,
+    ).toBe(403);
+    const edited = await call('POST', `/tickets/${tid}/edit`, 'op1', {
       version: declined.body.version,
       summary: 'Исправленная суть',
     });

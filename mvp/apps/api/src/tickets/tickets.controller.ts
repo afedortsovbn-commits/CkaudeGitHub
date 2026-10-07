@@ -874,21 +874,28 @@ export class TicketsController {
         !!t.my_role ||
         t.created_by === p.id ||
         (await this.isApprover(p, t, tx)) ||
-        hasPerm(p, 'admin.matrix');
+        hasPerm(p, 'admin.matrix', 'supervisor.approvals');
       if (!ok) throw forbidden();
       await commentTicket(tx, id, p.id, b.body, attachments);
     });
     return this.detail(p, id);
   }
 
-  /** Исправление сути обращения — отдельное право `tickets.edit` (у ответственных и кураторов его обычно нет). */
+  /** Исправление сути — только оператор, передавший обращение на 2-ю линию (ответственный пишет заметку). */
   @Post('tickets/:id/edit')
   @HttpCode(200)
-  @RequirePerm('tickets.edit')
+  @RequirePerm('conversations.work')
   async edit(@CurrentUser() p: Principal, @Param('id') id: string, @Body() body: unknown) {
     const b = parse(EditBody, body);
     await withTx(this.ctx.pool, async (tx) => {
       const t = await this.visible(p, id, tx);
+      if (t.created_by !== p.id)
+        throw new ApiError(
+          403,
+          'forbidden',
+          'Суть исправляет только оператор, передавший обращение на 2-ю линию',
+        );
+      if (t.status === 'closed') throw new ApiError(409, 'bad_status', 'Обращение закрыто');
       if (t.version !== b.version)
         throw new ApiError(
           409,
@@ -1098,8 +1105,12 @@ export class TicketsController {
         redirect: !!t.my_role && active,
         approve: canApproveNow,
         reassign: t.status !== 'closed' && this.canReassign(p, t),
-        comment: !!t.my_role || t.created_by === p.id || canApproveNow,
-        edit: hasPerm(p, 'tickets.edit') && t.status !== 'closed',
+        comment:
+          !!t.my_role ||
+          t.created_by === p.id ||
+          canApproveNow ||
+          hasPerm(p, 'admin.matrix', 'supervisor.approvals'),
+        edit: t.created_by === p.id && t.status !== 'closed',
       },
     };
   }

@@ -348,13 +348,13 @@ function deadlineColor(tk: Row): string | undefined {
   if (!['new', 'in_work', 'rework'].includes(String(tk.status))) return undefined;
   // Полупрозрачный цвет слева, уходящий в прозрачность вправо, — легче, чем сплошная заливка.
   const fade = (h: number, s: number, l: number, a: number) =>
-    `linear-gradient(90deg, hsla(${h}, ${s}%, ${l}%, ${a}) 0%, hsla(${h}, ${s}%, ${l}%, 0) 75%)`;
-  if (tk.isOverdue) return fade(0, 85, 62, 0.45);
+    `linear-gradient(90deg, hsla(${h}, ${s}%, ${l}%, ${a}) 0%, hsla(${h}, ${s}%, ${l}%, 0) 60%)`;
+  if (tk.isOverdue) return fade(0, 85, 62, 0.22);
   const total = Math.max(1, Number(tk.totalDays ?? 15));
   const left = Math.min(total, Math.max(0, Number(tk.daysLeft ?? total)));
   const used = 1 - left / total; // 0 — только поступило, 1 — срок сегодня
   const hue = Math.round(52 - used * 52); // жёлтый → оранжевый → красный
-  return fade(hue, 95, 60, 0.2 + used * 0.25); // ближе к сроку — насыщеннее
+  return fade(hue, 95, 60, 0.08 + used * 0.12); // ближе к сроку — чуть насыщеннее
 }
 
 function TicketCard({ t: tk, selected, onOpen }: { t: Row; selected?: boolean; onOpen(id: string): void }) {
