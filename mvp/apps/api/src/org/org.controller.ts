@@ -62,6 +62,15 @@ const SETTINGS: Record<string, z.ZodTypeAny> = {
   // Ф12b: чат попадает во вкладку «Постобработка», если клиент молчит после ответа оператора дольше, с.
   'operator.wrapup_chat_idle_s': z.number().int().min(10).max(86400),
   'routing.escalation_boost': z.number().int().min(0).max(100000),
+  // Распределение: режим по группам каналов и как считать «кто дольше без обращений».
+  'routing.policy': z
+    .object({
+      text: z.enum(['auto', 'pull']),
+      voice: z.literal('auto'),
+      email: z.enum(['auto', 'pull']),
+      idleScope: z.enum(['combined', 'split']),
+    })
+    .strict(),
   // Ф10: пороги панели супервизора и параметры отчётов.
   'supervisor.thresholds': SupervisorThresholdsSchema,
   'report.sl_voice_s': z.number().int().min(1).max(3600),

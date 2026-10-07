@@ -13,3 +13,4 @@ export * from './objects-sync';
 export * from './queue-position';
 export * from './supervisor';
 export * from './resources';
+export * from './routing-policy';

@@ -7,6 +7,7 @@ import {
   Stack,
   Switch,
   Table,
+  Text,
   TextInput,
   Title,
 } from '@mantine/core';
@@ -81,6 +82,58 @@ export function SettingsPage() {
         value={String(v['ticket.transfer_message'] ?? '')}
         onChange={(e) => setV({ ...v, 'ticket.transfer_message': e.currentTarget.value })}
       />
+      <Title order={5} mt="md">
+        {t.settingsPage.routingTitle}
+      </Title>
+      <Text size="xs" c="dimmed">
+        {t.settingsPage.routingHint}
+      </Text>
+      {(() => {
+        const policy = {
+          text: 'auto',
+          voice: 'auto',
+          email: 'auto',
+          idleScope: 'combined',
+          ...((v['routing.policy'] as Record<string, string> | undefined) ?? {}),
+        };
+        const setPolicy = (patch: Record<string, string>) =>
+          setV({ ...v, 'routing.policy': { ...policy, ...patch } });
+        const modes = [
+          { value: 'auto', label: t.settingsPage.routingAuto },
+          { value: 'pull', label: t.settingsPage.routingPull },
+        ];
+        return (
+          <>
+            <Select
+              label={t.settingsPage.routingText}
+              data={modes}
+              value={policy.text}
+              onChange={(x) => x && setPolicy({ text: x })}
+              data-testid="routing-text"
+            />
+            <Select
+              label={t.settingsPage.routingEmail}
+              data={modes}
+              value={policy.email}
+              onChange={(x) => x && setPolicy({ email: x })}
+              data-testid="routing-email"
+            />
+            <Text size="sm" c="dimmed">
+              {t.settingsPage.routingVoice}
+            </Text>
+            <Select
+              label={t.settingsPage.routingIdle}
+              data={[
+                { value: 'combined', label: t.settingsPage.routingIdleCombined },
+                { value: 'split', label: t.settingsPage.routingIdleSplit },
+              ]}
+              value={policy.idleScope}
+              onChange={(x) => x && setPolicy({ idleScope: x })}
+              data-testid="routing-idle"
+            />
+          </>
+        );
+      })()}
       <Title order={5} mt="md">
         {t.settingsPage.bezopasnostIPersonalnyeDannye}
       </Title>

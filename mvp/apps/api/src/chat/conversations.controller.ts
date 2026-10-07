@@ -8,6 +8,7 @@ import {
   loadRef,
   setAgentStatus,
   takeoverConversation,
+  markAssigned,
 } from '@cc/domain';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { PoolClient } from 'pg';
@@ -373,11 +374,9 @@ export class ConversationsController {
         `UPDATE conversation SET assignee_id = $2, status = 'active', assigned_at = now(), version = version + 1, updated_at = now() WHERE id = $1`,
         [id, p.id],
       );
-      // Только отметка для стратегии least_recent; статус не трогаем — ручное «Взять» не делает оператора «Готов».
-      await tx.query(
-        `UPDATE agent_status SET last_assigned_at = now(), updated_at = now() WHERE user_id = $1`,
-        [p.id],
-      );
+      // Только отметка для стратегии least_recent (общая и по группе канала); статус не трогаем — ручное «Взять»
+      // не делает оператора «Готов».
+      await markAssigned(tx, p.id, c.channel_kind);
       await appendMessage(tx, {
         conversationId: id,
         direction: 'system',

@@ -1,5 +1,14 @@
 import { CONVERSATION_EVENTS, newId } from '@cc/contracts';
-import { appendMessage, emitConversation, loadRef } from '@cc/domain';
+import {
+  appendMessage,
+  channelGroup,
+  emitConversation,
+  idleColumn,
+  loadRef,
+  loadRoutingPolicy,
+  markAssigned,
+  type RoutingPolicy,
+} from '@cc/domain';
 import type { Logger } from '@cc/service-kit';
 import type { Pool } from 'pg';
 import { declinedUserIds, eligibleCandidates, VOICE_BUSY } from './candidates';
@@ -47,7 +56,12 @@ interface QueueRow {
  * переводит обращение в статус «offered» и заводит запись предложения. Ничего не делает, если
  * обращение уже забрал другой экземпляр/тик, очередь неактивна или свободных операторов нет.
  */
-async function assignOne(pool: Pool, conversationId: string, maxChats: number): Promise<OfferCreated | null> {
+async function assignOne(
+  pool: Pool,
+  conversationId: string,
+  maxChats: number,
+  policy: RoutingPolicy,
+): Promise<OfferCreated | null> {
   return withTx(pool, async (tx) => {
     const conv = await one<QueuedConv>(
       tx,
@@ -69,6 +83,7 @@ async function assignOne(pool: Pool, conversationId: string, maxChats: number): 
       maxChats,
       excludeUserIds: excluded,
       voice: conv.channel_kind === 'voice',
+      idleColumn: idleColumn(policy, channelGroup(conv.channel_kind)),
     });
     const picked = pickCandidate(queue.strategy, candidates);
     if (!picked) return null;
@@ -109,10 +124,7 @@ async function assignOne(pool: Pool, conversationId: string, maxChats: number): 
        VALUES ($1, $2, $3, $4, now() + ($5 || ' seconds')::interval)`,
       [offerId, conv.id, picked.userId, queue.id, queue.offer_timeout_s],
     );
-    await tx.query(
-      `UPDATE agent_status SET last_assigned_at = now(), updated_at = now() WHERE user_id = $1`,
-      [picked.userId],
-    );
+    await markAssigned(tx, picked.userId, conv.channel_kind);
     await emitConversation(tx, CONVERSATION_EVENTS.updated, await loadRef(tx, conv.id), {
       action: 'offered',
       offerId,
@@ -133,20 +145,26 @@ export async function assignQueued(
   onOffer: (o: OfferCreated) => Promise<void>,
   logger?: Logger,
 ): Promise<number> {
+  // Политика читается на каждом тике — настройка применяется без перезапуска. Группы в режиме «показывать всем»
+  // (кто первый взял) автоматически не назначаются: обращения ждут в «Очереди».
+  const policy = await loadRoutingPolicy(pool);
+  const pull = (['text', 'email'] as const).filter((g) => policy[g] === 'pull');
   const waiting = await one<{ ids: string[] }>(
     pool,
     `SELECT coalesce(array_agg(id ORDER BY priority DESC, queued_at ASC), '{}') AS ids FROM (
        SELECT id, priority, queued_at,
               row_number() OVER (PARTITION BY queue_id ORDER BY priority DESC, queued_at ASC) AS rn
          FROM conversation WHERE status = 'queued'
+          AND NOT ((CASE WHEN channel_kind = 'voice' THEN 'voice' WHEN channel_kind = 'email' THEN 'email'
+                         ELSE 'text' END) = ANY($2::text[]))
      ) x WHERE rn <= $1`,
-    [cfg.batchSize],
+    [cfg.batchSize, pull],
   );
   const maxChats = await currentMaxChats(pool, cfg.maxChatsFallback);
   let assigned = 0;
   for (const id of waiting?.ids ?? []) {
     try {
-      const offer = await assignOne(pool, id, maxChats);
+      const offer = await assignOne(pool, id, maxChats, policy);
       if (offer) {
         assigned++;
         await onOffer(offer);

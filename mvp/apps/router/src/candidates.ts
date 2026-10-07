@@ -6,6 +6,8 @@ import { rows } from './db';
 /** Ёмкость голоса — общее определение занятости (packages/domain, ivr.ts). */
 export { VOICE_BUSY };
 
+const IDLE_COLUMNS = ['last_assigned_at', 'last_text_at', 'last_voice_at', 'last_email_at'];
+
 /**
  * Операторы, которым можно предложить обращение этой очереди (M-RT-02/03):
  * состоят в очереди (`user_queue`), активны, статус «Готов», не исчерпали ёмкость чатов,
@@ -15,7 +17,15 @@ export { VOICE_BUSY };
  */
 export async function eligibleCandidates(
   tx: PoolClient,
-  opts: { queueId: string; topicPath: string[]; maxChats: number; excludeUserIds: string[]; voice?: boolean },
+  opts: {
+    queueId: string;
+    topicPath: string[];
+    maxChats: number;
+    excludeUserIds: string[];
+    voice?: boolean;
+    /** Столбец «последнее назначение» по политике: общий или группы канала (только из белого списка). */
+    idleColumn?: string;
+  },
 ): Promise<Candidate[]> {
   return rows<{
     user_id: string;
@@ -25,7 +35,7 @@ export async function eligibleCandidates(
   }>(
     tx,
     `WITH cand AS (
-       SELECT u.id AS user_id, ag.last_assigned_at,
+       SELECT u.id AS user_id, ag.${IDLE_COLUMNS.includes(opts.idleColumn ?? '') ? opts.idleColumn : 'last_assigned_at'} AS last_assigned_at,
          (SELECT count(*)::int FROM conversation c2 WHERE c2.assignee_id = u.id
             AND c2.status IN ('active', 'hold', 'offered') AND c2.channel_kind <> 'voice') AS active_count,
          COALESCE((SELECT max(us.level) FROM user_skill us JOIN skill sk ON sk.id = us.skill_id

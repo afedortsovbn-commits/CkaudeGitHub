@@ -9,6 +9,7 @@ import {
 } from '@cc/contracts';
 import type { PoolClient } from 'pg';
 import { appendMessage, emitConversation, loadRef, resolveRouting } from './conversations';
+import { markAssigned } from './routing-policy';
 
 /**
  * Голосовые вызовы (Ф5, M-CH-02, M-TEL-*): общая логика call-control и api. Вызов живёт в таблице `call`
@@ -287,10 +288,7 @@ export async function connectAgent(
         WHERE conversation_id = $1 AND user_id = $2 AND outcome IS NULL`,
       [c.conversation_id, c.agent_user_id],
     );
-    await tx.query(
-      `UPDATE agent_status SET last_assigned_at = now(), updated_at = now() WHERE user_id = $1`,
-      [c.agent_user_id],
-    );
+    await markAssigned(tx, c.agent_user_id, 'voice');
   }
   await callEvent(tx, callId, 'agent_connected', c.agent_user_id);
   await appendMessage(tx, {
