@@ -146,6 +146,7 @@ const FIELDS: FormField[] = [
     show: isChat,
   },
   { key: 'maxFileMb', label: t.channels.maksRazmerFaylaMb, type: 'number', show: isChat },
+  { key: 'showTyping', label: t.channels.showTyping, type: 'switch', show: isChat },
   ...PRECHAT_KEYS.map(
     (k, i): FormField => ({
       key: PRECHAT_FORM_KEY[k],
@@ -249,6 +250,7 @@ const toForm = (r: Row) => {
     consentVersion: c.consent_version,
     greeting: c.greeting,
     maxFileMb: c.max_file_mb,
+    showTyping: c.show_typing !== false,
     ...Object.fromEntries(
       PRECHAT_KEYS.map((k) => {
         const f = ((c.prechat_fields as PrechatField[] | undefined) ?? DEFAULT_PRECHAT).find(
@@ -353,6 +355,7 @@ const fromForm = (v: Record<string, unknown>, editing: Row | null) => {
       consent_version: str(v.consentVersion || '1'),
       ...(v.greeting ? { greeting: v.greeting } : {}),
       ...(v.maxFileMb ? { max_file_mb: v.maxFileMb } : {}),
+      show_typing: v.showTyping !== false,
       prechat_fields: PRECHAT_KEYS.filter((k) => (v[PRECHAT_FORM_KEY[k]] ?? 'off') !== 'off').map((k) => ({
         key: k,
         required: v[PRECHAT_FORM_KEY[k]] === 'required',
@@ -364,6 +367,7 @@ const fromForm = (v: Record<string, unknown>, editing: Row | null) => {
 const CREATE_DEFAULTS = {
   kind: 'webchat',
   consentVersion: '1',
+  showTyping: true,
   tgMode: 'polling',
   imapPort: 993,
   imapSecure: true,

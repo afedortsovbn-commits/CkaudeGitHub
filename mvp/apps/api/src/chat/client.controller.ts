@@ -32,6 +32,7 @@ interface ChannelRow {
     max_file_mb?: number;
     app_secret?: string;
     prechat_fields?: PrechatField[];
+    show_typing?: boolean;
   };
 }
 
@@ -144,6 +145,7 @@ export class ClientChatController {
       consentVersion: ch.config.consent_version ?? '1',
       maxFileMb: ch.config.max_file_mb ?? this.ctx.config.MAX_UPLOAD_MB,
       prechatFields: prechatFields(ch),
+      showTyping: ch.config.show_typing !== false,
     };
   }
 

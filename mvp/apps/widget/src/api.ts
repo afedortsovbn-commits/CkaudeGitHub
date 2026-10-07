@@ -7,6 +7,8 @@ export interface WidgetConfig {
   maxFileMb: number;
   /** Анкета перед чатом: поля и обязательность задаёт администратор канала. */
   prechatFields?: { key: 'name' | 'phone' | 'email'; required: boolean }[];
+  /** Показывать клиенту, что оператор печатает (настройка канала, по умолчанию — да). */
+  showTyping?: boolean;
 }
 export interface Msg {
   id: string;

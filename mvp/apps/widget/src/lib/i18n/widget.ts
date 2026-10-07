@@ -17,4 +17,9 @@ export const widget = {
   soobshchenie: 'Сообщение…',
   otpravit: 'Отправить',
   chatSPodderzhkoy: 'Чат с поддержкой',
+  online: 'На связи',
+  typingName: (name: string) => (name ? `${name} печатает…` : 'Оператор печатает…'),
+  sessionExpired: 'Сессия чата устарела — начните чат заново, ваше сообщение сохранено в поле ввода.',
+  notSent: 'Сообщение не отправлено',
+  close: 'Свернуть чат',
 };

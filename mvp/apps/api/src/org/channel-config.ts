@@ -22,6 +22,8 @@ const ChatChannelConfigSchema = z
     consent_version: z.string().max(32).optional(),
     greeting: z.string().max(1000).optional(),
     max_file_mb: z.number().int().min(1).max(50).optional(),
+    /** Показывать клиенту, что оператор печатает (по умолчанию — да). */
+    show_typing: z.boolean().optional(),
     app_secret: z.string().min(16).max(200).optional(),
     /** Анкета перед чатом (п.2 требований): какие сведения о клиенте спросить и какие из них обязательны. */
     prechat_fields: z

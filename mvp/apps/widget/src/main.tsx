@@ -13,6 +13,53 @@ const appUser = script?.dataset.appUserId
   : undefined;
 const TOKEN_KEY = `cc-widget:${key}`;
 
+/** Значки (SVG): облако чата, крестик, скрепка, отправить, гарнитура оператора. */
+const ICON = {
+  chat: (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    >
+      <path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z" />
+      <path d="M8.5 11.5h.01M12 11.5h.01M15.5 11.5h.01" stroke-width="3" />
+    </svg>
+  ),
+  close: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
+      <path d="M6 6l12 12M18 6L6 18" />
+    </svg>
+  ),
+  clip: (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    >
+      <path d="M21 11.5l-8.6 8.6a5 5 0 0 1-7.1-7.1l8.6-8.6a3.4 3.4 0 0 1 4.8 4.8l-8.6 8.6a1.7 1.7 0 0 1-2.4-2.4l7.9-7.9" />
+    </svg>
+  ),
+  send: (
+    <svg viewBox="0 0 24 24" fill="currentColor">
+      <path d="M3.4 20.4l17.4-7.5a1 1 0 0 0 0-1.8L3.4 3.6a.9.9 0 0 0-1.2 1.1L4.5 11 13 12l-8.5 1-2.3 6.3a.9.9 0 0 0 1.2 1.1z" />
+    </svg>
+  ),
+  agent: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+      <path d="M4 14v-2a8 8 0 0 1 16 0v2" />
+      <rect x="3" y="13" width="4" height="6" rx="1.5" />
+      <rect x="17" y="13" width="4" height="6" rx="1.5" />
+      <path d="M19 19c0 1.5-2 2.5-5 2.5" />
+    </svg>
+  ),
+};
+
 function Chat() {
   const api = useRef(new ChatApi(base, key)).current;
   const [open, setOpen] = useState(inline);
@@ -21,7 +68,12 @@ function Chat() {
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [text, setText] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const [typing, setTyping] = useState(false);
+  const [typing, setTyping] = useState<string | false>(false);
+  const [unread, setUnread] = useState(0);
+  const openRef = useRef(open);
+  openRef.current = open;
+  const showTypingRef = useRef(true);
+  showTypingRef.current = cfg?.showTyping !== false;
   const [pendingFiles, setPendingFiles] = useState<Msg['attachments']>([]);
   const [form, setForm] = useState({ name: '', phone: '', email: '', consent: false });
   const wsRef = useRef<WebSocket | null>(null);
@@ -55,7 +107,8 @@ function Chat() {
 
   // Подключение: догрузка истории, затем WebSocket с переподключением (после 1012 — к другому экземпляру).
   useEffect(() => {
-    if (!token || !open) return;
+    // Соединение держится и при свёрнутом чате: ответ оператора даёт счётчик на значке.
+    if (!token) return;
     let stopped = false;
     let retry = 0;
     let typingTimer: ReturnType<typeof setTimeout> | undefined;
@@ -75,9 +128,14 @@ function Chat() {
       ws.onopen = () => (retry = 0);
       ws.onmessage = (ev) => {
         const d = JSON.parse(String(ev.data));
-        if (d.type === 'message') merge([d.message]);
-        if (d.type === 'typing') {
-          setTyping(true);
+        if (d.type === 'message') {
+          merge([d.message]);
+          // Ответ пришёл, пока чат свёрнут, — счётчик на значке.
+          if (!openRef.current && d.message?.direction === 'out') setUnread((n) => n + 1);
+          if (d.message?.direction === 'out') setTyping(false);
+        }
+        if (d.type === 'typing' && showTypingRef.current) {
+          setTyping(String(d.name ?? ''));
           clearTimeout(typingTimer);
           typingTimer = setTimeout(() => setTyping(false), 4000);
         }
@@ -93,7 +151,7 @@ function Chat() {
       stopped = true;
       wsRef.current?.close();
     };
-  }, [token, open]);
+  }, [token]);
 
   useEffect(() => {
     bodyRef.current?.scrollTo(0, bodyRef.current.scrollHeight);
@@ -125,8 +183,24 @@ function Chat() {
         m.attachments.map((a) => a.id),
       );
       setMsgs((cur) => cur.map((x) => (x.id === m.id ? { ...x, failed: false } : x)));
-    } catch {
-      // Повтор с тем же clientMessageId безопасен — дубль не создастся.
+    } catch (e) {
+      const status = (e as { status?: number }).status ?? 0;
+      if (status === 401) {
+        // Сессия устарела (например, клиента нет после сброса стенда): начать чат заново, текст не теряется.
+        store.set(TOKEN_KEY, null);
+        setToken(null);
+        setMsgs([]);
+        setText(m.body);
+        setError(t.widget.sessionExpired);
+        return;
+      }
+      if (status >= 400 && status < 500 && status !== 408 && status !== 429) {
+        // Ошибка в данных — повтор не поможет: показать причину.
+        setMsgs((cur) => cur.map((x) => (x.id === m.id ? { ...x, failed: true } : x)));
+        setError((e as Error).message || t.widget.notSent);
+        return;
+      }
+      // Сеть или сервер недоступны — повтор с тем же clientMessageId безопасен (дубль не создастся).
       setMsgs((cur) => cur.map((x) => (x.id === m.id ? { ...x, failed: true } : x)));
       setTimeout(() => void deliver(m), 3000);
     }
@@ -197,12 +271,25 @@ function Chat() {
   const panel = (
     <div class={`panel${inline ? ' inline' : ''}`} data-testid="cc-panel">
       <div class="head">
-        <span>{cfg?.name ?? t.widget.chat}</span>
-        {!inline && <button onClick={() => setOpen(false)}>×</button>}
+        <div class="ttl">
+          <div class="avatar">{ICON.agent}</div>
+          <div style="min-width:0">
+            <div class="name">{cfg?.name ?? t.widget.chat}</div>
+            <div class="sub">
+              <i />
+              {t.widget.online}
+            </div>
+          </div>
+        </div>
+        {!inline && (
+          <button onClick={() => setOpen(false)} title={t.widget.close} aria-label={t.widget.close}>
+            {ICON.close}
+          </button>
+        )}
       </div>
       {!token ? (
         <div class="form">
-          <div>{cfg?.greeting}</div>
+          <div class="greet">{cfg?.greeting}</div>
           {fields.map((f) => (
             <input
               key={f.key}
@@ -245,7 +332,7 @@ function Chat() {
             {msgs.map((m, i) => (
               <Fragment key={m.id}>
                 <div
-                  class={`m ${m.direction}${m.failed ? ' failed' : ''}`}
+                  class={`m ${m.direction}${m.failed ? ' failed' : m.pending ? ' pending' : ''}`}
                   data-testid={`cc-msg-${m.direction}`}
                 >
                   {m.direction === 'out' && (m.meta?.auto || m.authorName) && (
@@ -300,25 +387,26 @@ function Chat() {
                 )}
               </Fragment>
             ))}
+            {typing !== false && (
+              <div class="typing" data-testid="cc-typing">
+                <div class="dots">
+                  <span />
+                  <span />
+                  <span />
+                </div>
+                <div class="lbl">{t.widget.typingName(typing)}</div>
+              </div>
+            )}
           </div>
-          {typing && <div class="typing">{t.widget.operatorPechataet}</div>}
           {pendingFiles.map((f) => (
             <div class="chip" key={f.id}>
               📎 {f.filename} {f.id === 'uploading' ? t.widget.zagruzka : ''}
             </div>
           ))}
-          {error && (
-            <div class="err" style="padding:0 10px">
-              {error}
-            </div>
-          )}
+          {error && <div class="notice">{error}</div>}
           <div class="foot">
-            <label
-              class="icon"
-              title={t.widget.prikrepitFayl}
-              style="display:flex;align-items:center;justify-content:center"
-            >
-              📎
+            <label class="icon" title={t.widget.prikrepitFayl}>
+              {ICON.clip}
               <input type="file" style="display:none" onChange={(e) => void attach(e)} />
             </label>
             <textarea
@@ -335,7 +423,7 @@ function Chat() {
               }}
             />
             <button class="icon send" title={t.widget.otpravit} data-testid="cc-send" onClick={() => send()}>
-              ➤
+              {ICON.send}
             </button>
           </div>
         </>
@@ -349,12 +437,17 @@ function Chat() {
       {open ? panel : null}
       {!inline && (
         <button
-          class="btn"
+          class={`btn${open ? ' opened' : ''}${!open && unread ? ' attn' : ''}`}
           title={t.widget.chatSPodderzhkoy}
+          aria-label={t.widget.chatSPodderzhkoy}
           data-testid="cc-open"
-          onClick={() => setOpen(!open)}
+          onClick={() => {
+            setOpen(!open);
+            setUnread(0);
+          }}
         >
-          💬
+          {open ? ICON.close : ICON.chat}
+          {!open && unread > 0 && <span class="badge">{unread}</span>}
         </button>
       )}
     </>
