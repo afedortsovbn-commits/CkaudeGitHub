@@ -2,7 +2,7 @@ import { writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { type Browser, expect, type Page, test } from '@playwright/test';
-import { ADMIN, DEMO_PASSWORD, login, nav, setAgentStatus } from './helpers';
+import { ADMIN, DEMO_PASSWORD, login, nav, setAgentStatus, listView } from './helpers';
 
 /**
  * Ф5: телефония. Браузеры с фейковым микрофоном (Chromium --use-fake-device-for-media-stream):
@@ -116,11 +116,11 @@ test.describe.serial('Ф5: телефония', () => {
     await expect(client.getByTestId('demo-info')).toContainText('Звонок завершён', { timeout: 15_000 });
 
     // Журнал вызова и запись разговора в карточке обращения.
-    await op2.getByTestId('tab-calls').click();
+    await op2.getByTestId('tab-contact').click();
     const item = op2.getByTestId('call-item').first();
     await expect(item.getByTestId('call-state')).toHaveText('завершён', { timeout: 15_000 });
     await expect(async () => {
-      await op2.getByTestId('tab-calls').click();
+      await op2.getByTestId('tab-contact').click();
       await expect(item.getByTestId('recording-play')).toBeVisible({ timeout: 2000 });
     }).toPass({ timeout: 30_000 });
     await item.getByTestId('recording-play').click();
@@ -141,11 +141,11 @@ test.describe.serial('Ф5: телефония', () => {
     await op.waitForTimeout(1500);
     await call.getByTestId('call-hangup').click();
     await expect(call).toHaveCount(0, { timeout: 10_000 });
-    await op.getByTestId('tabs').getByText('Мои').click();
+    await listView(op, 'mine');
     const item = op.getByTestId('conv-item').filter({ hasText: `+37529${stamp}2` });
     await expect(item).toBeVisible({ timeout: 10_000 });
     await item.click();
-    await op.getByTestId('tab-calls').click();
+    await op.getByTestId('tab-contact').click();
     await expect(op.getByTestId('call-item').first()).toContainText(`Исходящий +37529${stamp}2`);
     await expect(op.getByTestId('call-item').first().getByTestId('call-state')).toHaveText('завершён');
   });
@@ -160,12 +160,12 @@ test.describe.serial('Ф5: телефония', () => {
     await call.getByTestId('call-answer').click();
     await expect(call).toHaveAttribute('data-state', 'active', { timeout: 15_000 });
 
-    await sup.getByTestId('tabs').getByText('Все открытые').click();
+    await listView(sup, 'active');
     await sup
       .getByTestId('conv-item')
       .filter({ hasText: `Слушаемый ${stamp}` })
       .click();
-    await sup.getByTestId('tab-calls').click();
+    await sup.getByTestId('tab-contact').click();
     await sup.getByTestId('call-listen').click();
     const listen = sup.getByTestId('softphone-call');
     await expect(listen).toContainText('Прослушивание разговора', { timeout: 15_000 });

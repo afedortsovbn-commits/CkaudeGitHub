@@ -1,5 +1,5 @@
 import { type Browser, expect, type Page, test } from '@playwright/test';
-import { ADMIN, DEMO_PASSWORD, login, nav, pick } from './helpers';
+import { ADMIN, DEMO_PASSWORD, login, nav, pick, listView } from './helpers';
 import { readMailbox, sendMail } from './mail';
 
 const stamp = Date.now().toString().slice(-6);
@@ -49,7 +49,7 @@ async function operator(browser: Browser, email: string): Promise<Page> {
 }
 
 async function takeFromQueue(page: Page, text: string) {
-  await page.getByTestId('tabs').getByText('Очередь').click();
+  await listView(page, 'queue');
   const item = page.getByTestId('conv-item').filter({ hasText: text });
   await expect(item).toBeVisible({ timeout: 30_000 });
   await item.getByTestId('take').click();

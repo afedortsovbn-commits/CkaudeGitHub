@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { type Browser, type BrowserContext, expect, type Page, test } from '@playwright/test';
-import { ADMIN, DEMO_PASSWORD, login, nav } from './helpers';
+import { ADMIN, DEMO_PASSWORD, login, nav, listView } from './helpers';
 
 const stamp = Date.now().toString().slice(-6);
 
@@ -40,13 +40,16 @@ async function choose(page: Page, testId: string, option: string) {
 
 /** Оператор берёт обращение из очереди, указывает предприятие и тему и закрывает «Решено на 1-й линии». */
 async function handle(op: Page, client: string, enterprise: string, topic: string, station?: string) {
-  await op.getByTestId('tabs').getByText('Очередь').click();
+  await listView(op, 'queue');
   const item = op.getByTestId('conv-item').filter({ hasText: client });
   await expect(item).toBeVisible({ timeout: 15_000 });
   await item.getByTestId('take').click();
+  // Поля карточки (в т.ч. блок АЗС с предприятием) появляются после выбора темы; блок АЗС может быть свёрнут.
+  await choose(op, 'topic', topic);
+  if (!(await op.getByTestId('org').isVisible()))
+    await op.getByTestId('block-azs').getByTestId('block-more').click();
   await op.getByTestId('org').click();
   await op.getByRole('option', { name: enterprise, exact: true }).click();
-  await choose(op, 'topic', topic);
   if (station) {
     await op.getByRole('textbox', { name: 'Номер АЗС' }).fill(station);
     await op.getByRole('textbox', { name: 'Номер АЗС' }).blur();

@@ -147,7 +147,7 @@ test.describe.serial('Ф6: IVR', () => {
     // Благодарность и прощание — отбой со стороны КЦ.
     await expect(client.getByTestId('demo-info')).toContainText('Звонок завершён', { timeout: 30_000 });
 
-    await op.getByTestId('tab-calls').click();
+    await op.getByTestId('tab-contact').click();
     const item = op.getByTestId('call-item').first();
     await expect(item.getByTestId('call-state')).toHaveText('завершён', { timeout: 15_000 });
     await expect(item.getByTestId('call-ivr-path')).toContainText(
@@ -155,7 +155,7 @@ test.describe.serial('Ф6: IVR', () => {
     );
     await expect(item.getByTestId('call-csat')).toHaveText('Оценка клиента: 4 из 5');
     await expect(async () => {
-      await op.getByTestId('tab-calls').click();
+      await op.getByTestId('tab-contact').click();
       await expect(item.getByTestId('recording-play')).toBeVisible({ timeout: 2000 });
     }).toPass({ timeout: 30_000 });
     await setAgentStatus(op, 'offline');

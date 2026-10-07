@@ -69,7 +69,6 @@ const LIST_TABS = [
 const RIGHT_TABS = [
   { value: 'card', label: t.workspace.obrashchenie },
   { value: 'contact', label: t.workspace.klient },
-  { value: 'calls', label: t.workspace.zvonki },
 ];
 
 const toDraft = (r: RoleRow, codes: Set<string>): Draft => ({

@@ -1,5 +1,5 @@
 import { type Browser, type BrowserContext, expect, type Page, test } from '@playwright/test';
-import { DEMO_PASSWORD, login, nav, tree } from './helpers';
+import { DEMO_PASSWORD, login, nav, tree, listView } from './helpers';
 import { readMailbox } from './mail';
 
 const stamp = Date.now().toString().slice(-6);
@@ -82,7 +82,7 @@ test.describe.serial('Ф8: вторая линия', () => {
     // Оператор берёт обращение, классифицирует (тема особо важная — срок 10 дней), выбирает «Передать на 2-ю линию».
     const op = await as(browser, 'operator1@demo.local');
     await nav(op, 'Рабочее место оператора');
-    await op.getByTestId('tabs').getByText('Очередь').click();
+    await listView(op, 'queue');
     const item = op.getByTestId('conv-item').filter({ hasText: CLIENT });
     await expect(item).toBeVisible({ timeout: 15_000 });
     await item.getByTestId('take').click();
@@ -186,7 +186,7 @@ test.describe.serial('Ф8: вторая линия', () => {
 
     // Оператор во вкладке «На согласовании» возвращает на доработку.
     await op.goto('/workspace');
-    await op.getByTestId('tabs-2nd-line').getByText('На согласовании').click();
+    await listView(op, 'approvals');
     await op
       .getByTestId('ticket-item')
       .filter({ hasText: `№${number}` })
@@ -230,7 +230,7 @@ test.describe.serial('Ф8: вторая линия', () => {
     await expect(op.getByTestId('ticket-history')).toContainText('переадресован');
     await expect(op.getByTestId('ticket-history')).toContainText('ответ принят, обращение закрыто');
     await op.goto('/workspace');
-    await op.getByTestId('tabs').getByText('Закрытые').click();
+    await listView(op, 'closed');
     await expect(op.getByTestId('conv-item').filter({ hasText: CLIENT })).toBeVisible();
   });
 

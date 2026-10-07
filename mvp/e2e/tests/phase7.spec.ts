@@ -1,5 +1,5 @@
 import { type Browser, expect, type Page, test } from '@playwright/test';
-import { ADMIN, DEMO_PASSWORD, login, nav } from './helpers';
+import { ADMIN, DEMO_PASSWORD, login, nav, listView } from './helpers';
 
 const stamp = Date.now().toString().slice(-6);
 
@@ -22,11 +22,13 @@ async function say(w: ReturnType<Page['locator']>, text: string) {
 
 /** Оператор берёт обращение клиента из вкладки «Очередь». */
 async function takeFromQueue(page: Page, client: string) {
-  await page.getByTestId('tabs').getByText('Очередь').click();
+  await listView(page, 'queue');
   const item = page.getByTestId('conv-item').filter({ hasText: client });
   await expect(item).toBeVisible({ timeout: 15000 });
   await item.getByTestId('take').click();
   await expect(page.getByTestId('reply')).toBeEnabled();
+  // Подсказки по умолчанию свёрнуты — раскрыть.
+  await page.getByTestId('assist-toggle').click();
 }
 
 test.describe.serial('Ф7: автоответы, бот, подсказки, шаблоны', () => {

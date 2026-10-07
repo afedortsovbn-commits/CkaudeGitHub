@@ -15,6 +15,8 @@ export const softphoneUi = {
   otklyuchenPereklyuchenoNa: (p0: unknown, p1: unknown, p2: unknown) =>
     `${p0} «${p1}» отключён — переключено на «${p2}»`,
   zvuk: 'Звук',
+  zvukHint: 'Звук: микрофон, динамик, гарнитура',
+  nabratHint: 'Набрать номер',
   garnitura: ' · гарнитура',
   nabrat: 'Набрать',
   pozvonit: 'Позвонить',

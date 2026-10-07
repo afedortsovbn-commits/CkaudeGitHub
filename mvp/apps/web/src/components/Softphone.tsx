@@ -4,6 +4,7 @@ import {
   Button,
   Alert,
   Group,
+  Indicator,
   Modal,
   Paper,
   Popover,
@@ -14,7 +15,9 @@ import {
   Text,
   TextInput,
   Tooltip,
+  VisuallyHidden,
 } from '@mantine/core';
+import { IconDialpad, IconHeadset, IconVolume } from '@tabler/icons-react';
 import { notifications } from '@mantine/notifications';
 import { useEffect, useState } from 'react';
 import { audioDevices, type DeviceNotice } from '../lib/audio-devices';
@@ -93,6 +96,7 @@ export function SoftphoneStatus() {
   const s = useSoftphone();
   const [number, setNumber] = useState('');
   const [settings, setSettings] = useState(false);
+  const [dialOpen, setDialOpen] = useState(false);
   const r = REG[s.reg];
   useHotkeys();
   // Горячее подключение/отключение гарнитуры — уведомление (разговор продолжается на другом устройстве).
@@ -107,34 +111,49 @@ export function SoftphoneStatus() {
       ),
     [],
   );
+  // Набрать номер можно, когда телефон готов и нет звонка; иначе значок только показывает состояние.
+  const canDial = s.reg === 'registered' && !s.call;
   return (
-    <Group gap="xs">
-      <Button
-        size="xs"
-        variant="subtle"
-        onClick={() => setSettings(true)}
-        data-testid="audio-settings"
-        visibleFrom="xs"
-      >
-        {t.softphoneUi.zvuk}
-        {s.headset ? t.softphoneUi.garnitura : ''}
-      </Button>
-      {settings && <AudioSettings onClose={() => setSettings(false)} />}
-      <Tooltip label={s.error ?? r.label} disabled={!s.error}>
-        <Badge color={r.color} variant="dot" data-testid="softphone-status">
-          {r.label}
-        </Badge>
+    <Group gap={6}>
+      <Tooltip label={`${t.softphoneUi.zvukHint}${s.headset ? t.softphoneUi.garnitura : ''}`}>
+        <ActionIcon
+          size="lg"
+          variant="subtle"
+          color="gray"
+          onClick={() => setSettings(true)}
+          data-testid="audio-settings"
+          aria-label={t.softphoneUi.zvuk}
+          visibleFrom="xs"
+        >
+          {s.headset ? <IconHeadset size={20} /> : <IconVolume size={20} />}
+        </ActionIcon>
       </Tooltip>
-      <Popover position="bottom-end" withArrow>
+      {settings && <AudioSettings onClose={() => setSettings(false)} />}
+      <Popover position="bottom-end" withArrow opened={dialOpen && canDial} onChange={setDialOpen}>
         <Popover.Target>
-          <Button
-            size="xs"
-            variant="light"
-            disabled={s.reg !== 'registered' || !!s.call}
-            data-testid="dial-open"
-          >
-            {t.softphoneUi.nabrat}
-          </Button>
+          <Tooltip label={s.error ?? (canDial ? `${r.label} · ${t.softphoneUi.nabratHint}` : r.label)}>
+            <Indicator
+              color={r.color}
+              size={10}
+              offset={5}
+              withBorder
+              processing={s.reg === 'connecting'}
+              data-testid="softphone-status"
+              data-reg={s.reg}
+            >
+              <ActionIcon
+                size="lg"
+                variant={canDial ? 'light' : 'subtle'}
+                color={canDial ? 'green' : 'gray'}
+                onClick={() => canDial && setDialOpen(!dialOpen)}
+                data-testid="dial-open"
+                aria-label={t.softphoneUi.nabrat}
+              >
+                <IconDialpad size={20} />
+              </ActionIcon>
+              <VisuallyHidden>{r.label}</VisuallyHidden>
+            </Indicator>
+          </Tooltip>
         </Popover.Target>
         <Popover.Dropdown>
           <Group gap="xs">
@@ -145,7 +164,14 @@ export function SoftphoneStatus() {
               onChange={(e) => setNumber(e.currentTarget.value)}
               data-testid="dial-number"
             />
-            <Button size="xs" onClick={() => void softphone.call(number)} data-testid="dial-call">
+            <Button
+              size="xs"
+              onClick={() => {
+                setDialOpen(false);
+                void softphone.call(number);
+              }}
+              data-testid="dial-call"
+            >
               {t.softphoneUi.pozvonit}
             </Button>
           </Group>

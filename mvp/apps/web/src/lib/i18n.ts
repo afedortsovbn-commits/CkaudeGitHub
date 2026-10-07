@@ -1,5 +1,6 @@
 import { apiLib } from './i18n/apiLib';
 import { assistPanelUi } from './i18n/assistPanelUi';
+import { azsMap } from './i18n/azsMap';
 import { audioDevicesLib } from './i18n/audioDevicesLib';
 import { audioSettingsUi } from './i18n/audioSettingsUi';
 import { authLib } from './i18n/authLib';
@@ -133,6 +134,7 @@ const ru = {
   // Разделы страниц и компонентов (Ф12b): lib/i18n/<раздел>.ts.
   apiLib,
   assistPanelUi,
+  azsMap,
   audioDevicesLib,
   audioSettingsUi,
   authLib,

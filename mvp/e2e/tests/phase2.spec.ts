@@ -1,5 +1,5 @@
 import { type Browser, expect, type Page, test } from '@playwright/test';
-import { DEMO_PASSWORD, login, nav } from './helpers';
+import { DEMO_PASSWORD, login, nav, listView } from './helpers';
 
 const stamp = Date.now().toString().slice(-6);
 
@@ -32,7 +32,7 @@ test.describe.serial('Ф2: чат на сайте → оператор', () => {
     await login(page, 'operator1@demo.local', DEMO_PASSWORD);
     await nav(page, 'Рабочее место оператора');
     await expect(page.getByTestId('rt-status')).toHaveText('онлайн');
-    await page.getByTestId('tabs').getByText('Очередь').click();
+    await listView(page, 'queue');
     const item = page.getByTestId('conv-item').filter({ hasText: `Клиент ${stamp}` });
     await expect(item).toBeVisible();
     await item.getByTestId('take').click();
@@ -81,7 +81,7 @@ test.describe.serial('Ф2: чат на сайте → оператор', () => {
 
     // Повторное обращение того же клиента: новое обращение, история видна оператору
     await clientSays(client.w, 'И ещё вопрос');
-    await page.getByTestId('tabs').getByText('Очередь').click();
+    await listView(page, 'queue');
     const again = page.getByTestId('conv-item').filter({ hasText: `Клиент ${stamp}` });
     await again.getByTestId('take').click();
     await page.getByRole('tab', { name: 'Клиент' }).click();

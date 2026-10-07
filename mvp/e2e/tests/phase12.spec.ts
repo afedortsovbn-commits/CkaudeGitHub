@@ -3,7 +3,7 @@ import { writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { type APIRequestContext, type Browser, expect, type Page, test } from '@playwright/test';
-import { ADMIN, DEMO_PASSWORD, login, nav, totpCode, setAgentStatus } from './helpers';
+import { ADMIN, DEMO_PASSWORD, login, nav, totpCode, setAgentStatus, listView } from './helpers';
 import { sendMail } from './mail';
 
 /**
@@ -124,7 +124,7 @@ async function operator(browser: Browser, email: string): Promise<Page> {
 }
 
 async function takeFromQueue(page: Page, text: string, timeout = 30_000) {
-  await page.getByTestId('tabs').getByText('Очередь').click();
+  await listView(page, 'queue');
   const item = page.getByTestId('conv-item').filter({ hasText: text });
   await expect(item.first()).toBeVisible({ timeout });
   await item.first().getByTestId('take').click();
@@ -235,7 +235,7 @@ test.describe.serial('Ф12: доводка и приёмка', () => {
         }),
       });
       expect(r.ok).toBe(true);
-      await op.getByTestId('tabs').getByText('Очередь').click();
+      await listView(op, 'queue');
       await expect(op.getByTestId('conv-item').filter({ hasText: `Тг ${stamp}` })).toBeVisible({
         timeout: 60_000,
       });
@@ -318,7 +318,7 @@ test.describe.serial('Ф12: доводка и приёмка', () => {
     const sup = await operator(browser, 'supervisor@demo.local'); // область — только «Север»
     const queued = () => sup.getByTestId('conv-item').filter({ hasText: name });
     try {
-      await sup.getByTestId('tabs').getByText('Очередь').click();
+      await listView(sup, 'queue');
       await sup.waitForTimeout(1500);
       await expect(queued()).toHaveCount(0);
 
@@ -333,7 +333,7 @@ test.describe.serial('Ф12: доводка и приёмка', () => {
 
       await expect(async () => {
         await sup.reload();
-        await sup.getByTestId('tabs').getByText('Очередь').click();
+        await listView(sup, 'queue');
         await expect(queued()).toBeVisible({ timeout: 2000 });
       }).toPass({ timeout: 30_000 });
     } finally {

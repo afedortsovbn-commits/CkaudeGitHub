@@ -87,3 +87,13 @@ export async function setAgentStatus(page: Page, status: 'ready' | 'break' | 'of
   await page.getByTestId('agent-status').click();
   await page.getByTestId(status === 'break' ? 'agent-status-break-0' : `agent-status-${status}`).click();
 }
+
+/** Вид списка обращений на рабочем месте оператора: «Очередь» — отдельная кнопка, остальное — выпадающий список. */
+export async function listView(page: Page, view: string) {
+  if (view === 'queue') {
+    await page.getByTestId('queue-open').click();
+    return;
+  }
+  await page.getByTestId('list-view').click();
+  await page.getByTestId(`view-${view}`).click();
+}

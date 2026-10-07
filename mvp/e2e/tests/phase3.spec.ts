@@ -1,5 +1,5 @@
 import { type Browser, expect, test } from '@playwright/test';
-import { DEMO_PASSWORD, login, nav, setAgentStatus } from './helpers';
+import { DEMO_PASSWORD, login, nav, setAgentStatus, listView } from './helpers';
 
 const stamp = Date.now().toString().slice(-6);
 
@@ -76,7 +76,7 @@ test.describe.serial('Ф3: маршрутизация (ACD), статусы оп
     await expect(item).toBeVisible({ timeout: 15000 });
     await item.getByTestId('decline').click();
 
-    await page.getByTestId('tabs').getByText('Очередь').click();
+    await listView(page, 'queue');
     await expect(page.getByTestId('conv-item').filter({ hasText: `Клиент ACD-B ${stamp}` })).toBeVisible({
       timeout: 10000,
     });

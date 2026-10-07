@@ -9,7 +9,7 @@ import {
   type Page,
   test,
 } from '@playwright/test';
-import { ADMIN, DEMO_PASSWORD, login, nav, setAgentStatus } from './helpers';
+import { ADMIN, DEMO_PASSWORD, login, nav, setAgentStatus, listView } from './helpers';
 
 /**
  * Ф14 (указания заказчика 01.10): тайм-аут молчания в боте, позиция в очереди, супервизор — прослушивание →
@@ -232,7 +232,7 @@ test.describe.serial('Ф14: бот, очередь, супервизор', () =>
     const op = await newPage(browser);
     await login(op, 'operator1@demo.local', DEMO_PASSWORD);
     await nav(op, 'Рабочее место оператора');
-    await op.getByTestId('tabs').getByText('Очередь').click();
+    await listView(op, 'queue');
     const item = op.getByTestId('conv-item').filter({ hasText: name });
     await expect(item).toBeVisible({ timeout: 15_000 });
     await item.getByTestId('take').click();
@@ -346,9 +346,9 @@ test.describe.serial('Ф14: бот, очередь, супервизор', () =>
     await silence(client);
     await silence(op);
 
-    await sup.getByTestId('tabs').getByText('Все открытые').click();
+    await listView(sup, 'active');
     await sup.getByTestId('conv-item').filter({ hasText: name }).click();
-    await sup.getByTestId('tab-calls').click();
+    await sup.getByTestId('tab-contact').click();
     await sup.getByTestId('call-listen').click();
     const panel = sup.getByTestId('softphone-call');
     await expect(panel).toContainText('Прослушивание разговора', { timeout: 15_000 });
@@ -398,10 +398,10 @@ test.describe.serial('Ф14: бот, очередь, супервизор', () =>
     await sup.waitForTimeout(1000);
     expect(await heard(client)).toBeGreaterThan(LOUD);
     // Обращение переназначено супервизору; журнал вызова — с подключениями и перехватом.
-    await sup.getByTestId('tabs').getByText('Мои').click();
+    await listView(sup, 'mine');
     await expect(sup.getByTestId('conv-item').filter({ hasText: name })).toBeVisible({ timeout: 10_000 });
     await sup.getByTestId('conv-item').filter({ hasText: name }).click();
-    await sup.getByTestId('tab-calls').click();
+    await sup.getByTestId('tab-contact').click();
     const item = sup.getByTestId('call-item').first();
     await expect(item).toContainText('супервизор суфлирует');
     await expect(item).toContainText('супервизор вмешался');
@@ -418,7 +418,7 @@ test.describe.serial('Ф14: бот, очередь, супервизор', () =>
     const op = await newPage(browser);
     await login(op, 'operator2@demo.local', DEMO_PASSWORD);
     await nav(op, 'Рабочее место оператора');
-    await op.getByTestId('tabs').getByText('Очередь').click();
+    await listView(op, 'queue');
     const item = op.getByTestId('conv-item').filter({ hasText: name });
     await expect(item).toBeVisible({ timeout: 15_000 });
     await item.getByTestId('take').click();
@@ -427,7 +427,7 @@ test.describe.serial('Ф14: бот, очередь, супервизор', () =>
     const sup = await newPage(browser);
     await login(sup, ADMIN.email, ADMIN.password);
     await nav(sup, 'Рабочее место оператора');
-    await sup.getByTestId('tabs').getByText('Все открытые').click();
+    await listView(sup, 'active');
     await sup.getByTestId('conv-item').filter({ hasText: name }).click();
     await sup.getByTestId('hint-mode').click();
     await sup.getByTestId('reply').fill(`Предложи оплату по QR ${stamp}`);

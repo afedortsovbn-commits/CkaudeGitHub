@@ -86,7 +86,19 @@ const LIST_SQL = `SELECT c.id, c.status, c.channel_kind, c.queue_id, c.assignee_
     (SELECT left(m.body, 140) FROM message m WHERE m.conversation_id = c.id AND m.direction IN ('in','out')
       ORDER BY m.sent_at DESC, m.seq DESC LIMIT 1) AS last_message,
     (SELECT m.direction FROM message m WHERE m.conversation_id = c.id AND m.direction IN ('in','out')
-      ORDER BY m.sent_at DESC, m.seq DESC LIMIT 1) AS last_direction
+      ORDER BY m.sent_at DESC, m.seq DESC LIMIT 1) AS last_direction,
+    -- Стадия для списка оператора: «talk» — идёт общение с клиентом, «wrapup» — общение завершено, карточка не
+    -- закрыта (те же признаки, что у вкладки «Постобработка»).
+    CASE WHEN c.status NOT IN ('active', 'hold') THEN NULL
+      WHEN c.channel_kind = 'voice' THEN
+        CASE WHEN EXISTS (SELECT 1 FROM call k WHERE k.conversation_id = c.id AND k.state <> 'ended') THEN 'talk'
+          WHEN EXISTS (SELECT 1 FROM call k WHERE k.conversation_id = c.id AND k.connected_at IS NOT NULL) THEN 'wrapup'
+        END
+      WHEN (SELECT m.direction = 'out' AND m.sent_at < now() - make_interval(secs => COALESCE(
+               (SELECT (value #>> '{}')::int FROM system_setting WHERE key = 'operator.wrapup_chat_idle_s'), 300))
+             FROM message m WHERE m.conversation_id = c.id AND m.direction IN ('in', 'out')
+            ORDER BY m.sent_at DESC, m.seq DESC LIMIT 1) THEN 'wrapup'
+      ELSE 'talk' END AS stage
   FROM conversation c
   JOIN contact ct ON ct.id = c.contact_id
   LEFT JOIN queue q ON q.id = c.queue_id

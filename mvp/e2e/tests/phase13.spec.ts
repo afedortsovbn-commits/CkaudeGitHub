@@ -1,5 +1,5 @@
 import { type Browser, type BrowserContext, expect, type Page, test } from '@playwright/test';
-import { ADMIN, DEMO_PASSWORD, login, nav } from './helpers';
+import { ADMIN, DEMO_PASSWORD, login, nav, listView } from './helpers';
 
 /** Мок внешних систем (mock-selfservice): сервис ответов Rocket Data (учётная запись demo — демо-канал) и выгрузка АСУ. */
 const MOCK = process.env.E2E_MOCK_SELFSERVICE_URL ?? 'http://127.0.0.1:8082';
@@ -79,7 +79,7 @@ test.describe.serial('Ф13: отзывы с карт (Rocket Data) и синхр
 
     const op = await as(browser, 'operator1@demo.local');
     await nav(op, 'Рабочее место оператора');
-    await op.getByTestId('tabs').getByText('Очередь').click();
+    await listView(op, 'queue');
     const item = op.getByTestId('conv-item').filter({ hasText: author });
     await expect(item).toBeVisible({ timeout: 30_000 });
     await expect(item).toContainText('Отзыв');
@@ -92,7 +92,6 @@ test.describe.serial('Ф13: отзывы с карт (Rocket Data) и синхр
     await expect(op.getByTestId('review-station')).toContainText('АЗС №1, Предприятие «Север»');
     await expect(op.getByTestId('review-link')).toHaveAttribute('href', /yandex/);
     await expect(op.getByTestId('messages')).toContainText(text);
-    await expect(op.getByTestId('org')).toContainText('Предприятие «Север»');
 
     // Ответ на отзыв уходит в сервис ответов Rocket Data: статус доставки и ответ в моке.
     const answer = `Спасибо за отзыв, ${author}! Разобрались с сотрудником.`;
@@ -111,6 +110,8 @@ test.describe.serial('Ф13: отзывы с карт (Rocket Data) и синхр
 
     // Дальше — как обычное обращение: тема, результат, закрытие.
     await choose(op, 'topic', 'Жалобы на персонал АЗС ❗');
+    // Предприятие из отзыва — в блоке АЗС (поля карточки видны после выбора темы).
+    await expect(op.getByTestId('org')).toContainText('Предприятие «Север»');
     // Тема требует номер АЗС при закрытии (поле появляется после выбора темы).
     const station = op.getByRole('textbox', { name: 'Номер АЗС' });
     await station.fill('1');
@@ -122,7 +123,7 @@ test.describe.serial('Ф13: отзывы с карт (Rocket Data) и синхр
     // Повторная передача того же отзыва (Rocket Data повторила запрос) — 200, без дубля: обращение одно.
     expect((await push(review)).status).toBe(200);
     await op.waitForTimeout(3000);
-    await op.getByTestId('tabs').getByText('Закрытые').click();
+    await listView(op, 'closed');
     await expect(op.getByTestId('conv-item').filter({ hasText: author })).toHaveCount(1);
 
     // Отчёт по отзывам: по объектам, отзыв отвечен.

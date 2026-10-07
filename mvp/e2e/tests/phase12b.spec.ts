@@ -3,7 +3,7 @@ import { writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { type APIRequestContext, type Browser, expect, type Page, test } from '@playwright/test';
-import { ADMIN, DEMO_PASSWORD, login, nav, setAgentStatus } from './helpers';
+import { ADMIN, DEMO_PASSWORD, login, nav, setAgentStatus, listView } from './helpers';
 
 /**
  * Ф12b: пробелы приёмки — обязательный тег при закрытии (опция очереди, M-CARD-06), вкладки «Удержание» и
@@ -108,7 +108,7 @@ async function operator(browser: Browser, email: string, password = DEMO_PASSWOR
 }
 
 async function takeFromQueue(page: Page, text: string) {
-  await page.getByTestId('tabs').getByText('Очередь').click();
+  await listView(page, 'queue');
   const item = page.getByTestId('conv-item').filter({ hasText: text });
   await expect(item.first()).toBeVisible({ timeout: 30_000 });
   await item.first().getByTestId('take').click();
@@ -201,7 +201,7 @@ test.describe.serial('Ф12b: пробелы приёмки', () => {
     await widgetClient(request, dup, `Второе ${stamp}`);
     const admin = await operator(browser, ADMIN.email, ADMIN.password);
     try {
-      await admin.getByTestId('tabs').getByText('Все открытые').click();
+      await listView(admin, 'active');
       await admin.getByTestId('conv-item').filter({ hasText: main }).first().click();
       await admin.getByRole('tab', { name: 'Клиент' }).click();
       await expect(admin.getByText('История обращений (1)')).toBeVisible({ timeout: 15_000 });
@@ -247,10 +247,7 @@ test.describe.serial('Ф12b: пробелы приёмки', () => {
       // «Удержание»: звонок на удержании — обращение во вкладке.
       await call1.getByTestId('call-hold').click();
       await expect(call1.getByTestId('call-hold')).toHaveText('Снять с удержания', { timeout: 10_000 });
-      await op1
-        .getByTestId('tabs-work')
-        .getByText(/^Удержание/)
-        .click();
+      await listView(op1, 'hold');
       await expect(op1.getByTestId('conv-item').filter({ hasText: name })).toBeVisible({ timeout: 10_000 });
       await call1.getByTestId('call-hold').click();
       await expect(call1.getByTestId('call-hold')).toHaveText('Удержание', { timeout: 10_000 });
@@ -294,9 +291,9 @@ test.describe.serial('Ф12b: пробелы приёмки', () => {
       await expect(client.getByTestId('demo-state')).toHaveText('Идёт разговор');
 
       // Журнал вызова: консультация и перевод после неё.
-      await op2.getByTestId('tabs').getByText('Мои').click();
+      await listView(op2, 'mine');
       await op2.getByTestId('conv-item').filter({ hasText: name }).first().click();
-      await op2.getByTestId('tab-calls').click();
+      await op2.getByTestId('tab-contact').click();
       await expect(op2.getByTestId('call-item').first()).toContainText('консультация', { timeout: 15_000 });
       await expect(op2.getByTestId('call-item').first()).toContainText(
         'перевод оператору после консультации',
@@ -305,10 +302,7 @@ test.describe.serial('Ф12b: пробелы приёмки', () => {
       // «Постобработка»: коллега завершил разговор — обращение ждёт закрытия.
       await call2.getByTestId('call-hangup').click();
       await expect(call2).toHaveCount(0, { timeout: 15_000 });
-      await op2
-        .getByTestId('tabs-work')
-        .getByText(/^Постобработка/)
-        .click();
+      await listView(op2, 'wrapup');
       await expect(op2.getByTestId('conv-item').filter({ hasText: name })).toBeVisible({ timeout: 15_000 });
     } finally {
       await setAgentStatus(op1, 'offline');

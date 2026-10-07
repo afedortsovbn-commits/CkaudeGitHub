@@ -68,6 +68,8 @@ export function HintPanel({
   onPickTopic,
   voice = false,
   height,
+  opened,
+  onOpenChange,
 }: {
   conv: Row;
   lastInSeq: number;
@@ -76,8 +78,16 @@ export function HintPanel({
   onPickTopic(topicId: string): void;
   voice?: boolean;
   height: number | string;
+  opened?: boolean;
+  onOpenChange?(v: boolean): void;
 }) {
-  const [open, setOpen] = useState(true);
+  // По умолчанию подсказки свёрнуты (видно число найденных); поиск и щелчок по заголовку раскрывают.
+  const [own, setOwn] = useState(false);
+  const open = opened ?? own;
+  const setOpen = (v: boolean) => {
+    setOwn(v);
+    onOpenChange?.(v);
+  };
   const [q, setQ] = useState('');
   const [dq] = useDebouncedValue(q.trim(), 300);
   const [picked, setPicked] = useState<string | null>(null);
@@ -159,6 +169,7 @@ export function HintPanel({
           <Text size="sm" fw={700}>
             {open ? '▾ ' : '▸ '}
             {t.hintPanel.title}
+            {!open && items.length ? t.hintPanel.count(items.length) : ''}
           </Text>
         </UnstyledButton>
         <TextInput

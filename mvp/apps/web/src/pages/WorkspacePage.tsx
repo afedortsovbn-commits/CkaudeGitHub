@@ -4,15 +4,18 @@ import {
   Badge,
   Box,
   Button,
+  ActionIcon,
   Card,
-  Chip,
+  Checkbox,
   FileButton,
   Grid,
   Group,
+  Indicator,
+  Menu,
   MultiSelect,
   Paper,
+  Popover,
   ScrollArea,
-  SegmentedControl,
   Select,
   Stack,
   Switch,
@@ -22,7 +25,9 @@ import {
   TextInput,
   Title,
   Tooltip,
+  VisuallyHidden,
 } from '@mantine/core';
+import { IconChevronDown, IconFilter, IconMap2 } from '@tabler/icons-react';
 import { notifications } from '@mantine/notifications';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
@@ -33,6 +38,7 @@ import { notify, onRealtime, useRealtime } from '../lib/realtime';
 import { ExternalDataPanel } from './IvrAdminPages';
 import { renderTemplate, SlashList, useSlashTemplates } from '../components/AssistPanel';
 import { HintPanel } from '../components/HintPanel';
+import { AzsMapModal, type Station, useStations } from '../components/AzsMap';
 import { softphone, useSoftphone } from '../lib/softphone';
 import { setDraft } from '../lib/app-version';
 import { EscalateModal, SubstitutesPanel, TicketList, useTicketCount } from './TicketPages';
@@ -156,20 +162,46 @@ function useCount(tab: string): number {
   return q.data?.length ?? 0;
 }
 
+/** Полупрозрачный цвет слева, уходящий в прозрачность вправо (как в списке 2-й линии). */
+const fade = (h: number, s: number, l: number, a: number) =>
+  `linear-gradient(90deg, hsla(${h}, ${s}%, ${l}%, ${a}) 0%, hsla(${h}, ${s}%, ${l}%, 0) 60%)`;
+/**
+ * Стадия обращения в списке: красные — идёт общение с клиентом (или предложено — клиент ждёт), жёлтые — общение
+ * завершено, а карточка не закрыта. Они всегда сверху.
+ */
+const STAGE: Record<string, { rank: number; bg: string; hint: string }> = {
+  offered: { rank: 0, bg: fade(0, 85, 62, 0.26), hint: t.workspace.stageOffered },
+  talk: { rank: 0, bg: fade(0, 85, 62, 0.22), hint: t.workspace.stageTalk },
+  wrapup: { rank: 1, bg: fade(45, 95, 55, 0.32), hint: t.workspace.stageWrapup },
+};
+const stageOf = (c: Row): string | null =>
+  c.status === 'offered' ? 'offered' : ((c.stage as string | null | undefined) ?? null);
+
 function List({
   tab,
   selected,
   onSelect,
+  important,
+  callback,
 }: {
   tab: string;
   selected: string | null;
   onSelect(id: string): void;
+  important: boolean;
+  callback: boolean;
 }) {
   const { me } = useAuth();
-  const [important, setImportant] = useState(false);
-  const [callback, setCallback] = useState(false);
   const list = useList(
     `/conversations?tab=${tab}${important ? '&important=true' : ''}${callback ? '&callback=true' : ''}`,
+  );
+  // Необработанные — сверху (порядок внутри группы — как пришёл с сервера).
+  const rows = useMemo(
+    () =>
+      (list.data ?? [])
+        .map((c, i) => ({ c, i, rank: STAGE[stageOf(c) ?? '']?.rank ?? 2 }))
+        .sort((a, b) => a.rank - b.rank || a.i - b.i)
+        .map((x) => x.c),
+    [list.data],
   );
   const take = useAction((id: string) => post(`/conversations/${id}/take`), t.workspace.dialogVzyatVRabotu);
   const accept = useAction(
@@ -182,131 +214,124 @@ function List({
   );
   return (
     <Stack gap={6}>
-      <Group gap={4}>
-        <Chip size="xs" variant="outline" checked={important} onChange={setImportant}>
-          {t.workspace.filterImportant}
-        </Chip>
-        <Chip
-          size="xs"
-          variant="outline"
-          checked={callback}
-          onChange={setCallback}
-          data-testid="filter-callback"
-        >
-          {t.workspace.filterCallback}
-        </Chip>
-      </Group>
-      {(list.data ?? []).length === 0 && (
-        <Text c="dimmed" size="sm">
+      {rows.length === 0 && (
+        <Text c="dimmed" size="sm" ta="center" mt="md">
           {t.workspace.netObrashcheniy}
         </Text>
       )}
-      {(list.data ?? []).map((c) => (
-        <Card
-          key={c.id}
-          withBorder
-          padding="xs"
-          style={{
-            cursor: 'pointer',
-            borderColor: selected === c.id ? 'var(--mantine-color-blue-5)' : undefined,
-          }}
-          onClick={() => onSelect(c.id)}
-          data-testid="conv-item"
-        >
-          <Group justify="space-between" wrap="nowrap">
-            <Text fw={600} size="sm" truncate>
-              {String(c.contactName)}
-            </Text>
-            <Text size="xs" c="dimmed">
-              {tab === 'queue' ? since(c.createdAt) : time(c.lastMessageAt)}
-            </Text>
-          </Group>
-          <Text size="xs" c="dimmed" lineClamp={2}>
-            {c.lastDirection === 'out' ? t.workspace.vy : ''}
-            {String(c.lastMessage ?? '')}
-          </Text>
-          <Group gap={4} mt={4}>
-            <Badge size="xs" variant="light">
-              {CHANNEL[String(c.channelKind)] ?? String(c.channelKind)}
-            </Badge>
-            {c.reviewRating ? (
-              <Badge size="xs" variant="outline" color={Number(c.reviewRating) <= 2 ? 'red' : 'yellow'}>
-                {stars(Number(c.reviewRating))}
-              </Badge>
-            ) : null}
-            {c.isImportant ? (
-              <Badge size="xs" color="red">
-                {t.workspace.osoboVazhnoe}
-              </Badge>
-            ) : null}
-            {c.isUrgent ? (
-              <Badge size="xs" color="orange">
-                {t.workspace.srochnoe}
-              </Badge>
-            ) : null}
-            {c.callbackRequested ? (
-              <Badge size="xs" color="grape" data-testid="badge-callback">
-                {t.workspace.perezvonit}
-              </Badge>
-            ) : null}
-            {c.topicName ? (
-              <Badge size="xs" variant="outline">
-                {String(c.topicName)}
-              </Badge>
-            ) : null}
-            {c.status === 'offered' ? (
-              <Badge size="xs" color="blue">
-                {t.workspace.predlozheno2}
-              </Badge>
-            ) : null}
-            {tab !== 'mine' && c.assigneeName ? (
-              <Badge size="xs" color="gray">
-                {String(c.assigneeName)}
-              </Badge>
-            ) : null}
-          </Group>
-          {tab === 'queue' && (
-            <Button
-              size="compact-xs"
-              mt={6}
-              data-testid="take"
-              onClick={(e) => {
-                e.stopPropagation();
-                take.mutate(c.id, { onSuccess: () => onSelect(c.id) });
-              }}
-            >
-              {t.workspace.vzyat}
-            </Button>
-          )}
-          {c.status === 'offered' && c.assigneeId === me?.id && (
-            <Group gap={4} mt={6}>
-              <Button
-                size="compact-xs"
-                color="green"
-                data-testid="accept"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  accept.mutate(c.id, { onSuccess: () => onSelect(c.id) });
-                }}
-              >
-                {t.workspace.prinyat}
-              </Button>
-              <Button
-                size="compact-xs"
-                variant="light"
-                color="red"
-                data-testid="decline"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  decline.mutate(c.id);
-                }}
-              >
-                {t.workspace.otklonit}
-              </Button>
+      {rows.map((c) => {
+        const stage = STAGE[stageOf(c) ?? ''];
+        return (
+          <Card
+            key={c.id}
+            withBorder
+            padding="xs"
+            title={stage?.hint}
+            style={{
+              cursor: 'pointer',
+              borderColor: selected === c.id ? 'var(--mantine-color-blue-5)' : undefined,
+              boxShadow: selected === c.id ? '0 0 0 1px var(--mantine-color-blue-5)' : undefined,
+              background: stage ? `${stage.bg}, var(--mantine-color-body)` : undefined,
+            }}
+            onClick={() => onSelect(c.id)}
+            data-testid="conv-item"
+            data-stage={stageOf(c) ?? undefined}
+          >
+            <Group justify="space-between" wrap="nowrap">
+              <Text fw={600} size="sm" truncate>
+                {String(c.contactName)}
+              </Text>
+              <Text size="xs" c="dimmed">
+                {tab === 'queue' ? since(c.createdAt) : time(c.lastMessageAt)}
+              </Text>
             </Group>
-          )}
-        </Card>
-      ))}
+            <Text size="xs" c="dimmed" lineClamp={2}>
+              {c.lastDirection === 'out' ? t.workspace.vy : ''}
+              {String(c.lastMessage ?? '')}
+            </Text>
+            <Group gap={4} mt={4}>
+              <Badge size="xs" variant="light">
+                {CHANNEL[String(c.channelKind)] ?? String(c.channelKind)}
+              </Badge>
+              {c.reviewRating ? (
+                <Badge size="xs" variant="outline" color={Number(c.reviewRating) <= 2 ? 'red' : 'yellow'}>
+                  {stars(Number(c.reviewRating))}
+                </Badge>
+              ) : null}
+              {c.isImportant ? (
+                <Badge size="xs" color="red">
+                  {t.workspace.osoboVazhnoe}
+                </Badge>
+              ) : null}
+              {c.isUrgent ? (
+                <Badge size="xs" color="orange">
+                  {t.workspace.srochnoe}
+                </Badge>
+              ) : null}
+              {c.callbackRequested ? (
+                <Badge size="xs" color="grape" data-testid="badge-callback">
+                  {t.workspace.perezvonit}
+                </Badge>
+              ) : null}
+              {c.topicName ? (
+                <Badge size="xs" variant="outline">
+                  {String(c.topicName)}
+                </Badge>
+              ) : null}
+              {c.status === 'offered' ? (
+                <Badge size="xs" color="blue">
+                  {t.workspace.predlozheno2}
+                </Badge>
+              ) : null}
+              {tab !== 'mine' && c.assigneeName ? (
+                <Badge size="xs" color="gray">
+                  {String(c.assigneeName)}
+                </Badge>
+              ) : null}
+            </Group>
+            {tab === 'queue' && (
+              <Button
+                size="compact-xs"
+                mt={6}
+                data-testid="take"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  take.mutate(c.id, { onSuccess: () => onSelect(c.id) });
+                }}
+              >
+                {t.workspace.vzyat}
+              </Button>
+            )}
+            {c.status === 'offered' && c.assigneeId === me?.id && (
+              <Group gap={4} mt={6}>
+                <Button
+                  size="compact-xs"
+                  color="green"
+                  data-testid="accept"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    accept.mutate(c.id, { onSuccess: () => onSelect(c.id) });
+                  }}
+                >
+                  {t.workspace.prinyat}
+                </Button>
+                <Button
+                  size="compact-xs"
+                  variant="light"
+                  color="red"
+                  data-testid="decline"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    decline.mutate(c.id);
+                  }}
+                >
+                  {t.workspace.otklonit}
+                </Button>
+              </Group>
+            )}
+          </Card>
+        );
+      })}
     </Stack>
   );
 }
@@ -444,6 +469,7 @@ function Messages({ conv, typing, onTyping }: { conv: Row; typing: boolean; onTy
     ['active', 'offered'].includes(String(conv.status));
   const [hintMode, setHint] = useState(false);
   const hint = hintMode && canHint;
+  const [hintsOpen, setHintsOpen] = useState(false);
   // Звонок: писать клиенту некуда — поле ответа работает как внутренняя заметка, главное место у подсказок.
   const voice = conv.channelKind === 'voice';
   const note = noteMode || hint || voice;
@@ -574,13 +600,19 @@ function Messages({ conv, typing, onTyping }: { conv: Row; typing: boolean; onTy
     );
   };
   const showHints = conv.status !== 'closed' && (voice || (!note && canWrite));
+  // Звонок: заметка — в правой колонке под сутью; здесь — ход разговора и подсказки (свёрнуты по умолчанию).
+  const height = voice
+    ? hintsOpen
+      ? 140
+      : 'calc(100vh - 210px)'
+    : showHints
+      ? hintsOpen
+        ? 'calc(50vh - 110px)'
+        : 'calc(100vh - 375px)'
+      : 'calc(100vh - 330px)';
   return (
     <Stack h="100%" gap="xs">
-      <ScrollArea
-        h={voice ? 70 : showHints ? 'calc(50vh - 110px)' : 'calc(100vh - 330px)'}
-        viewportRef={viewport}
-        type="auto"
-      >
+      <ScrollArea h={height} viewportRef={viewport} type="auto">
         <Stack gap={6} p="xs" data-testid="messages">
           <PrevConversations convId={String(conv.id)} render={(m) => renderMsg(m)} />
           {(msgs.data ?? []).length > 0 && (
@@ -624,7 +656,9 @@ function Messages({ conv, typing, onTyping }: { conv: Row; typing: boolean; onTy
           lastInSeq={lastInSeq}
           voice={voice}
           canInsert={!voice && canWrite}
-          height={voice ? 'calc(100vh - 380px)' : 'calc(30vh)'}
+          height={voice ? 'calc(100vh - 400px)' : 'calc(30vh)'}
+          opened={hintsOpen}
+          onOpenChange={setHintsOpen}
           onPickTopic={pickTopic}
           onInsert={(t, sg) => {
             setNote(false);
@@ -634,118 +668,120 @@ function Messages({ conv, typing, onTyping }: { conv: Row; typing: boolean; onTy
           }}
         />
       )}
-      {slash.open && <SlashList items={slash.items} onPick={pickTemplate} />}
-      <Group gap={4}>
-        {files.map((f) => (
-          <Badge
-            key={f.id}
-            variant="light"
-            rightSection={
-              <span
-                style={{ cursor: 'pointer' }}
-                onClick={() => setFiles(files.filter((x) => x.id !== f.id))}
+      {!voice && slash.open && <SlashList items={slash.items} onPick={pickTemplate} />}
+      {!voice && (
+        <>
+          <Group gap={4}>
+            {files.map((f) => (
+              <Badge
+                key={f.id}
+                variant="light"
+                rightSection={
+                  <span
+                    style={{ cursor: 'pointer' }}
+                    onClick={() => setFiles(files.filter((x) => x.id !== f.id))}
+                  >
+                    ×
+                  </span>
+                }
               >
-                ×
-              </span>
-            }
-          >
-            {f.filename}
-          </Badge>
-        ))}
-      </Group>
-      <Group align="flex-end" gap="xs">
-        <Textarea
-          style={{ flex: 1 }}
-          autosize
-          minRows={voice ? 1 : 2}
-          maxRows={6}
-          placeholder={
-            hint
-              ? t.workspace.podskazkaOperatoruPlaceholder
-              : voice
-                ? t.workspace.callNotePlaceholder
-                : note
-                  ? t.workspace.vnutrennyayaZametkaKlientEe
-                  : conv.channelKind === 'review'
-                    ? t.reviews.replyPlaceholder
-                    : t.workspace.otvetKlientuShablonyEnter
-          }
-          value={text}
-          data-testid="reply"
-          onChange={(e) => {
-            setText(e.currentTarget.value);
-            if (!note) onTyping();
-          }}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-              e.preventDefault();
-              // «/код» + Enter — подставить первый найденный шаблон, а не отправлять.
-              if (slash.open) {
-                if (slash.items[0]) pickTemplate(slash.items[0]);
-                return;
+                {f.filename}
+              </Badge>
+            ))}
+          </Group>
+          <Group align="flex-end" gap="xs">
+            <Textarea
+              style={{ flex: 1 }}
+              autosize
+              minRows={2}
+              maxRows={6}
+              placeholder={
+                hint
+                  ? t.workspace.podskazkaOperatoruPlaceholder
+                  : note
+                    ? t.workspace.vnutrennyayaZametkaKlientEe
+                    : conv.channelKind === 'review'
+                      ? t.reviews.replyPlaceholder
+                      : t.workspace.otvetKlientuShablonyEnter
               }
-              if (canWrite) void send();
-            }
-          }}
-        />
-        <Stack gap={4}>
-          <FileButton
-            onChange={async (f) => {
-              if (!f) return;
-              try {
-                setFiles([...files, await upload<Att>('/attachments', f)]);
-              } catch (e) {
-                notifications.show({ color: 'red', message: errorText(e) });
-              }
-            }}
-          >
-            {(props) => (
+              value={text}
+              data-testid="reply"
+              onChange={(e) => {
+                setText(e.currentTarget.value);
+                if (!note) onTyping();
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  // «/код» + Enter — подставить первый найденный шаблон, а не отправлять.
+                  if (slash.open) {
+                    if (slash.items[0]) pickTemplate(slash.items[0]);
+                    return;
+                  }
+                  if (canWrite) void send();
+                }
+              }}
+            />
+            <Stack gap={4}>
+              <FileButton
+                onChange={async (f) => {
+                  if (!f) return;
+                  try {
+                    setFiles([...files, await upload<Att>('/attachments', f)]);
+                  } catch (e) {
+                    notifications.show({ color: 'red', message: errorText(e) });
+                  }
+                }}
+              >
+                {(props) => (
+                  <Button
+                    {...props}
+                    variant="default"
+                    size="xs"
+                    data-testid="attach"
+                    disabled={hint || (!note && conv.channelKind === 'review')}
+                  >
+                    {t.workspace.fayl}
+                  </Button>
+                )}
+              </FileButton>
               <Button
-                {...props}
-                variant="default"
                 size="xs"
-                data-testid="attach"
-                disabled={hint || (!note && conv.channelKind === 'review')}
+                onClick={() => void send()}
+                loading={busy}
+                disabled={!canWrite}
+                data-testid="send"
               >
-                {t.workspace.fayl}
+                {t.workspace.otpravit}
               </Button>
+            </Stack>
+          </Group>
+          <Group gap="md">
+            <Switch
+              size="xs"
+              label={t.workspace.vnutrennyayaZametka}
+              checked={noteMode && !hint}
+              onChange={(e) => {
+                setNote(e.currentTarget.checked);
+                if (e.currentTarget.checked) setHint(false);
+              }}
+            />
+            {canHint && (
+              <Switch
+                size="xs"
+                color="grape"
+                label={t.workspace.podskazkaOperatoru}
+                checked={hint}
+                onChange={(e) => {
+                  setHint(e.currentTarget.checked);
+                  if (e.currentTarget.checked) setNote(false);
+                }}
+                data-testid="hint-mode"
+              />
             )}
-          </FileButton>
-          <Button
-            size="xs"
-            onClick={() => void send()}
-            loading={busy}
-            disabled={!canWrite}
-            data-testid="send"
-          >
-            {voice ? t.workspace.saveNote : t.workspace.otpravit}
-          </Button>
-        </Stack>
-      </Group>
-      <Group gap="md" display={voice ? 'none' : undefined}>
-        <Switch
-          size="xs"
-          label={t.workspace.vnutrennyayaZametka}
-          checked={noteMode && !hint}
-          onChange={(e) => {
-            setNote(e.currentTarget.checked);
-            if (e.currentTarget.checked) setHint(false);
-          }}
-        />
-        {canHint && (
-          <Switch
-            size="xs"
-            color="grape"
-            label={t.workspace.podskazkaOperatoru}
-            checked={hint}
-            onChange={(e) => {
-              setHint(e.currentTarget.checked);
-              if (e.currentTarget.checked) setNote(false);
-            }}
-            data-testid="hint-mode"
-          />
-        )}
-      </Group>
+          </Group>
+        </>
+      )}
     </Stack>
   );
 }
@@ -758,6 +794,9 @@ function ContactCard({ conv, onOpen }: { conv: Row; onOpen(id: string): void }) 
     queryFn: () => get<Row>(`/contacts/${conv.contactId}`),
   });
   const history = useList(`/contacts/${conv.contactId}/conversations`);
+  // Звонки прошлых обращений — по щелчку; у текущего обращения видны сразу.
+  const [callsOpen, setCallsOpen] = useState<Set<string>>(new Set());
+  useEffect(() => setCallsOpen(new Set()), [conv.id]);
   const [v, setV] = useState<Record<string, string>>({});
   useEffect(() => {
     if (c.data)
@@ -837,20 +876,44 @@ function ContactCard({ conv, onOpen }: { conv: Row; onOpen(id: string): void }) 
         {history.data?.length ?? 0})
       </Title>
       <Stack gap={4} data-testid="history">
-        {(history.data ?? []).map((h) => (
-          <Text
-            key={h.id}
-            size="xs"
-            style={{ cursor: 'pointer' }}
-            fw={h.id === conv.id ? 700 : 400}
-            onClick={() => onOpen(h.id)}
-          >
-            {new Date(String(h.createdAt)).toLocaleDateString('ru-RU')} ·{' '}
-            {CHANNEL[String(h.channelKind)] ?? String(h.channelKind)} ·{' '}
-            {STATUS[String(h.status)] ?? String(h.status)}
-            {h.topicName ? ` · ${String(h.topicName)}` : ''}
-          </Text>
-        ))}
+        {(history.data ?? []).map((h) => {
+          const current = h.id === conv.id;
+          const voice = h.channelKind === 'voice';
+          const open = current || callsOpen.has(h.id);
+          return (
+            <Box key={h.id}>
+              <Text
+                size="xs"
+                style={{ cursor: 'pointer' }}
+                fw={current ? 700 : 400}
+                onClick={() => onOpen(h.id)}
+              >
+                {new Date(String(h.createdAt)).toLocaleDateString('ru-RU')} ·{' '}
+                {CHANNEL[String(h.channelKind)] ?? String(h.channelKind)} ·{' '}
+                {STATUS[String(h.status)] ?? String(h.status)}
+                {h.topicName ? ` · ${String(h.topicName)}` : ''}
+                {current ? ` · ${t.workspace.historyCurrent}` : ''}
+                {voice && !current && (
+                  <Anchor
+                    size="xs"
+                    ml={6}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const next = new Set(callsOpen);
+                      if (open) next.delete(h.id);
+                      else next.add(h.id);
+                      setCallsOpen(next);
+                    }}
+                    data-testid="history-calls-toggle"
+                  >
+                    {open ? t.workspace.historyHideCalls : t.workspace.zvonki}
+                  </Anchor>
+                )}
+              </Text>
+              {open && <CallsPanel convId={String(h.id)} />}
+            </Box>
+          );
+        })}
       </Stack>
     </Stack>
   );
@@ -878,12 +941,172 @@ function ExtraFields({ fields, defined }: { fields: Record<string, unknown>; def
   );
 }
 
+/** Суть обращения — отдельное поле сразу под темой: его оператор заполняет всегда. */
+const SUMMARY_KEY = 'issue_summary';
+/** Логические блоки полей карточки: поле попадает в блок по ключу, остальные поля темы — в «Обращение». */
+const BLOCK_KEYS: Record<string, string[]> = {
+  client: ['client_name', 'client_phone', 'feedback_channel', 'company_name'],
+  cards: ['bonus_card', 'fuel_card', 'contract_no', 'contract_office', 'eq_number'],
+  azs: ['azs_number', 'azs_region'],
+};
+const BLOCK_ORDER = ['issue', 'client', 'cards', 'azs'];
+const blockOf = (k: string) => Object.keys(BLOCK_KEYS).find((b) => BLOCK_KEYS[b]!.includes(k)) ?? 'issue';
+/** Сколько полей в свёрнутом блоке АЗС без полей темы: предприятие и номер АЗС. */
+const AZS_PICKER_FIELDS = 2;
+
+/** Область АЗС по предприятию-владельцу (Минскавтозаправка — по адресу: город Минск или область). */
+function azsRegion(enterprise: string, address: string): string | null {
+  if (enterprise.includes(t.workspace.azsMinskAuto))
+    return address.includes(t.workspace.azsMinskCity) ? t.workspace.azsMinskCity : t.workspace.azsMinskRegion;
+  return t.workspace.azsRegionByEnterprise.find(([k]) => enterprise.includes(k))?.[1] ?? null;
+}
+
+/** Заметка к звонку — в правой колонке под сутью (клиент её не видит). */
+function CallNote({ conv }: { conv: Row }) {
+  const [text, setText] = useState('');
+  useEffect(() => setText(''), [conv.id]);
+  const dirty = !!text.trim();
+  useEffect(() => {
+    setDraft(`note:${String(conv.id)}`, dirty);
+    return () => setDraft(`note:${String(conv.id)}`, false);
+  }, [conv.id, dirty]);
+  const save = useAction(
+    () => post(`/conversations/${conv.id}/messages`, { body: text.trim(), attachmentIds: [], note: true }),
+    t.workspace.callNoteSaved,
+  );
+  const submit = () => {
+    if (dirty) save.mutate(undefined, { onSuccess: () => setText('') });
+  };
+  if (conv.status === 'closed') return null;
+  return (
+    <Box>
+      <Textarea
+        size="xs"
+        label={t.workspace.callNote}
+        placeholder={t.workspace.callNotePlaceholder}
+        autosize
+        minRows={2}
+        maxRows={5}
+        value={text}
+        onChange={(e) => setText(e.currentTarget.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            submit();
+          }
+        }}
+        data-testid="call-note"
+      />
+      <Group justify="flex-end" mt={4}>
+        <Button
+          size="compact-xs"
+          variant="light"
+          onClick={submit}
+          disabled={!dirty}
+          loading={save.isPending}
+          data-testid="call-note-save"
+        >
+          {t.workspace.saveNote}
+        </Button>
+      </Group>
+    </Box>
+  );
+}
+
+/**
+ * АЗС: предприятие-владелец (из списка), номер (только цифры) — по ним находится АЗС справочника и её адрес;
+ * или щелчок по АЗС на карте. Выбор заполняет и поля темы «№ и адрес АЗС», «Область нахождения АЗС».
+ */
+function AzsPicker({
+  conv,
+  closed,
+  onPick,
+  onOrg,
+}: {
+  conv: Row;
+  closed: boolean;
+  onPick(s: Station): void;
+  onOrg(enterpriseId: string | null, departmentId: string | null): void;
+}) {
+  const { stations } = useStations();
+  const [mapOpen, setMapOpen] = useState(false);
+  const cur = stations.find((s) => String(s.obj.id) === String(conv.objectId ?? ''));
+  const [num, setNum] = useState('');
+  useEffect(() => setNum(cur?.num ?? ''), [conv.id, cur?.num]);
+  const [problem, setProblem] = useState('');
+  useEffect(() => setProblem(''), [conv.id]);
+  const find = () => {
+    if (!num || num === cur?.num) return;
+    const all = stations.filter((s) => s.num === num);
+    const own = conv.enterpriseId ? all.filter((s) => s.obj.enterpriseId === conv.enterpriseId) : all;
+    if (own.length === 1) {
+      setProblem('');
+      onPick(own[0]!);
+    } else if (!all.length) setProblem(t.workspace.azsNotFoundAny(num));
+    else if (!own.length) setProblem(t.workspace.azsNotFound(num));
+    else setProblem(t.workspace.azsMany(num, own.length));
+  };
+  return (
+    <Stack gap={6}>
+      <OrgPicker
+        enterpriseId={(conv.enterpriseId as string) ?? null}
+        departmentId={(conv.departmentId as string) ?? null}
+        onChange={onOrg}
+        clearable
+        disabled={closed}
+        testId="org"
+      />
+      <Group gap="xs" align="flex-end" wrap="nowrap">
+        <TextInput
+          size="xs"
+          style={{ flex: 1 }}
+          label={t.workspace.azsNumber}
+          placeholder={t.workspace.azsNumberPlaceholder}
+          inputMode="numeric"
+          value={num}
+          onChange={(e) => {
+            setNum(e.currentTarget.value.replace(/\D/g, ''));
+            setProblem('');
+          }}
+          onBlur={find}
+          onKeyDown={(e) => e.key === 'Enter' && find()}
+          disabled={closed}
+          error={problem || undefined}
+          data-testid="azs-number"
+        />
+        <Button
+          size="xs"
+          variant="light"
+          leftSection={<IconMap2 size={16} />}
+          onClick={() => setMapOpen(true)}
+          disabled={closed}
+          data-testid="azs-map-open"
+        >
+          {t.workspace.azsMapOpen}
+        </Button>
+      </Group>
+      {cur && (
+        <Text size="xs" c="dimmed" data-testid="azs-address">
+          {t.workspace.azsLabel(cur.num, cur.address)}
+          {cur.enterprise ? ` · ${cur.enterprise}` : ''}
+        </Text>
+      )}
+      <AzsMapModal
+        opened={mapOpen}
+        onClose={() => setMapOpen(false)}
+        currentId={(conv.objectId as string) ?? null}
+        onPick={(s) => {
+          setMapOpen(false);
+          setProblem('');
+          onPick(s);
+        }}
+      />
+    </Stack>
+  );
+}
+
 function ConversationCard({ conv }: { conv: Row }) {
   const topics = useList('/topics');
-  const objects = useList(
-    conv.enterpriseId ? `/dict/objects?enterpriseId=${String(conv.enterpriseId)}` : '/dict/objects',
-    !!conv.enterpriseId,
-  );
   const tags = useList('/dict/tags');
   const dispositions = useList('/dict/dispositions');
   const fields = useList(
@@ -902,8 +1125,15 @@ function ConversationCard({ conv }: { conv: Row }) {
   const isPostponed = behavior === 'postponed';
   const isEscalate = behavior === 'escalate';
   const escalateDisp = dispositions.data?.find((d) => d.behavior === 'escalate');
-  const [showAll, setShowAll] = useState(false);
-  useEffect(() => setShowAll(false), [conv.id]);
+  // Раскрытые блоки полей («ещё N»): по умолчанию видны только обязательные и уже заполненные поля.
+  const [openBlocks, setOpenBlocks] = useState<Set<string>>(new Set());
+  useEffect(() => setOpenBlocks(new Set()), [conv.id]);
+  const toggleBlock = (b: string) => {
+    const next = new Set(openBlocks);
+    if (next.has(b)) next.delete(b);
+    else next.add(b);
+    setOpenBlocks(next);
+  };
   const [escalating, setEscalating] = useState(false);
   const req = useRequired();
   useEffect(() => req.reset(), [conv.id]);
@@ -974,35 +1204,12 @@ function ConversationCard({ conv }: { conv: Row }) {
   }, t.workspace.dialogPeredan);
   // «Тема › Подтема»: в длинном справочнике одинаковые подтемы («Иные вопросы») различаются по теме.
   const byId = new Map((topics.data ?? []).map((x) => [String(x.id), x]));
-  // Порядок — как в справочнике тем (порядок темы, затем её подтемы), а не по алфавиту.
-  const rank = (x: Row): [number, string, number, number, string] => {
+  const topicLabel = (() => {
+    const x = byId.get(String(conv.topicId ?? ''));
+    if (!x) return '';
     const parent = x.parentId ? byId.get(String(x.parentId)) : undefined;
-    const root = parent ?? x;
-    return [
-      Number(root.sortOrder ?? 0),
-      String(root.name),
-      parent ? 1 : 0,
-      Number(x.sortOrder ?? 0),
-      String(x.name),
-    ];
-  };
-  const cmp = (a: Row, b: Row) => {
-    const ra = rank(a);
-    const rb = rank(b);
-    for (let i = 0; i < ra.length; i++) {
-      const d =
-        typeof ra[i] === 'number'
-          ? (ra[i] as number) - (rb[i] as number)
-          : String(ra[i]).localeCompare(String(rb[i]), 'ru');
-      if (d) return d;
-    }
-    return 0;
-  };
-  const topicOptions = [...(topics.data ?? [])].sort(cmp).map((x) => {
-    const parent = x.parentId ? byId.get(String(x.parentId)) : undefined;
-    const label = parent ? `${String(parent.name)} › ${String(x.name)}` : String(x.name);
-    return { value: String(x.id), label: `${label}${x.isImportant ? ' ❗' : ''}` };
-  });
+    return `${parent ? `${String(parent.name)} › ` : ''}${String(x.name)}${x.isImportant ? ' ❗' : ''}`;
+  })();
   const closed = conv.status === 'closed';
   const tagMissing = !!conv.queueRequireTag && !((conv.tagIds as string[]) ?? []).length;
   const ticket = conv.ticket as { id: string; number: number; status: string } | null;
@@ -1013,6 +1220,187 @@ function ConversationCard({ conv }: { conv: Row }) {
     setVals(next);
     upd.mutate({ fields: next });
   };
+  /** Сохранить введённое (по уходу из поля) — только если что-то изменилось. */
+  const commit = () => {
+    const before = (conv.fields as Record<string, unknown>) ?? {};
+    if (Object.keys(vals).some((k) => String(vals[k] ?? '') !== String(before[k] ?? '')))
+      upd.mutate({ fields: vals });
+  };
+  const defOf = (k: string) => (fields.data ?? []).find((f) => String(f.key) === k);
+  const summaryDef = defOf(SUMMARY_KEY);
+  const summaryMust = !!summaryDef && requiredNow(summaryDef);
+  /** Поля темы «№ и адрес АЗС», «Область нахождения АЗС» по выбранной АЗС (only — только пустые). */
+  const stationFields = (s: Station, base: Record<string, unknown>, only: boolean) => {
+    const next = { ...base };
+    const blank = (k: string) => !only || base[k] === undefined || base[k] === null || String(base[k]) === '';
+    if (defOf('azs_number') && blank('azs_number')) next.azs_number = t.workspace.azsLabel(s.num, s.address);
+    const region = azsRegion(s.enterprise, s.address);
+    const regionDef = defOf('azs_region');
+    if (
+      regionDef &&
+      region &&
+      blank('azs_region') &&
+      (regionDef.options as string[] | undefined)?.includes(region)
+    )
+      next.azs_region = region;
+    return next;
+  };
+  // АЗС выбрана раньше темы (или тему сменили) — поля АЗС новой темы заполняются по ней.
+  const { stations } = useStations(!!conv.objectId && !closed);
+  const stationFor = useRef('');
+  useEffect(() => {
+    const s = stations.find((x) => String(x.obj.id) === String(conv.objectId ?? ''));
+    if (!s || !fields.data || closed) return;
+    const key = `${String(conv.id)}:${String(conv.topicId)}:${String(conv.objectId)}`;
+    if (stationFor.current === key) return;
+    stationFor.current = key;
+    const cur = (conv.fields as Record<string, unknown>) ?? {};
+    const next = stationFields(s, cur, true);
+    if (JSON.stringify(next) === JSON.stringify(cur)) return;
+    setVals((v) => ({ ...v, ...next }));
+    patch(`/conversations/${String(conv.id)}`, { fields: next }).catch((e: unknown) =>
+      notifications.show({ color: 'red', title: t.error, message: errorText(e) }),
+    );
+  }, [stations, fields.data, conv.id, conv.topicId, conv.objectId, conv.fields, closed]);
+  /** АЗС выбрана: предприятие, объект и поля темы «№ и адрес АЗС», «Область нахождения АЗС» — одним сохранением. */
+  const pickStation = (s: Station) => {
+    const next = stationFields(s, vals, false);
+    setVals(next);
+    const sameEnt = String(s.obj.enterpriseId) === String(conv.enterpriseId ?? '');
+    upd.mutate({
+      enterpriseId: s.obj.enterpriseId,
+      ...(sameEnt ? {} : { departmentId: null }),
+      objectId: s.obj.id,
+      fields: next,
+    });
+  };
+
+  // Поля темы и общие поля обращения — по логическим блокам.
+  interface Item {
+    key: string;
+    def?: Row;
+    label: string;
+    common: boolean;
+  }
+  const items: Item[] = [
+    ...(fields.data ?? [])
+      .filter((f) => !isCommonField(String(f.key)) && String(f.key) !== SUMMARY_KEY)
+      .map((f) => ({ key: String(f.key), def: f, label: String(f.label), common: false })),
+    ...COMMON_FIELD_KEYS.map((k) => ({
+      key: k,
+      def: defOf(k),
+      label: t.workspace.commonFields[k] ?? k,
+      common: true,
+    })),
+  ];
+  /** Видно без раскрытия блока: обязательное по теме (в т.ч. для 2-й линии), заполненное или подставленное. */
+  const main = (i: Item) =>
+    !!i.def?.requiredOnClose || !!i.def?.requiredOnEscalate || !empty(i.key) || prefilled.includes(i.key);
+  // Незаполненное обязательное — оранжевая рамка сразу; после нажатия «Завершить»/«Передать» — красная.
+  // При передаче на 2-ю линию поля, обязательные только для неё, дополнительно выделены фиолетовым.
+  const look = (i: Item) => {
+    const must = !!i.def && requiredNow(i.def);
+    const forEscalation = isEscalate && !!i.def?.requiredOnEscalate && !i.def?.requiredOnClose;
+    return {
+      ...(forEscalation ? { label: { color: 'var(--mantine-color-violet-7)', fontWeight: 600 } } : {}),
+      ...(must && empty(i.key) && !closed
+        ? { input: { borderColor: 'var(--mantine-color-orange-5)', borderWidth: 2 } }
+        : forEscalation
+          ? { input: { borderColor: 'var(--mantine-color-violet-4)' } }
+          : {}),
+    };
+  };
+  const renderField = (i: Item) => {
+    const k = i.key;
+    const must = !!i.def && requiredNow(i.def);
+    const error = req.error(must && empty(k));
+    const description = prefilled.includes(k) ? t.workspace.prefilled : undefined;
+    const common = {
+      size: 'xs' as const,
+      label: i.label,
+      description,
+      disabled: closed,
+      withAsterisk: must,
+      error,
+      styles: error ? undefined : look(i),
+      'data-testid': i.common ? `common-${k}` : `field-${k}`,
+    };
+    if (k === 'feedback_channel')
+      return (
+        <Select
+          key={k}
+          {...common}
+          data={t.workspace.feedbackChannels}
+          value={(vals[k] as string) ?? null}
+          onChange={(v) => saveField(k, v)}
+          clearable
+          searchable
+        />
+      );
+    if (i.def?.type === 'select' && Array.isArray(i.def.options))
+      return (
+        <Select
+          key={k}
+          {...common}
+          data={(i.def.options as string[]).map(String)}
+          value={(vals[k] as string) ?? null}
+          onChange={(v) => saveField(k, v)}
+          clearable
+        />
+      );
+    return (
+      <TextInput
+        key={k}
+        {...common}
+        placeholder={(i.def?.mask as string) ?? undefined}
+        type={i.def?.type === 'date' ? 'date' : i.def?.type === 'number' ? 'number' : 'text'}
+        value={String(vals[k] ?? '')}
+        onChange={(e) => setVals({ ...vals, [k]: e.currentTarget.value })}
+        onBlur={commit}
+      />
+    );
+  };
+  const renderBlock = (b: string) => {
+    const all = items.filter((i) => blockOf(i.key) === b);
+    const isOpen = openBlocks.has(b);
+    const shown = all.filter((i) => isOpen || main(i));
+    const azs = b === 'azs';
+    const picker = azs && (isOpen || shown.length > 0 || !!conv.enterpriseId || !!conv.objectId);
+    const hidden = all.length - shown.length + (azs && !picker ? AZS_PICKER_FIELDS : 0);
+    if (!all.length && !azs) return null;
+    return (
+      <Box key={b} data-testid={`block-${b}`}>
+        <Group justify="space-between" gap={4} mb={shown.length || picker ? 2 : 0}>
+          <Text size="xs" fw={700} c="dimmed">
+            {t.workspace.blocks[b]}
+          </Text>
+          {(hidden > 0 || isOpen) && (
+            <Anchor size="xs" c="dimmed" onClick={() => toggleBlock(b)} data-testid="block-more">
+              {isOpen ? t.workspace.blockLess : t.workspace.blockMore(hidden)}
+            </Anchor>
+          )}
+        </Group>
+        <Stack gap={6}>
+          {picker && (
+            <AzsPicker
+              conv={conv}
+              closed={closed}
+              onPick={pickStation}
+              onOrg={(e, d) =>
+                upd.mutate({
+                  enterpriseId: e,
+                  departmentId: d,
+                  ...(e !== conv.enterpriseId ? { objectId: null } : {}),
+                })
+              }
+            />
+          )}
+          {shown.map(renderField)}
+        </Stack>
+      </Box>
+    );
+  };
+
   return (
     <Stack gap="sm">
       <EscalateModal conv={conv} opened={escalating} onClose={() => setEscalating(false)} />
@@ -1033,31 +1421,55 @@ function ConversationCard({ conv }: { conv: Row }) {
           ) : null}
         </Group>
       )}
+      {/* Главное, что заполняет оператор, — сразу вверху без прокрутки: тема, суть, заметка к звонку. */}
       <Paper
         withBorder
         p="xs"
         style={!conv.topicId && !closed ? { borderColor: 'var(--mantine-color-blue-4)' } : undefined}
       >
-        <TopicPicker
-          size="sm"
-          label={t.workspace.stepTopic}
-          description={!conv.topicId && !closed ? t.workspace.stepTopicHint : undefined}
-          placeholder={t.workspace.stepTopicPlaceholder}
-          value={(conv.topicId as string) ?? null}
-          onChange={(v) => upd.mutate({ topicId: v })}
-          clearable
-          disabled={closed}
-          withAsterisk
-          error={req.error(!conv.topicId)}
-          testId="topic"
-        />
-        {conv.topicId ? (
-          <Text size="xs" c="dimmed" mt={4} data-testid="topic-full">
-            {topicOptions.find((o) => o.value === String(conv.topicId))?.label}
-          </Text>
-        ) : null}
+        <Stack gap={6}>
+          <TopicPicker
+            size="sm"
+            label={t.workspace.stepTopic}
+            description={!conv.topicId && !closed ? t.workspace.stepTopicHint : undefined}
+            placeholder={t.workspace.stepTopicPlaceholder}
+            value={(conv.topicId as string) ?? null}
+            onChange={(v) => upd.mutate({ topicId: v })}
+            clearable
+            disabled={closed}
+            withAsterisk
+            error={req.error(!conv.topicId)}
+            testId="topic"
+          />
+          {topicLabel ? (
+            <Text size="xs" c="dimmed" data-testid="topic-full">
+              {topicLabel}
+            </Text>
+          ) : null}
+          <Textarea
+            size="sm"
+            label={t.workspace.issueSummary}
+            placeholder={t.workspace.issueSummaryPlaceholder}
+            autosize
+            minRows={3}
+            maxRows={8}
+            value={String(vals[SUMMARY_KEY] ?? '')}
+            onChange={(e) => setVals({ ...vals, [SUMMARY_KEY]: e.currentTarget.value })}
+            onBlur={commit}
+            disabled={closed}
+            withAsterisk={summaryMust}
+            error={req.error(summaryMust && empty(SUMMARY_KEY))}
+            styles={
+              summaryMust && empty(SUMMARY_KEY) && !closed && !req.error(true)
+                ? { input: { borderColor: 'var(--mantine-color-orange-5)', borderWidth: 2 } }
+                : undefined
+            }
+            data-testid="issue-summary"
+          />
+          {conv.channelKind === 'voice' && <CallNote conv={conv} />}
+        </Stack>
       </Paper>
-      {/* Передача на 2-ю линию — заметный переключатель: с ним видны поля, обязательные для передачи. */}
+      {/* Передача на 2-ю линию — заметный переключатель: с ним отмечены поля, обязательные для передачи. */}
       {!closed && conv.status !== 'waiting_2nd_line' && escalateDisp && (
         <Paper
           withBorder
@@ -1073,167 +1485,29 @@ function ConversationCard({ conv }: { conv: Row }) {
             size="md"
             color="violet"
             label={<Text fw={600}>{t.workspace.escalateToggle}</Text>}
-            description={t.workspace.escalateToggleHint}
+            description={isEscalate ? t.workspace.escalateMarked : t.workspace.escalateToggleHint}
             checked={isEscalate}
             onChange={(e) => setDisp(e.currentTarget.checked ? String(escalateDisp.id) : null)}
             data-testid="escalate-toggle"
           />
         </Paper>
       )}
-      {(() => {
-        // По умолчанию — только обязательные (для закрытия, а при передаче — и для 2-й линии) и уже заполненные
-        // поля; остальные — по «Показать все поля».
-        const topicDefs = (fields.data ?? []).filter((f) => !isCommonField(String(f.key)));
-        const commonMust = (k: string) => {
-          const def = (fields.data ?? []).find((f) => String(f.key) === k);
-          return !!def && requiredNow(def);
-        };
-        const shownTopic = topicDefs.filter((f) => showAll || requiredNow(f) || !empty(String(f.key)));
-        const shownCommon = COMMON_FIELD_KEYS.filter((k) => showAll || commonMust(k) || !empty(k));
-        const hidden = topicDefs.length + COMMON_FIELD_KEYS.length - shownTopic.length - shownCommon.length;
-        // Незаполненное обязательное — оранжевая рамка сразу; после нажатия «Завершить»/«Передать» — красная.
-        const soft = (must: boolean, k: string) =>
-          must && empty(k) && !closed
-            ? { input: { borderColor: 'var(--mantine-color-orange-5)', borderWidth: 2 } }
-            : undefined;
-        return (
-          <Paper withBorder p="xs" data-testid="topic-fields">
-            <Group justify="space-between" mb={4}>
-              <Box>
-                <Text size="sm" fw={600}>
-                  {t.workspace.stepAsk}
-                </Text>
-                <Text size="xs" c="dimmed">
-                  {conv.topicId ? t.workspace.stepAskHintRequired : t.workspace.stepFinishNoTopic}
-                </Text>
-              </Box>
-            </Group>
-            <Stack gap={6}>
-              {shownTopic.map((f) => {
-                const k = String(f.key);
-                const label = String(f.label);
-                const description = prefilled.includes(k) ? t.workspace.prefilled : undefined;
-                const must = requiredNow(f);
-                const error = req.error(must && empty(k));
-                return f.type === 'select' && Array.isArray(f.options) ? (
-                  <Select
-                    key={String(f.id)}
-                    size="xs"
-                    label={label}
-                    description={description}
-                    data={(f.options as string[]).map(String)}
-                    value={(vals[k] as string) ?? null}
-                    onChange={(v) => saveField(k, v)}
-                    clearable
-                    disabled={closed}
-                    withAsterisk={must}
-                    error={error}
-                    styles={error ? undefined : soft(must, k)}
-                  />
-                ) : (
-                  <TextInput
-                    key={String(f.id)}
-                    size="xs"
-                    label={label}
-                    description={description}
-                    placeholder={(f.mask as string) ?? undefined}
-                    type={f.type === 'date' ? 'date' : f.type === 'number' ? 'number' : 'text'}
-                    value={String(vals[k] ?? '')}
-                    onChange={(e) => setVals({ ...vals, [k]: e.currentTarget.value })}
-                    onBlur={() => upd.mutate({ fields: vals })}
-                    disabled={closed}
-                    withAsterisk={must}
-                    error={error}
-                    styles={error ? undefined : soft(must, k)}
-                  />
-                );
-              })}
-              {shownCommon.length > 0 && (
-                <Text size="xs" fw={600} c="dimmed" mt={4} data-testid="client-fields">
-                  {t.workspace.clientBlock}
-                </Text>
-              )}
-              {shownCommon.map((k) => {
-                const must = commonMust(k);
-                const error = req.error(must && empty(k));
-                const label = t.workspace.commonFields[k];
-                return k === 'feedback_channel' ? (
-                  <Select
-                    key={k}
-                    size="xs"
-                    label={label}
-                    data={t.workspace.feedbackChannels}
-                    value={(vals[k] as string) ?? null}
-                    onChange={(v) => saveField(k, v)}
-                    clearable
-                    searchable
-                    disabled={closed}
-                    withAsterisk={must}
-                    error={error}
-                    styles={error ? undefined : soft(must, k)}
-                    data-testid={`common-${k}`}
-                  />
-                ) : (
-                  <TextInput
-                    key={k}
-                    size="xs"
-                    label={label}
-                    description={prefilled.includes(k) ? t.workspace.prefilled : undefined}
-                    value={String(vals[k] ?? '')}
-                    onChange={(e) => setVals({ ...vals, [k]: e.currentTarget.value })}
-                    onBlur={() => upd.mutate({ fields: vals })}
-                    disabled={closed}
-                    withAsterisk={must}
-                    error={error}
-                    styles={error ? undefined : soft(must, k)}
-                    data-testid={`common-${k}`}
-                  />
-                );
-              })}
-              {(hidden > 0 || showAll) && (
-                <Anchor size="xs" onClick={() => setShowAll(!showAll)} data-testid="fields-show-all">
-                  {showAll ? t.workspace.fieldsHideOptional : t.workspace.fieldsShowAll(hidden)}
-                </Anchor>
-              )}
-            </Stack>
-          </Paper>
-        );
-      })()}
+      <Paper withBorder p="xs" data-testid="topic-fields">
+        {conv.topicId ? (
+          <Stack gap="xs">{BLOCK_ORDER.map(renderBlock)}</Stack>
+        ) : (
+          <Text size="xs" c="dimmed" data-testid="fields-after-topic">
+            {t.workspace.fieldsAfterTopic}
+          </Text>
+        )}
+      </Paper>
       <ExtraFields
         fields={(conv.fields as Record<string, unknown>) ?? {}}
-        defined={[...(fields.data ?? []), ...COMMON_FIELD_KEYS.map((k) => ({ id: k, key: k }))]}
+        defined={[
+          ...(fields.data ?? []),
+          ...[...COMMON_FIELD_KEYS, SUMMARY_KEY, ...BLOCK_KEYS.azs!].map((k) => ({ id: k, key: k })),
+        ]}
       />
-      <Paper withBorder p="xs">
-        <Text size="sm" fw={600} mb={4}>
-          {t.workspace.stepWhere}
-        </Text>
-        <Stack gap={6}>
-          <OrgPicker
-            enterpriseId={(conv.enterpriseId as string) ?? null}
-            departmentId={(conv.departmentId as string) ?? null}
-            onChange={(e, d) =>
-              upd.mutate({
-                enterpriseId: e,
-                departmentId: d,
-                ...(e !== conv.enterpriseId ? { objectId: null } : {}),
-              })
-            }
-            clearable
-            disabled={closed}
-            testId="org"
-          />
-          <Select
-            size="xs"
-            label={t.workspace.obekt}
-            data={options(objects.data)}
-            value={(conv.objectId as string) ?? null}
-            onChange={(v) => upd.mutate({ objectId: v })}
-            clearable
-            searchable
-            disabled={closed || !conv.enterpriseId}
-          />
-        </Stack>
-      </Paper>
       <Accordion variant="contained" defaultValue={extrasOpen ? 'extra' : null} chevronPosition="left">
         <Accordion.Item value="extra">
           <Accordion.Control py={4}>
@@ -1473,21 +1747,22 @@ function Recording({ id }: { id: string }) {
 }
 
 /** Журнал вызовов обращения и записи разговоров (M-TEL-04/05); супервизору — прослушивание (M-TEL-10). */
-function CallsPanel({ conv }: { conv: Row }) {
+function CallsPanel({ convId }: { convId: string }) {
   const { can } = useAuth();
-  const calls = useList<CallRow>(`/conversations/${conv.id}/calls`);
+  const calls = useList<CallRow>(`/conversations/${convId}/calls`);
   const listen = useAction(
     (id: string) => post(`/calls/${id}/listen`),
     t.workspace.zvonokProslushivaniyaOtvetteV,
   );
-  if (!calls.data?.length)
-    return (
-      <Text c="dimmed" size="sm">
-        {t.workspace.zvonkovNet}
-      </Text>
-    );
+  if (!calls.data?.length) return null;
   return (
-    <Stack gap="sm" data-testid="calls">
+    <Stack
+      gap="xs"
+      pl="xs"
+      mt={4}
+      style={{ borderLeft: '2px solid var(--mantine-color-gray-3)' }}
+      data-testid="calls"
+    >
       {calls.data.map((c) => (
         <Paper key={c.id} withBorder p="xs" data-testid="call-item">
           <Group justify="space-between">
@@ -1571,40 +1846,18 @@ function CallsPanel({ conv }: { conv: Row }) {
   );
 }
 
-/** Второстепенная вкладка списка: подпись и число, выделение — если выбрана. */
-function SubTab({
-  value,
-  cur,
-  onPick,
-  n,
-  label,
-}: {
-  value: string;
-  cur: string;
-  onPick(v: string): void;
-  n: number;
-  label: string;
-}) {
-  return (
-    <Button
-      size="compact-xs"
-      variant={cur === value ? 'filled' : n ? 'light' : 'subtle'}
-      color={n && cur !== value ? 'orange' : 'gray'}
-      onClick={() => onPick(value)}
-    >
-      {label}
-      {n ? ` (${n})` : ''}
-    </Button>
-  );
-}
+/** Высота панелей рабочего места: экран минус шапка и отступы. */
+const PANEL_H = 'calc(100vh - 88px)';
 
 export function WorkspacePage() {
   const { me, can } = useAuth();
-  // Вкладки списка и карточки — в порядке из интерфейса роли; первая открывается по умолчанию.
+  // Виды списка — в порядке из интерфейса роли; первый открывается по умолчанию.
   const wsUi = me?.ui?.workspace;
   const [tab, setTab] = useState(wsUi?.listTabs?.[0] ?? 'mine');
   const [selected, setSelected] = useState<string | null>(null);
   const [typingContact, setTypingContact] = useState<string | null>(null);
+  const [important, setImportant] = useState(false);
+  const [callback, setCallback] = useState(false);
   const qc = useQueryClient();
   const rt = useRealtime(true);
   const conv = useQuery({
@@ -1660,10 +1913,11 @@ export function WorkspacePage() {
   );
 
   const secondLine = tab === 'approvals' || tab === 'created';
-  const workTab = tab === 'hold' || tab === 'wrapup';
   const nApprovals = useTicketCount('approvals');
-  // Счётчики «Удержание»/«Постобработка» (M-OP-02): списки обновляются по событиям realtime и раз в 30 с —
-  // чат попадает в «Постобработку» по времени молчания клиента, без события.
+  // Счётчики (M-OP-02): списки обновляются по событиям realtime и раз в 30 с — чат попадает в «Постобработку»
+  // по времени молчания клиента, без события.
+  const nQueue = useCount('queue');
+  const nMine = useCount('mine');
   const nHold = useCount('hold');
   const nWrapup = useCount('wrapup');
   const allTabs = useMemo(
@@ -1677,13 +1931,25 @@ export function WorkspacePage() {
     [can],
   );
   const tabs = useMemo(() => orderTabs(allTabs, wsUi?.listTabs), [allTabs, wsUi]);
+  const hasQueue = tabs.some((x) => x.value === 'queue');
+  // Выпадающий список видов: основные (из интерфейса роли), «мои» по стадиям, 2-я линия.
+  const views = [
+    ...tabs
+      .filter((x) => x.value !== 'queue')
+      .map((x) => ({ ...x, n: x.value === 'mine' ? nMine : 0, group: 'main' })),
+    { value: 'hold', label: t.workspace.uderzhanie, n: nHold, group: 'work' },
+    { value: 'wrapup', label: t.workspace.postobrabotka3, n: nWrapup, group: 'work' },
+    { value: 'approvals', label: t.workspace.naSoglasovanii2, n: nApprovals, group: '2nd' },
+    { value: 'created', label: t.workspace.peredannye, n: 0, group: '2nd' },
+  ];
+  const curView = tab === 'queue' ? null : views.find((v) => v.value === tab);
+  const filtersOn = important || callback;
   const rightTabs = useMemo(
     () =>
       orderTabs(
         [
-          { value: 'card', label: t.workspace.obrashchenie },
-          { value: 'contact', label: t.workspace.klient },
-          { value: 'calls', label: t.workspace.zvonki, testId: 'tab-calls' },
+          { value: 'card', label: t.workspace.obrashchenie, testId: 'tab-card' },
+          { value: 'contact', label: t.workspace.klient, testId: 'tab-contact' },
         ],
         wsUi?.rightTabs,
       ),
@@ -1691,56 +1957,157 @@ export function WorkspacePage() {
   );
 
   return (
-    <Grid gutter="sm">
+    <Grid gutter="md">
       <Grid.Col span={3}>
-        <Group justify="space-between" mb="xs">
-          <Title order={4}>{t.workspace.obrashcheniya}</Title>
-          <Badge color={rt.connected ? 'green' : 'red'} variant="dot" data-testid="rt-status">
-            {rt.connected ? t.workspace.onlayn : t.workspace.netSvyazi}
-          </Badge>
-        </Group>
-        <SegmentedControl
-          fullWidth
-          size="xs"
-          data={tabs}
-          value={secondLine || workTab ? '' : tab}
-          onChange={setTab}
-          mb={4}
-          data-testid="tabs"
-        />
-        <Group gap={4} mb="xs" wrap="wrap">
-          <Group gap={4} data-testid="tabs-work">
-            <SubTab value="hold" cur={tab} onPick={setTab} n={nHold} label={t.workspace.uderzhanie} />
-            <SubTab value="wrapup" cur={tab} onPick={setTab} n={nWrapup} label={t.workspace.postobrabotka3} />
+        {/* Список обращений — отдельная серая панель, чтобы не сливался с обработкой обращения. */}
+        <Paper
+          withBorder
+          radius="md"
+          p="xs"
+          bg="gray.0"
+          h={PANEL_H}
+          style={{ display: 'flex', flexDirection: 'column' }}
+          data-testid="conv-list-panel"
+        >
+          <Group gap={6} wrap="nowrap" mb="xs">
+            <Menu position="bottom-start" withinPortal>
+              <Menu.Target>
+                <Button
+                  size="xs"
+                  variant={curView ? 'white' : 'subtle'}
+                  color="dark"
+                  rightSection={<IconChevronDown size={14} />}
+                  style={{ flex: 1, minWidth: 0 }}
+                  justify="space-between"
+                  title={t.workspace.listViewHint}
+                  data-testid="list-view"
+                >
+                  {curView
+                    ? `${curView.label}${curView.n ? ` (${curView.n})` : ''}`
+                    : t.workspace.listViewHint}
+                </Button>
+              </Menu.Target>
+              <Menu.Dropdown>
+                {views.map((v, i) => (
+                  <Fragment key={v.value}>
+                    {i > 0 && views[i - 1]!.group !== v.group ? <Menu.Divider /> : null}
+                    <Menu.Item
+                      onClick={() => setTab(v.value)}
+                      fw={tab === v.value ? 700 : undefined}
+                      rightSection={
+                        v.n ? (
+                          <Badge size="xs" variant="light" color={v.value === 'mine' ? 'blue' : 'orange'}>
+                            {v.n}
+                          </Badge>
+                        ) : null
+                      }
+                      data-testid={`view-${v.value}`}
+                    >
+                      {v.label}
+                    </Menu.Item>
+                  </Fragment>
+                ))}
+              </Menu.Dropdown>
+            </Menu>
+            {hasQueue && (
+              <Tooltip label={t.workspace.queueBtnHint}>
+                <Button
+                  size="xs"
+                  px={8}
+                  variant={tab === 'queue' ? 'filled' : nQueue ? 'light' : 'default'}
+                  color={nQueue ? 'orange' : 'gray'}
+                  onClick={() => setTab('queue')}
+                  rightSection={
+                    <Badge size="sm" circle={nQueue < 10} color={nQueue ? 'orange' : 'gray'} variant="filled">
+                      {nQueue}
+                    </Badge>
+                  }
+                  data-testid="queue-open"
+                >
+                  {t.workspace.queueBtn}
+                </Button>
+              </Tooltip>
+            )}
+            {!secondLine && (
+              <Popover position="bottom-end" withArrow>
+                <Popover.Target>
+                  <Indicator disabled={!filtersOn} color="red" size={8} offset={3}>
+                    <ActionIcon
+                      size="md"
+                      variant={filtersOn ? 'filled' : 'default'}
+                      aria-label={t.workspace.filters}
+                      title={t.workspace.filters}
+                      data-testid="list-filters"
+                    >
+                      <IconFilter size={16} />
+                    </ActionIcon>
+                  </Indicator>
+                </Popover.Target>
+                <Popover.Dropdown>
+                  <Stack gap={6}>
+                    <Text size="xs" c="dimmed">
+                      {t.workspace.filtersOnlyHint}
+                    </Text>
+                    <Checkbox
+                      size="xs"
+                      label={t.workspace.filterImportant}
+                      checked={important}
+                      onChange={(e) => setImportant(e.currentTarget.checked)}
+                      data-testid="filter-important"
+                    />
+                    <Checkbox
+                      size="xs"
+                      label={t.workspace.filterCallback}
+                      checked={callback}
+                      onChange={(e) => setCallback(e.currentTarget.checked)}
+                      data-testid="filter-callback"
+                    />
+                  </Stack>
+                </Popover.Dropdown>
+              </Popover>
+            )}
+            <Tooltip label={rt.connected ? t.workspace.onlayn : t.workspace.netSvyazi}>
+              <Box
+                w={10}
+                h={10}
+                style={{
+                  borderRadius: '50%',
+                  flex: 'none',
+                  background: `var(--mantine-color-${rt.connected ? 'green' : 'red'}-6)`,
+                }}
+                data-testid="rt-status"
+              >
+                <VisuallyHidden>{rt.connected ? t.workspace.onlayn : t.workspace.netSvyazi}</VisuallyHidden>
+              </Box>
+            </Tooltip>
           </Group>
-          <Group gap={4} data-testid="tabs-2nd-line">
-            <SubTab
-              value="approvals"
-              cur={tab}
-              onPick={setTab}
-              n={nApprovals}
-              label={t.workspace.naSoglasovanii2}
-            />
-            <SubTab value="created" cur={tab} onPick={setTab} n={0} label={t.workspace.peredannye} />
-          </Group>
-        </Group>
-        <ScrollArea h="calc(100vh - 230px)">
-          {secondLine ? (
-            <Stack gap="xs">
-              <TicketList view={tab} extra={tab === 'created' ? '&status=new,in_work,approval,rework' : ''} />
-              {tab === 'approvals' && (
-                <Paper withBorder p="xs">
-                  <Text size="sm" fw={600} mb={4}>
-                    {t.workspace.zamestitelNaPeriodOtsutstviya}
-                  </Text>
-                  <SubstitutesPanel />
-                </Paper>
-              )}
-            </Stack>
-          ) : (
-            <List tab={tab} selected={selected} onSelect={setSelected} />
-          )}
-        </ScrollArea>
+          <ScrollArea style={{ flex: 1 }} type="auto" offsetScrollbars>
+            {secondLine ? (
+              <Stack gap="xs">
+                <TicketList
+                  view={tab}
+                  extra={tab === 'created' ? '&status=new,in_work,approval,rework' : ''}
+                />
+                {tab === 'approvals' && (
+                  <Paper withBorder p="xs">
+                    <Text size="sm" fw={600} mb={4}>
+                      {t.workspace.zamestitelNaPeriodOtsutstviya}
+                    </Text>
+                    <SubstitutesPanel />
+                  </Paper>
+                )}
+              </Stack>
+            ) : (
+              <List
+                tab={tab}
+                selected={selected}
+                onSelect={setSelected}
+                important={important}
+                callback={callback}
+              />
+            )}
+          </ScrollArea>
+        </Paper>
       </Grid.Col>
       <Grid.Col span={5}>
         {conv.data ? (
@@ -1834,20 +2201,17 @@ export function WorkspacePage() {
           <Tabs defaultValue={rightTabs[0]?.value ?? 'card'}>
             <Tabs.List mb="xs">
               {rightTabs.map((x) => (
-                <Tabs.Tab key={x.value} value={x.value} data-testid={'testId' in x ? x.testId : undefined}>
+                <Tabs.Tab key={x.value} value={x.value} data-testid={x.testId}>
                   {x.label}
                 </Tabs.Tab>
               ))}
             </Tabs.List>
-            <ScrollArea h="calc(100vh - 170px)">
+            <ScrollArea h="calc(100vh - 140px)" type="auto" offsetScrollbars>
               <Tabs.Panel value="card">
                 <ConversationCard conv={conv.data} />
               </Tabs.Panel>
               <Tabs.Panel value="contact">
                 <ContactCard conv={conv.data} onOpen={setSelected} />
-              </Tabs.Panel>
-              <Tabs.Panel value="calls">
-                <CallsPanel conv={conv.data} />
               </Tabs.Panel>
             </ScrollArea>
           </Tabs>

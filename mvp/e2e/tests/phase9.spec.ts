@@ -1,6 +1,6 @@
 import { type Browser, expect, type Page, request, test } from '@playwright/test';
 import { readFileSync } from 'node:fs';
-import { ADMIN, DEMO_PASSWORD, login, nav } from './helpers';
+import { ADMIN, DEMO_PASSWORD, login, nav, listView } from './helpers';
 
 const stamp = Date.now().toString().slice(-6);
 /** Мок внешних систем (mock-selfservice): приёмник webhooks, анализатор, эхо-бот. */
@@ -26,7 +26,7 @@ async function say(w: ReturnType<Page['locator']>, text: string) {
 }
 
 async function takeFromQueue(page: Page, client: string) {
-  await page.getByTestId('tabs').getByText('Очередь').click();
+  await listView(page, 'queue');
   const item = page.getByTestId('conv-item').filter({ hasText: client });
   await expect(item).toBeVisible({ timeout: 15000 });
   await item.getByTestId('take').click();
