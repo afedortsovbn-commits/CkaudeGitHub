@@ -5,6 +5,8 @@ import { CurrentUser, RequirePerm } from '../auth/guard';
 import { APP_CONTEXT, type AppContext } from '../context';
 import { one, rows, toApi } from '../lib/db';
 import { todayServiceLevel } from '../reports/reports';
+import { RESOURCE_LABEL } from '@cc/domain';
+import { evaluateWallboard, type Level, receivedToday, wallboard } from './wallboard';
 
 const CONV_SCOPE = {
   enterprise: 'c.enterprise_id',
@@ -34,6 +36,78 @@ export class SupervisorController {
     if (this.slCache.size > 1000) this.slCache.clear();
     this.slCache.set(p.id, { at: Date.now(), value });
     return value;
+  }
+
+  private async thresholds() {
+    const th = await one<{ value: unknown }>(
+      this.ctx.pool,
+      `SELECT value FROM system_setting WHERE key = 'supervisor.thresholds'`,
+    );
+    const parsed = SupervisorThresholdsSchema.safeParse(th?.value ?? {});
+    return parsed.success ? parsed.data : SupervisorThresholdsSchema.parse({});
+  }
+
+  /** Экран мониторинга на отдельный монитор: крупно — сейчас, сегодня, последние 2 часа и проблемы. */
+  @Get('wallboard')
+  async wallboard(@CurrentUser() p: Principal) {
+    const th = await this.thresholds();
+    const sl = await this.todaySl(p);
+    const answered = sl.reduce((a, s) => a + s.answered, 0);
+    const abandoned = sl.reduce((a, s) => a + s.abandoned, 0);
+    const offered = sl.filter((s) => s.slPct !== null);
+    const weight = (s: (typeof sl)[number]) => s.answered + s.abandoned;
+    const wsum = offered.reduce((a, s) => a + weight(s), 0);
+    const today = {
+      received: await receivedToday(this.ctx.pool, p),
+      answered,
+      abandoned,
+      slPct: wsum ? offered.reduce((a, s) => a + (s.slPct ?? 0) * weight(s), 0) / wsum : null,
+      asaS: answered
+        ? sl.filter((s) => s.asa !== null).reduce((a, s) => a + (s.asa ?? 0) * s.answered, 0) / answered
+        : null,
+    };
+    const raw = await wallboard(this.ctx.pool, p);
+    const resources = (raw.last?.value?.samples ?? [])
+      .filter((x) => x.level !== 'ok')
+      .map((x) => ({ level: x.level, label: RESOURCE_LABEL[x.key as keyof typeof RESOURCE_LABEL] ?? x.key }));
+    const n = raw.now;
+    const ev = evaluateWallboard({
+      operators: raw.operators.map((o) => ({ status: o.status, onCall: o.on_call, inChat: o.in_chat })),
+      now: {
+        talking: n.talking ?? 0,
+        ivr: n.ivr ?? 0,
+        qVoice: n.q_voice ?? 0,
+        qText: n.q_text ?? 0,
+        oldestWaitS: n.oldest ?? 0,
+        chats: n.chats ?? 0,
+        bot: n.bot ?? 0,
+      },
+      buckets: raw.buckets.map((b) => ({
+        at: new Date(b.at).toISOString(),
+        received: b.received,
+        usual: Math.round(Number(b.usual) * 10) / 10,
+        maxWaitS: b.max_wait ?? 0,
+        lost: b.lost,
+      })),
+      today,
+      resources: resources as { level: Level; label: string }[],
+      th,
+    });
+    return {
+      ...ev,
+      now: {
+        talking: n.talking ?? 0,
+        ivr: n.ivr ?? 0,
+        queueVoice: n.q_voice ?? 0,
+        queueText: n.q_text ?? 0,
+        oldestWaitS: n.oldest ?? 0,
+        chats: n.chats ?? 0,
+        bot: n.bot ?? 0,
+      },
+      today,
+      thresholds: th,
+      at: new Date().toISOString(),
+    };
   }
 
   @Get('overview')

@@ -1,3 +1,4 @@
+import { IconDeviceTv } from '@tabler/icons-react';
 import { Badge, Button, Card, Group, Menu, SimpleGrid, Table, Text, Title } from '@mantine/core';
 import { useQuery } from '@tanstack/react-query';
 import { get, post } from '../lib/api';
@@ -134,6 +135,17 @@ export function SupervisorPage() {
       : 0;
   return (
     <>
+      <Group justify="flex-end" mb="xs">
+        <Button
+          size="xs"
+          variant="light"
+          leftSection={<IconDeviceTv size={16} />}
+          onClick={() => window.open('/wallboard', 'cc-wallboard')}
+          data-testid="open-wallboard"
+        >
+          {t.wallboard.openOnMonitor}
+        </Button>
+      </Group>
       <SimpleGrid cols={{ base: 2, sm: 3, md: 6 }} mb="lg" data-testid="supervisor-summary">
         <Tile
           label={t.supervisor.ozhidayutVOcheredyakh}

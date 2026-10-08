@@ -3,7 +3,8 @@ import type { Pool } from 'pg';
 import { LINK_PLACEHOLDER } from './ticket-notify';
 
 /**
- * Контроль ресурсов сервера: диск, память, подключения к БД, задержка служебных событий и отправки писем.
+ * Контроль ресурсов сервера: диск (и прогноз, когда он закончится), оперативная память, подкачка, процессор,
+ * подключения к БД, задержка служебных событий и отправки писем.
  * worker проверяет каждые 5 минут; при выходе за порог администраторам и супервизорам — уведомление в
  * колокольчике и письмо (важное — с высоким приоритетом), пока проблема не устранена — напоминание раз в сутки,
  * после устранения — «снова в норме». Последний замер — в `system_setting` (`resource.last`), его показывает
@@ -17,6 +18,15 @@ export interface ResourceProbe {
   disk?: { totalBytes: number; freeBytes: number };
   /** Память сервера (виртуальной машины), а не лимит контейнера. */
   memory?: { totalBytes: number; availableBytes: number };
+  /** Подкачка (swap) сервера; нет — показатель не выводится. */
+  swap?: { totalBytes: number; freeBytes: number };
+  /** Процессор: средняя загрузка за 5 минут (load average) и число ядер сервера. */
+  cpu?: { load5: number; cores: number };
+}
+
+/** Дополнительно к замеру: прогноз, через сколько дней закончится место на диске (null — места не убывает). */
+export interface ResourceExtra {
+  diskDaysLeft?: number | null;
 }
 
 export interface DbStats {
@@ -34,7 +44,7 @@ export interface ResourceThresholds {
 }
 
 export interface ResourceSample {
-  key: 'disk' | 'memory' | 'db_connections' | 'outbox' | 'email';
+  key: 'disk' | 'memory' | 'swap' | 'cpu' | 'db_connections' | 'outbox' | 'email';
   level: ResourceLevel;
   /** Занято, % (для очередей — null). */
   usedPct: number | null;
@@ -44,6 +54,8 @@ export interface ResourceSample {
 export const RESOURCE_LABEL: Record<ResourceSample['key'], string> = {
   disk: 'Место на диске',
   memory: 'Оперативная память',
+  swap: 'Подкачка (swap)',
+  cpu: 'Процессор',
   db_connections: 'Подключения к базе данных',
   outbox: 'Доставка служебных событий',
   email: 'Отправка писем',
@@ -53,6 +65,8 @@ const ADVICE: Record<ResourceSample['key'], string> = {
   disk: 'освободить место (старые образы Docker — docker image prune, журналы) или увеличить диск сервера.',
   memory:
     'посмотреть, какой сервис занимает память (docker stats), при необходимости перезапустить его или добавить серверу памяти.',
+  swap: 'серверу не хватает оперативной памяти — система замедляется; добавить памяти или разгрузить сервер.',
+  cpu: 'посмотреть, какой сервис загружает процессор (docker stats); тяжёлые отчёты и выгрузки отложить; при постоянной нагрузке — добавить серверу ядер.',
   db_connections:
     'проверить число экземпляров сервисов и долгие запросы; при необходимости увеличить max_connections PostgreSQL.',
   outbox:
@@ -63,6 +77,9 @@ const ADVICE: Record<ResourceSample['key'], string> = {
 /** Пороги для очередей: событие ждёт дольше 5 мин — внимание, 30 мин — критично. */
 const OUTBOX_WARN_S = 300;
 const OUTBOX_CRIT_S = 1800;
+/** Прогноз диска: меньше 30 дней до заполнения — внимание, меньше 7 — критично. */
+const DISK_DAYS_WARN = 30;
+const DISK_DAYS_CRIT = 7;
 const EMAIL_CRIT = 20;
 /** Пока проблема не устранена — напоминание не чаще раза в сутки. */
 const REMIND_MS = 24 * 3600_000;
@@ -77,15 +94,24 @@ export function evaluateResources(
   probe: ResourceProbe,
   db: DbStats,
   th: ResourceThresholds,
+  extra: ResourceExtra = {},
 ): ResourceSample[] {
   const out: ResourceSample[] = [];
   if (probe.disk && probe.disk.totalBytes > 0) {
     const pct = Math.round((1 - probe.disk.freeBytes / probe.disk.totalBytes) * 100);
+    const days = extra.diskDaysLeft;
+    const byDays: ResourceLevel =
+      days == null ? 'ok' : days < DISK_DAYS_CRIT ? 'crit' : days < DISK_DAYS_WARN ? 'warn' : 'ok';
+    const level = RANK[byDays] > RANK[byPct(pct, th)] ? byDays : byPct(pct, th);
     out.push({
       key: 'disk',
-      level: byPct(pct, th),
+      level,
       usedPct: pct,
-      detail: `занято ${pct}%, свободно ${gb(probe.disk.freeBytes)} ГБ из ${gb(probe.disk.totalBytes)} ГБ`,
+      detail:
+        `занято ${pct}%, свободно ${gb(probe.disk.freeBytes)} ГБ из ${gb(probe.disk.totalBytes)} ГБ` +
+        (days != null && days < 365
+          ? `; при нынешнем темпе место закончится примерно через ${Math.max(1, Math.round(days))} дн.`
+          : ''),
     });
   }
   if (probe.memory && probe.memory.totalBytes > 0) {
@@ -95,6 +121,24 @@ export function evaluateResources(
       level: byPct(pct, th),
       usedPct: pct,
       detail: `занято ${pct}%, свободно ${gb(probe.memory.availableBytes)} ГБ из ${gb(probe.memory.totalBytes)} ГБ`,
+    });
+  }
+  if (probe.swap && probe.swap.totalBytes > 0) {
+    const pct = Math.round((1 - probe.swap.freeBytes / probe.swap.totalBytes) * 100);
+    out.push({
+      key: 'swap',
+      level: byPct(pct, th),
+      usedPct: pct,
+      detail: `занято ${pct}%, свободно ${gb(probe.swap.freeBytes)} ГБ из ${gb(probe.swap.totalBytes)} ГБ`,
+    });
+  }
+  if (probe.cpu && probe.cpu.cores > 0) {
+    const pct = Math.round((probe.cpu.load5 / probe.cpu.cores) * 100);
+    out.push({
+      key: 'cpu',
+      level: byPct(pct, th),
+      usedPct: Math.min(100, pct),
+      detail: `загрузка за 5 минут — ${pct}% (${probe.cpu.load5.toFixed(1).replace('.', ',')} из ${probe.cpu.cores} ядер)`,
     });
   }
   if (db.maxConnections > 0) {
@@ -123,6 +167,35 @@ export function evaluateResources(
     detail: db.emailStuck ? `не удаётся отправить писем: ${db.emailStuck}` : 'письма уходят',
   });
   return out;
+}
+
+/** Точка истории свободного места (раз в час, 14 дней) — для прогноза. */
+export interface DiskPoint {
+  at: string;
+  free: number;
+}
+
+/**
+ * Прогноз: через сколько дней закончится место на диске при темпе за последние до 7 суток (нужно не меньше
+ * 12 часов истории). null — место не убывает (или убывает меньше 100 МБ в сутки).
+ */
+export function diskDaysLeft(history: DiskPoint[], freeNow: number, now: Date): number | null {
+  const from = now.getTime() - 7 * 86_400_000;
+  const old = history.find((p) => Date.parse(p.at) >= from);
+  if (!old) return null;
+  const days = (now.getTime() - Date.parse(old.at)) / 86_400_000;
+  if (days < 0.5) return null;
+  const perDay = (old.free - freeNow) / days;
+  if (perDay < 100 * 1024 ** 2) return null;
+  return freeNow / perDay;
+}
+
+/** История: точка раз в час, хранится 14 суток. */
+export function addDiskPoint(history: DiskPoint[], freeNow: number, now: Date): DiskPoint[] {
+  const keep = history.filter((p) => Date.parse(p.at) >= now.getTime() - 14 * 86_400_000);
+  const last = keep[keep.length - 1];
+  if (last && now.getTime() - Date.parse(last.at) < 3600_000) return keep;
+  return [...keep, { at: now.toISOString(), free: freeNow }];
 }
 
 export interface ResourceState {
@@ -189,10 +262,13 @@ export async function runResourceCheck(
     [now],
   );
   const r = st.rows[0]!;
+  const history = (await setting<DiskPoint[]>(pool, 'resource.history')) ?? [];
+  const freeNow = probe.disk?.freeBytes;
   const samples = evaluateResources(
     probe,
     { connections: r.connections, maxConnections: r.max, outboxOldestS: r.oldest, emailStuck: r.stuck },
     th,
+    { diskDaysLeft: freeNow != null ? diskDaysLeft(history, freeNow, now) : null },
   );
   const client = await pool.connect();
   let notified = 0;
@@ -249,9 +325,13 @@ export async function runResourceCheck(
       }
     }
     await client.query(
-      `INSERT INTO system_setting (key, value) VALUES ('resource.state', $1), ('resource.last', $2)
+      `INSERT INTO system_setting (key, value) VALUES ('resource.state', $1), ('resource.last', $2), ('resource.history', $3)
        ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`,
-      [JSON.stringify(state), JSON.stringify({ at: now.toISOString(), thresholds: th, samples })],
+      [
+        JSON.stringify(state),
+        JSON.stringify({ at: now.toISOString(), thresholds: th, samples }),
+        JSON.stringify(freeNow != null ? addDiskPoint(history, freeNow, now) : history),
+      ],
     );
     await client.query('COMMIT');
   } catch (e) {

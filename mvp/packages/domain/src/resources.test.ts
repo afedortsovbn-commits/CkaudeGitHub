@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { evaluateResources, resourceAlerts, resourceMessage } from './resources';
+import { addDiskPoint, diskDaysLeft, evaluateResources, resourceAlerts, resourceMessage } from './resources';
 
 const th = { warnPct: 80, critPct: 90 };
 const GB = 1024 ** 3;
@@ -44,5 +44,33 @@ describe('контроль ресурсов', () => {
     expect(m.subject).toBe('Важно! Ресурсы сервера: Место на диске — критично (95%)');
     expect(m.high).toBe(true);
     expect(m.body).toContain('Что сделать:');
+  });
+
+  it('процессор, подкачка и прогноз заполнения диска', () => {
+    const s = evaluateResources(
+      {
+        cpu: { load5: 14.6, cores: 16 },
+        swap: { totalBytes: 4 * GB, freeBytes: 3 * GB },
+        disk: { totalBytes: 100 * GB, freeBytes: 40 * GB },
+      },
+      db,
+      th,
+      { diskDaysLeft: 5.2 },
+    );
+    const by = Object.fromEntries(s.map((x) => [x.key, x.level]));
+    expect(by.cpu).toBe('crit');
+    expect(by.swap).toBe('ok');
+    // По занятости диск в норме (60%), но при нынешнем темпе место кончится через 5 дней — критично.
+    expect(by.disk).toBe('crit');
+    expect(s.find((x) => x.key === 'disk')!.detail).toContain('примерно через 5 дн.');
+
+    const t0 = new Date('2026-10-01T00:00:00Z');
+    let h = addDiskPoint([], 50 * GB, t0);
+    h = addDiskPoint(h, 50 * GB, new Date(t0.getTime() + 600_000)); // чаще раза в час — не пишется
+    expect(h).toHaveLength(1);
+    // За 2 суток ушло 10 ГБ — 5 ГБ/сутки, осталось 40 ГБ: около 8 дней.
+    const now = new Date(t0.getTime() + 2 * 86_400_000);
+    expect(Math.round(diskDaysLeft(h, 40 * GB, now)!)).toBe(8);
+    expect(diskDaysLeft(h, 50 * GB, now)).toBeNull();
   });
 });

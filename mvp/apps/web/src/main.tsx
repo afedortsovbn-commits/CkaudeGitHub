@@ -38,6 +38,7 @@ import {
 } from './pages/IntegrationPages';
 import { AssistProvidersPage, AutoRepliesPage, KnowledgePage, TemplatesPage } from './pages/AutomationPages';
 import { ObjectSyncPage } from './pages/ObjectSyncPage';
+import { WallboardPage } from './pages/WallboardPage';
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } },
@@ -59,6 +60,8 @@ function App() {
   if (!me) return <LoginPage />;
   return (
     <Routes>
+      {/* Экран мониторинга — на весь монитор, без меню и шапки. */}
+      <Route path="wallboard" element={<WallboardPage />} />
       <Route element={<Layout />}>
         <Route index element={<HomePage />} />
         <Route path="workspace" element={<WorkspacePage />} />

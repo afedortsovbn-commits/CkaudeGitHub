@@ -12,6 +12,13 @@ export const ApiConfigSchema = BaseConfigSchema.extend({
   DATABASE_URL: z.string().url(),
   NATS_STREAM_REPLICAS: z.coerce.number().int().min(1).max(5).default(3),
   RUN_MIGRATIONS: z.enum(['true', 'false']).default('false'),
+  /**
+   * Роль экземпляра: full — всё; reports — только отвечает на запросы (Traefik присылает ему отчёты и выгрузки),
+   * без фоновых задач: доставки событий в чаты, интеграций IVR и ботов, заданий по расписанию.
+   */
+  API_ROLE: z.enum(['full', 'reports']).default('full'),
+  /** Подключений к базе у экземпляра (у экземпляра отчётов — меньше: отчёты не забирают подключения у чатов). */
+  PG_POOL_MAX: z.coerce.number().int().min(2).max(50).default(10),
   JWT_SECRET: z.string().min(32, 'JWT_SECRET должен быть не короче 32 символов'),
   ACCESS_TOKEN_TTL_SEC: z.coerce.number().int().min(60).default(900),
   REFRESH_TOKEN_TTL_DAYS: z.coerce.number().int().min(1).default(7),

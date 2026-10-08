@@ -35,6 +35,7 @@ import { APP_CONTEXT, type AppContext } from '../context';
 import { audit } from '../lib/audit';
 import { saveUpload, sendAttachment } from '../lib/attachments';
 import { buildXlsx } from '../lib/xlsx';
+import { heavy } from '../lib/heavy';
 import { one, rows, toApi, withTx } from '../lib/db';
 import { ApiError, badRequest, forbidden, notFound, parse } from '../lib/errors';
 
@@ -428,6 +429,11 @@ export class TicketsController {
   @Get('tickets/export')
   @RequirePerm('conversations.work', 'tickets.work', 'supervisor.approvals', 'admin.matrix')
   async export(@CurrentUser() p: Principal, @Query() q: Record<string, string>, @Res() reply: FastifyReply) {
+    // Тяжёлый запрос (до 10 000 строк): не больше нескольких выгрузок и отчётов одновременно.
+    return heavy.run(() => this.exportXlsx(p, q, reply));
+  }
+
+  private async exportXlsx(p: Principal, q: Record<string, string>, reply: FastifyReply) {
     const f = await this.listQuery(p, q);
     const ids = (
       await rows<{ id: string }>(

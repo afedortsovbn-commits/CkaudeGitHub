@@ -11,6 +11,15 @@ http:
       tls: {}
       service: api@docker
       middlewares: [retry, compress]
+    # Тяжёлые запросы (отчёты, выгрузка в Excel) — отдельному экземпляру API с ограничением процессора и памяти:
+    # даже очень большой отчёт не замедляет чаты, звонки и рабочие места (основные экземпляры api).
+    api-reports:
+      rule: PathPrefix(`/api/v1/reports`) || Path(`/api/v1/tickets/export`)
+      priority: 1000
+      entryPoints: [websecure]
+      tls: {}
+      service: api-reports@docker
+      middlewares: [retry, compress]
     # Webhook Telegram-ботов (режим webhook): https://<адрес>/tg/<id канала>.
     telegram-webhook:
       rule: PathPrefix(`/tg/`)

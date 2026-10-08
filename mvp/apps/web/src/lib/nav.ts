@@ -10,6 +10,7 @@ import {
   IconChartBar,
   IconChecklist,
   IconDeviceDesktopAnalytics,
+  IconDeviceTv,
   IconFileCode,
   IconGasStation,
   IconHeadset,
@@ -95,6 +96,13 @@ export const MENU: MenuItem[] = [
     perms: ['supervisor.monitor'],
     group: 'control',
     icon: IconDeviceDesktopAnalytics,
+  },
+  {
+    to: '/wallboard',
+    label: t.wallboard.menu,
+    perms: ['supervisor.monitor'],
+    group: 'control',
+    icon: IconDeviceTv,
   },
   {
     to: '/tickets-control',

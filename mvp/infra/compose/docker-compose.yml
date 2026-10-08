@@ -51,6 +51,8 @@ x-logging: &logging
 
 services:
   traefik:
+    cpu_shares: 2048
+    oom_score_adj: -500
     logging: *logging
     # v3.6+: корректное согласование версии API с Docker Engine 29+ (v3.5 обращается к API 1.24 и получает отказ).
     image: ${TRAEFIK_IMAGE:-traefik:v3.6}
@@ -86,6 +88,8 @@ services:
       interval: 5s
 
   postgres:
+    cpu_shares: 2048
+    oom_score_adj: -500
     logging: *logging
     image: ${POSTGRES_IMAGE:-postgres:16-alpine}
     restart: unless-stopped
@@ -102,6 +106,8 @@ services:
       retries: 30
 
   nats-1:
+    cpu_shares: 2048
+    oom_score_adj: -500
     logging: *logging
     <<: *nats
     command:
@@ -124,6 +130,8 @@ services:
     volumes: [nats1:/data]
     ports: ['127.0.0.1:4222:4222']
   nats-2:
+    cpu_shares: 2048
+    oom_score_adj: -500
     logging: *logging
     <<: *nats
     command:
@@ -146,6 +154,8 @@ services:
     volumes: [nats2:/data]
     ports: ['127.0.0.1:4223:4222']
   nats-3:
+    cpu_shares: 2048
+    oom_score_adj: -500
     logging: *logging
     <<: *nats
     command:
@@ -206,6 +216,8 @@ services:
     healthcheck: { disable: true }
 
   api:
+    cpu_shares: 2048
+    oom_score_adj: -500
     logging: *logging
     image: cc/api:${API_TAG:-dev}
     restart: unless-stopped
@@ -242,6 +254,43 @@ services:
       traefik.http.services.api.loadbalancer.healthcheck.interval: 1s
       traefik.http.services.api.loadbalancer.healthcheck.timeout: 1s
 
+  # Отчёты и выгрузки в Excel (маршрут — infra/traefik/dynamic.yml): тот же образ api, но только отвечает на
+  # запросы (API_ROLE=reports, без фоновых задач) и ограничен — не больше 2 ядер и 1,5 ГБ памяти, низкий
+  # приоритет процессора, при нехватке памяти останавливается первым. Самый тяжёлый отчёт не замедлит чаты и звонки.
+  api-reports:
+    logging: *logging
+    image: cc/api:${API_TAG:-dev}
+    restart: unless-stopped
+    cpus: ${REPORTS_CPUS:-2}
+    mem_limit: ${REPORTS_MEM:-1536m}
+    cpu_shares: 256
+    oom_score_adj: 800
+    environment:
+      <<: *app-env
+      SERVICE_NAME: api-reports
+      API_ROLE: reports
+      OUTBOX_RELAY_ENABLED: 'false'
+      # Подключений к базе — 4 (у основных экземпляров по 10), одновременно — не больше 2 отчётов/выгрузок.
+      PG_POOL_MAX: 4
+      REPORTS_MAX_CONCURRENT: 2
+      NATS_STREAM_REPLICAS: 3
+      S3_ENDPOINT: http://s3:8333
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-https://localhost}
+    networks: [cc]
+    stop_grace_period: 35s
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      nats-1: { condition: service_healthy }
+      nats-2: { condition: service_healthy }
+      nats-3: { condition: service_healthy }
+      s3: { condition: service_healthy }
+    labels:
+      traefik.enable: 'true'
+      traefik.http.services.api-reports.loadbalancer.server.port: '3000'
+      traefik.http.services.api-reports.loadbalancer.healthcheck.path: /readyz
+      traefik.http.services.api-reports.loadbalancer.healthcheck.interval: 1s
+      traefik.http.services.api-reports.loadbalancer.healthcheck.timeout: 1s
+
   worker:
     logging: *logging
     image: cc/worker:${WORKER_TAG:-${API_TAG:-dev}}
@@ -273,6 +322,8 @@ services:
       nats-3: { condition: service_healthy }
 
   router:
+    cpu_shares: 2048
+    oom_score_adj: -500
     logging: *logging
     image: cc/router:${ROUTER_TAG:-${API_TAG:-dev}}
     restart: unless-stopped
@@ -287,6 +338,8 @@ services:
       migrate: { condition: service_completed_successfully }
 
   realtime:
+    cpu_shares: 2048
+    oom_score_adj: -500
     logging: *logging
     image: cc/realtime:${REALTIME_TAG:-${API_TAG:-dev}}
     restart: unless-stopped
@@ -308,6 +361,8 @@ services:
       traefik.http.services.realtime.loadbalancer.healthcheck.timeout: 1s
 
   web:
+    cpu_shares: 2048
+    oom_score_adj: -500
     logging: *logging
     image: cc/web:${WEB_TAG:-${API_TAG:-dev}}
     restart: unless-stopped
@@ -324,6 +379,8 @@ services:
 
   # --- коннекторы каналов (Ф4): ≥2 экземпляра; приём каждого бота/ящика ведёт владелец аренды в NATS KV ---
   connector-telegram:
+    cpu_shares: 2048
+    oom_score_adj: -500
     logging: *logging
     image: cc/connector-telegram:${CONNECTOR_TELEGRAM_TAG:-${API_TAG:-dev}}
     restart: unless-stopped
@@ -351,6 +408,8 @@ services:
       traefik.http.services.connector-telegram.loadbalancer.healthcheck.timeout: 1s
 
   connector-email:
+    cpu_shares: 2048
+    oom_score_adj: -500
     logging: *logging
     image: cc/connector-email:${CONNECTOR_EMAIL_TAG:-${API_TAG:-dev}}
     restart: unless-stopped
@@ -371,6 +430,8 @@ services:
 
   # Ф13: отзывы с карт через Rocket Data (M-CH-10). Опрос ведёт владелец аренды, ответы доставляют оба экземпляра.
   connector-rocketdata:
+    cpu_shares: 2048
+    oom_score_adj: -500
     logging: *logging
     image: cc/connector-rocketdata:${CONNECTOR_ROCKETDATA_TAG:-${API_TAG:-dev}}
     restart: unless-stopped
@@ -401,6 +462,8 @@ services:
 
   # --- телефония (Ф5): Kamailio (SIP-периметр), Asterisk ×2 (медиа), coturn ×2 (TURN) ---
   kamailio:
+    cpu_shares: 2048
+    oom_score_adj: -500
     logging: *logging
     image: cc/kamailio:${KAMAILIO_TAG:-${MEDIA_TAG:-dev}}
     restart: unless-stopped
@@ -427,6 +490,8 @@ services:
 
   # Управление вызовами (ARI): на каждый узел Asterisk — активный экземпляр (аренда в NATS KV) и резервный.
   call-control:
+    cpu_shares: 2048
+    oom_score_adj: -500
     logging: *logging
     image: cc/call-control:${CALL_CONTROL_TAG:-${API_TAG:-dev}}
     restart: unless-stopped
@@ -449,6 +514,8 @@ services:
       asterisk-2: { condition: service_healthy }
 
   asterisk-1:
+    cpu_shares: 2048
+    oom_score_adj: -500
     logging: *logging
     <<: *asterisk
     environment:
@@ -460,6 +527,8 @@ services:
     volumes: ['ast1spool:/var/spool/asterisk']
 
   asterisk-2:
+    cpu_shares: 2048
+    oom_score_adj: -500
     logging: *logging
     <<: *asterisk
     environment:
@@ -473,6 +542,8 @@ services:
   # TURN для удалённых операторов за NAT; учётные данные — короткоживущие (TURN REST API), выдаёт api
   # перед каждым вызовом, поэтому экземпляр можно вывести из списка и обновить без обрыва (02-архитектура 6.5).
   coturn-1:
+    cpu_shares: 2048
+    oom_score_adj: -500
     logging: *logging
     <<: *coturn
     command: [
@@ -493,6 +564,8 @@ services:
       ]
     ports: ['${TURN1_PORT:-3478}:3478/udp', '${TURN1_PORT:-3478}:3478/tcp']
   coturn-2:
+    cpu_shares: 2048
+    oom_score_adj: -500
     logging: *logging
     <<: *coturn
     command: [

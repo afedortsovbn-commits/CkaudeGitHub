@@ -1,4 +1,5 @@
 import { readFile, statfs } from 'node:fs/promises';
+import { cpus } from 'node:os';
 import { checkBreaks, pruneOutbox, type ResourceProbe, runResourceCheck } from '@cc/domain';
 import { ensureJobQueue, type JobQueue, type Logger } from '@cc/service-kit';
 import type { Pool } from 'pg';
@@ -7,7 +8,7 @@ export const RESOURCE_QUEUE = 'worker.resources';
 export const HOUSEKEEPING_QUEUE = 'worker.housekeeping';
 export const BREAKS_QUEUE = 'worker.breaks';
 
-/** Замер диска и памяти сервера изнутри контейнера: диск — тот, на котором Docker хранит данные. */
+/** Замер диска, памяти, подкачки и процессора сервера изнутри контейнера (диск — тот, где данные Docker). */
 export async function probeResources(diskPath = '/'): Promise<ResourceProbe> {
   const p: ResourceProbe = {};
   try {
@@ -20,6 +21,14 @@ export async function probeResources(diskPath = '/'): Promise<ResourceProbe> {
     const m = await readFile('/proc/meminfo', 'utf8');
     const kb = (k: string) => Number(new RegExp(`^${k}:\\s+(\\d+)`, 'm').exec(m)?.[1] ?? 0) * 1024;
     if (kb('MemTotal')) p.memory = { totalBytes: kb('MemTotal'), availableBytes: kb('MemAvailable') };
+    if (kb('SwapTotal')) p.swap = { totalBytes: kb('SwapTotal'), freeBytes: kb('SwapFree') };
+  } catch {
+    /* не Linux */
+  }
+  try {
+    // Средняя загрузка — по всему серверу (в контейнере /proc/loadavg не изолирован), ядра — сервера.
+    const [, load5] = (await readFile('/proc/loadavg', 'utf8')).split(' ').map(Number);
+    if (Number.isFinite(load5)) p.cpu = { load5: load5!, cores: cpus().length || 1 };
   } catch {
     /* не Linux */
   }

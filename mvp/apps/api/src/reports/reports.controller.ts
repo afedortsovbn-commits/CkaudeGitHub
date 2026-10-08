@@ -12,6 +12,7 @@ import { CurrentUser, RequirePerm } from '../auth/guard';
 import { APP_CONTEXT, type AppContext } from '../context';
 import { audit } from '../lib/audit';
 import { notFound, parse } from '../lib/errors';
+import { HEAVY_SESSION_SQL, heavy } from '../lib/heavy';
 import { channelName } from './query';
 import { buildReport } from './reports';
 
@@ -63,12 +64,22 @@ export class ReportsController {
   ) {
     if (!(REPORT_KINDS as readonly string[]).includes(kind)) throw notFound('Отчёт');
     const filter = parse(ReportFilterSchema, query);
+    // Тяжёлый запрос: ограничено число одновременных отчётов, 60 с и одно ядро базы на отчёт.
+    return heavy.run(() => this.build(p, kind as ReportKind, filter, reply));
+  }
+
+  private async build(
+    p: Principal,
+    kind: ReportKind,
+    filter: ReturnType<typeof ReportFilterSchema.parse>,
+    reply: FastifyReply,
+  ) {
     const client = await this.ctx.pool.connect();
     try {
       await client.query('BEGIN READ ONLY');
       // Отчёт не должен занимать соединение бесконечно (журнал растёт; партиционирование — позже).
-      await client.query(`SET LOCAL statement_timeout = '60s'`);
-      const r = await buildReport(kind as ReportKind, { db: client, principal: p, filter });
+      await client.query(HEAVY_SESSION_SQL);
+      const r = await buildReport(kind, { db: client, principal: p, filter });
       await client.query('COMMIT');
       if (filter.format === 'csv') {
         await audit(client, p, 'export', 'report', null, null, { kind, ...filter }, { configChanged: false });

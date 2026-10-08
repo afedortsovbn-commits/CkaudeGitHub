@@ -39,6 +39,7 @@ import { tree } from './i18n/tree';
 import { updateBannerUi } from './i18n/updateBannerUi';
 import { users } from './i18n/users';
 import { workspace } from './i18n/workspace';
+import { wallboard } from './i18n/wallboard';
 
 /** Строки интерфейса. Русский — основной язык; структура позволяет добавить другие (M-NFR-08). */
 const ru = {
@@ -172,6 +173,7 @@ const ru = {
   updateBannerUi,
   users,
   workspace,
+  wallboard,
   reviews,
 };
 

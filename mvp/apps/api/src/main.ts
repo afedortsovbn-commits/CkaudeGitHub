@@ -42,7 +42,9 @@ async function bootstrap(): Promise<void> {
   lifecycle.installSignalHandlers();
   const metrics = createMetrics(config.SERVICE_NAME);
 
-  const pool = createPool(config.DATABASE_URL);
+  const pool = createPool(config.DATABASE_URL, { max: config.PG_POOL_MAX });
+  // Экземпляр отчётов (API_ROLE=reports) только отвечает на запросы: фоновые задачи — у основных экземпляров.
+  const full = config.API_ROLE === 'full';
   pool.on('error', (err) => logger.error({ err: String(err) }, 'ошибка соединения с PostgreSQL'));
   if (config.RUN_MIGRATIONS === 'true') {
     await migrate(pool, { log: (m) => logger.info(m) });
@@ -70,7 +72,7 @@ async function bootstrap(): Promise<void> {
   });
   await storage.ensureBucket();
   const relay = new OutboxRelay({ pool, js: nc.jetstream(), logger });
-  if (config.OUTBOX_RELAY_ENABLED) relay.start();
+  if (config.OUTBOX_RELAY_ENABLED && full) relay.start();
 
   const ctx: AppContext = {
     config,
@@ -87,7 +89,9 @@ async function bootstrap(): Promise<void> {
   };
   const app = await createApp(ctx);
   // Интеграционные операции для IVR и ботов (NATS request/reply, группа очереди — любой экземпляр api).
-  const integrations = serveIntegrations(nc, { pool, secretsKey: config.SECRETS_KEY, logger });
+  const integrations = full
+    ? serveIntegrations(nc, { pool, secretsKey: config.SECRETS_KEY, logger })
+    : { stop: async () => undefined };
   const fastify = app.getHttpAdapter().getInstance();
 
   // Освободившиеся keep-alive соединения закрываем сами, иначе закрытие ждало бы keepAliveTimeout.
@@ -99,14 +103,16 @@ async function bootstrap(): Promise<void> {
       clearInterval(t);
     }
   });
-  const boss = await createJobQueue({ connectionString: config.DATABASE_URL, logger });
-  await ensureJobQueue(boss, RETENTION_QUEUE);
-  await boss.work(RETENTION_QUEUE, async () => {
-    const r = await runRecordingRetention(pool, storage);
-    if (r.deleted) logger.info(r, 'записи разговоров удалены по сроку хранения');
-  });
-  await boss.schedule(RETENTION_QUEUE, '17 * * * *');
-  lifecycle.onShutdown('pg-boss', 24, () => boss.stop({ graceful: true, timeout: 10_000 }));
+  if (full) {
+    const boss = await createJobQueue({ connectionString: config.DATABASE_URL, logger });
+    await ensureJobQueue(boss, RETENTION_QUEUE);
+    await boss.work(RETENTION_QUEUE, async () => {
+      const r = await runRecordingRetention(pool, storage);
+      if (r.deleted) logger.info(r, 'записи разговоров удалены по сроку хранения');
+    });
+    await boss.schedule(RETENTION_QUEUE, '17 * * * *');
+    lifecycle.onShutdown('pg-boss', 24, () => boss.stop({ graceful: true, timeout: 10_000 }));
+  }
   lifecycle.onShutdown('outbox-relay', 20, () => relay.stop());
   lifecycle.onShutdown('integrations', 25, () => integrations.stop());
   lifecycle.onShutdown('nats', 30, () => nc.drain());
@@ -114,7 +120,7 @@ async function bootstrap(): Promise<void> {
 
   await app.listen(config.PORT, '0.0.0.0');
   lifecycle.markReady();
-  logger.info({ port: config.PORT }, 'api запущен');
+  logger.info({ port: config.PORT, role: config.API_ROLE }, 'api запущен');
 }
 
 bootstrap().catch((err: unknown) => {
