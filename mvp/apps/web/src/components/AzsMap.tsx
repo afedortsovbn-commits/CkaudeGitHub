@@ -2,7 +2,9 @@ import 'leaflet/dist/leaflet.css';
 import { Anchor, Button, Group, Modal, Stack, Text, TextInput } from '@mantine/core';
 import L from 'leaflet';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { type Row, useList } from '../lib/data';
+import { useQuery } from '@tanstack/react-query';
+import { get } from '../lib/api';
+import { type Row } from '../lib/data';
 import { t } from '../lib/i18n';
 
 /** Официальные карты — для сверки (выбор в карточке — по нашей карте, там щелчок сразу выбирает станцию). */
@@ -41,27 +43,43 @@ export const stationNum = (o: Row): string => {
 
 /** Станции справочника объектов (АЗС и ЭЗС) с номером, адресом, предприятием-владельцем и координатами. */
 export function useStations(enabled = true): { stations: Station[]; loading: boolean } {
-  const objects = useList('/dict/objects?limit=2000', enabled);
-  const enterprises = useList('/dict/enterprises', enabled);
+  // Справочник станций (≈1300 строк) меняется редко: держим 10 минут и не перечитываем после сохранений.
+  const objects = useQuery({
+    queryKey: ['stations', '/dict/objects?limit=2000'],
+    queryFn: () => get<Row[]>('/dict/objects?limit=2000'),
+    enabled,
+    staleTime: 10 * 60_000,
+    meta: { static: true },
+  });
+  const enterprises = useQuery({
+    queryKey: ['stations', '/dict/enterprises'],
+    queryFn: () => get<Row[]>('/dict/enterprises'),
+    enabled,
+    staleTime: 10 * 60_000,
+    meta: { static: true },
+  });
   const stations = useMemo(() => {
     const ent = new Map((enterprises.data ?? []).map((e) => [String(e.id), String(e.name)]));
-    return (objects.data ?? []).map((o) => {
-      const ext = (o.externalIds as Record<string, string> | undefined) ?? {};
-      const lat = Number(ext.lat);
-      const lon = Number(ext.lon);
-      const kind: StationKind = o.kind === 'ezs' ? 'ezs' : 'azs';
-      const num = kind === 'azs' ? stationNum(o) : '';
-      return {
-        obj: o,
-        kind,
-        num,
-        title: kind === 'azs' ? t.azsMap.station(num) : String(o.name),
-        address: String(o.address ?? ''),
-        enterprise: ent.get(String(o.enterpriseId)) ?? '',
-        lat: ext.lat && Number.isFinite(lat) ? lat : null,
-        lon: ext.lon && Number.isFinite(lon) ? lon : null,
-      };
-    });
+    // Только станции действующих предприятий (демо-объекты отключённых предприятий не показываются).
+    return (objects.data ?? [])
+      .filter((o) => ent.has(String(o.enterpriseId)))
+      .map((o) => {
+        const ext = (o.externalIds as Record<string, string> | undefined) ?? {};
+        const lat = Number(ext.lat);
+        const lon = Number(ext.lon);
+        const kind: StationKind = o.kind === 'ezs' ? 'ezs' : 'azs';
+        const num = kind === 'azs' ? stationNum(o) : '';
+        return {
+          obj: o,
+          kind,
+          num,
+          title: kind === 'azs' ? t.azsMap.station(num) : String(o.name),
+          address: String(o.address ?? ''),
+          enterprise: ent.get(String(o.enterpriseId)) ?? '',
+          lat: ext.lat && Number.isFinite(lat) ? lat : null,
+          lon: ext.lon && Number.isFinite(lon) ? lon : null,
+        };
+      });
   }, [objects.data, enterprises.data]);
   return { stations, loading: objects.isLoading };
 }

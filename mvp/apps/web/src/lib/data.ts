@@ -19,7 +19,9 @@ export function useAction<A>(fn: (a: A) => Promise<unknown>, okText = t.saved) {
   return useMutation({
     mutationFn: fn,
     onSuccess: (res) => {
-      void qc.invalidateQueries();
+      // Перечитать данные на экране; редко меняющиеся справочники (meta.static) — нет: они обновляются сами по
+      // истечении staleTime, иначе каждое сохранение поля карточки заново скачивало бы, например, все станции.
+      void qc.invalidateQueries({ predicate: (q) => !q.meta?.static });
       notifications.show({ color: 'green', message: okText });
       warnOpenTickets((res as { openTickets?: TicketRef[] } | undefined)?.openTickets);
     },

@@ -10,7 +10,7 @@ http:
       entryPoints: [websecure]
       tls: {}
       service: api@docker
-      middlewares: [retry]
+      middlewares: [retry, compress]
     # Webhook Telegram-ботов (режим webhook): https://<адрес>/tg/<id канала>.
     telegram-webhook:
       rule: PathPrefix(`/tg/`)
@@ -36,10 +36,23 @@ http:
       entryPoints: [websecure]
       tls: {}
       service: web@docker
-      middlewares: [retry]
+      middlewares: [retry, compress]
   middlewares:
     # Повтор только при сетевой ошибке до получения ответа (например, соединение закрыто остановленным экземпляром).
     retry:
       retry:
         attempts: 3
         initialInterval: 50ms
+    # Сжатие ответов API (JSON) и интерфейса (страница, скрипты, стили): трафик меньше в 5–10 раз. Записи
+    # разговоров, вложения и выгрузки Excel не сжимаются (уже сжаты или двоичные).
+    compress:
+      compress:
+        minResponseBodyBytes: 1024
+        includedContentTypes:
+          - application/json
+          - application/javascript
+          - text/javascript
+          - text/html
+          - text/css
+          - text/plain
+          - image/svg+xml
