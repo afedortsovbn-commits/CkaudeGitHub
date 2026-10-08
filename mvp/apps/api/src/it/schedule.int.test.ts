@@ -179,4 +179,40 @@ describe.skipIf(!ADMIN_URL)('График работы (интеграция)', 
     const me = (await call('GET', '/schedule/me', 'op1')).body as { id: string; breaks: unknown[] }[];
     expect(me.find((s) => s.id === shift.id)?.breaks).toHaveLength(2);
   });
+  it('производственный календарь: норма по закону, корректировка дня меняет норму графика, «как по закону»', async () => {
+    const year = (await call('GET', '/schedule/calendar?year=2026', 'admin')).body as {
+      months: { month: string; workDays: number; hours: number }[];
+      days: { date: string; kind: string; holiday: string | null }[];
+    };
+    expect(year.months.find((m) => m.month === '2026-11')).toMatchObject({ workDays: 21, hours: 167 });
+    expect(year.days.find((d) => d.date === '2026-04-21')).toMatchObject({
+      kind: 'holiday',
+      holiday: 'Радуница',
+    });
+    expect((await call('GET', '/schedule/calendar?year=2026', 'op1')).status).toBe(403);
+
+    const norm = async () =>
+      ((await call('GET', '/schedule/month?month=2026-11', 'admin')).body as { normHours: number }).normHours;
+    expect(await norm()).toBe(167);
+    const set = await call('PUT', '/schedule/calendar/2026-11-02', 'admin', {
+      kind: 'off',
+      note: 'доп. выходной',
+    });
+    expect(set.status, JSON.stringify(set.body)).toBe(200);
+    expect(set.body).toMatchObject({
+      kind: 'off',
+      defaultKind: 'work',
+      overridden: true,
+      note: 'доп. выходной',
+    });
+    expect(await norm()).toBe(159);
+    // Тот же вид, что по закону, без комментария — корректировка снимается.
+    await call('PUT', '/schedule/calendar/2026-11-02', 'admin', { kind: 'work', note: null });
+    expect(await one("SELECT 1 FROM work_calendar_day WHERE on_date = '2026-11-02'")).toBeUndefined();
+    await call('PUT', '/schedule/calendar/2026-11-07', 'admin', { kind: 'work' });
+    expect(await norm()).toBe(175);
+    const reset = await call('DELETE', '/schedule/calendar/2026-11-07', 'admin');
+    expect(reset.body).toMatchObject({ kind: 'holiday', overridden: false });
+    expect(await norm()).toBe(167);
+  });
 });

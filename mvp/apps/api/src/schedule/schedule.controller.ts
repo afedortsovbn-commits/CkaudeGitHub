@@ -15,7 +15,13 @@ import { newId } from '@cc/contracts';
 import type { Principal } from '@cc/auth';
 import {
   type BreakRules,
+  type CalendarOverride,
+  calendarDays,
+  calendarMonth,
   DEFAULT_BREAK_RULES,
+  defaultDayKind,
+  demandWeekday,
+  monthTotals,
   DEFAULT_SCHEDULE_RULES,
   dateToMonthMinute,
   generateMonth,
@@ -101,6 +107,12 @@ const ShiftBody = z
   .object({ month: monthStr, userId: uuid, date: dayStr, templateId: uuid.nullable() })
   .strict();
 const BreakBody = z.object({ startMin: minuteOfDay }).strict();
+const CalendarDayBody = z
+  .object({
+    kind: z.enum(['work', 'short', 'off', 'holiday']),
+    note: z.string().trim().max(200).nullable().optional(),
+  })
+  .strict();
 
 const firstDay = (month: string) => `${month}-01`;
 
@@ -419,6 +431,76 @@ export class ScheduleController {
     return this.settings(this.ctx.pool);
   }
 
+  // ---------- Производственный календарь ----------
+
+  /** Корректировки календаря за период (ГГГГ-ММ-ДД, включительно). */
+  private async overrides(db: Db, from: string, to: string): Promise<CalendarOverride[]> {
+    return rows<CalendarOverride>(
+      db,
+      `SELECT to_char(on_date, 'YYYY-MM-DD') AS date, kind, note FROM work_calendar_day
+        WHERE on_date BETWEEN $1 AND $2`,
+      [from, to],
+    );
+  }
+
+  /** Дни месяца по производственному календарю (с корректировками). */
+  private async calendarOf(db: Db, month: string) {
+    const days = calendarMonth(month, []);
+    return calendarMonth(month, await this.overrides(db, days[0]!.date, days[days.length - 1]!.date));
+  }
+
+  @Get('calendar')
+  @RequirePerm('schedule.manage')
+  async calendar(@Query('year') yearRaw?: string) {
+    const year = Number(yearRaw) || new Date().getUTCFullYear();
+    if (year < 2000 || year > 2099) throw badRequest('Год — от 2000 до 2099');
+    const days = calendarDays(
+      `${year}-01-01`,
+      `${year}-12-31`,
+      await this.overrides(this.ctx.pool, `${year}-01-01`, `${year}-12-31`),
+    );
+    const months = Array.from({ length: 12 }, (_, i) => {
+      const m = `${year}-${String(i + 1).padStart(2, '0')}`;
+      return { month: m, ...monthTotals(days.filter((d) => d.date.startsWith(m))) };
+    });
+    return { year, days, months, total: monthTotals(days) };
+  }
+
+  /** Корректировка дня: вид дня и комментарий; совпадает с законом и без комментария — корректировка снимается. */
+  @Put('calendar/:date')
+  @RequirePerm('schedule.manage')
+  async setCalendarDay(@CurrentUser() p: Principal, @Param('date') dateRaw: string, @Body() body: unknown) {
+    const date = parse(dayStr, dateRaw);
+    const b = parse(CalendarDayBody, body);
+    const note = b.note || null;
+    await withTx(this.ctx.pool, async (tx) => {
+      const before = await one(tx, 'SELECT * FROM work_calendar_day WHERE on_date = $1', [date]);
+      if (b.kind === defaultDayKind(date) && !note)
+        await tx.query('DELETE FROM work_calendar_day WHERE on_date = $1', [date]);
+      else
+        await tx.query(
+          `INSERT INTO work_calendar_day (on_date, kind, note, updated_by) VALUES ($1, $2, $3, $4)
+           ON CONFLICT (on_date) DO UPDATE SET kind = EXCLUDED.kind, note = EXCLUDED.note,
+             updated_by = EXCLUDED.updated_by, updated_at = now()`,
+          [date, b.kind, note, p.id],
+        );
+      await audit(tx, p, 'update', 'work_calendar_day', null, before, { date, ...b });
+    });
+    return (await this.calendarOf(this.ctx.pool, date.slice(0, 7))).find((d) => d.date === date);
+  }
+
+  /** Вернуть день как по закону. */
+  @Delete('calendar/:date')
+  @RequirePerm('schedule.manage')
+  async resetCalendarDay(@CurrentUser() p: Principal, @Param('date') dateRaw: string) {
+    const date = parse(dayStr, dateRaw);
+    await withTx(this.ctx.pool, async (tx) => {
+      const before = await one(tx, 'DELETE FROM work_calendar_day WHERE on_date = $1 RETURNING *', [date]);
+      if (before) await audit(tx, p, 'delete', 'work_calendar_day', null, before, null);
+    });
+    return (await this.calendarOf(this.ctx.pool, date.slice(0, 7))).find((d) => d.date === date);
+  }
+
   // ---------- График на месяц ----------
 
   private async settings(db: Db): Promise<{ rules: ScheduleRules; breaks: BreakRules }> {
@@ -453,11 +535,14 @@ export class ScheduleController {
         WHERE s.month = $1 ORDER BY s.on_date, s.start_at`,
       [firstDay(month)],
     );
-    const { rules, breaks } = await this.settings(this.ctx.pool);
+    const { breaks } = await this.settings(this.ctx.pool);
+    const calendar = await this.calendarOf(this.ctx.pool, month);
     return {
       month,
       status: (m?.status as string | undefined) ?? 'none',
-      normHours: (m?.norm_hours as number | null | undefined) ?? rules.monthNormHours,
+      // Норма — по производственному календарю (с корректировками).
+      normHours: monthTotals(calendar).hours,
+      calendar,
       generatedAt: m?.generated_at ?? null,
       publishedAt: m?.published_at ?? null,
       warnings: (m?.warnings as string[] | undefined) ?? [],
@@ -555,9 +640,12 @@ export class ScheduleController {
         `SELECT template_id, weekday, to_char(on_date, 'YYYY-MM-DD') AS date, required FROM schedule_demand`,
       );
       const staff = await this.staffWithPrefs(tx, month);
+      const calendar = await this.calendarOf(tx, month);
+      const normHours = monthTotals(calendar).hours;
       await tx.query(
-        `INSERT INTO schedule_month (month, norm_hours) VALUES ($1, $2) ON CONFLICT (month) DO NOTHING`,
-        [firstDay(month), rules.monthNormHours],
+        `INSERT INTO schedule_month (month, norm_hours) VALUES ($1, $2)
+         ON CONFLICT (month) DO UPDATE SET norm_hours = EXCLUDED.norm_hours`,
+        [firstDay(month), normHours],
       );
       const fixedRows = await rows<{
         user_id: string;
@@ -586,10 +674,16 @@ export class ScheduleController {
           durationMin: t.duration_min,
           isNight: t.is_night,
         })),
-        demand: (date, weekday, templateId) =>
-          dem.find((d) => d.template_id === templateId && d.date === date)?.required ??
-          dem.find((d) => d.template_id === templateId && d.weekday === weekday)?.required ??
-          0,
+        // Особая дата важнее; иначе — по дню недели с учётом календаря (праздник — как воскресенье и т. д.).
+        demand: (date, weekday, templateId) => {
+          const day = calendar.find((c) => c.date === date);
+          const wd = day ? demandWeekday(day) : weekday;
+          return (
+            dem.find((d) => d.template_id === templateId && d.date === date)?.required ??
+            dem.find((d) => d.template_id === templateId && d.weekday === wd)?.required ??
+            0
+          );
+        },
         staff: staff.map(
           (s): StaffIn => ({
             userId: s.userId,
@@ -613,7 +707,7 @@ export class ScheduleController {
             }),
           ),
         ),
-        scheduleRules: rules,
+        scheduleRules: { ...rules, monthNormHours: normHours },
         breakRules: breaks,
         fixed: fixedRows.map((f) => ({
           userId: f.user_id,

@@ -15,4 +15,5 @@ export * from './supervisor';
 export * from './resources';
 export * from './routing-policy';
 export * from './schedule';
+export * from './work-calendar';
 export * from './break-watch';

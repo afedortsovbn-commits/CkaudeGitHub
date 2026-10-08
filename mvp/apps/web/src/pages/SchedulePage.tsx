@@ -36,6 +36,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { api, get, patch, post, put } from '../lib/api';
 import { useAction, useRequired } from '../lib/data';
 import { t } from '../lib/i18n';
+import { type CalendarDay, dayTitle, KIND_STYLE, WorkCalendarTab } from './WorkCalendarTab';
 
 const s = t.schedule;
 const pad = (n: number) => String(n).padStart(2, '0');
@@ -125,7 +126,16 @@ interface MonthData {
   staff: { userId: string; name: string }[];
   shifts: Shift[];
   demand: { weekday: DemandRow[]; dates: DemandRow[] };
+  /** Дни месяца по производственному календарю. */
+  calendar: CalendarDay[];
 }
+
+/** День недели для потребности: праздник/перенесённый выходной — как воскресенье, рабочая суббота — как понедельник. */
+const demandWeekday = (c: CalendarDay | undefined, weekday: number) => {
+  if (!c) return weekday;
+  const working = c.kind === 'work' || c.kind === 'short';
+  return !working && weekday <= 5 ? 7 : working && weekday >= 6 ? 1 : weekday;
+};
 interface StaffRule {
   id: string;
   kind: 'unavailable' | 'preferred';
@@ -193,6 +203,9 @@ export function SchedulePage() {
           <Tabs.Tab value="demand" data-testid="schedule-tab-demand">
             {s.tabDemand}
           </Tabs.Tab>
+          <Tabs.Tab value="calendar" data-testid="schedule-tab-calendar">
+            {s.tabCalendar}
+          </Tabs.Tab>
           <Tabs.Tab value="settings" data-testid="schedule-tab-settings">
             {s.tabSettings}
           </Tabs.Tab>
@@ -205,6 +218,9 @@ export function SchedulePage() {
         </Tabs.Panel>
         <Tabs.Panel value="demand" pt="sm">
           <DemandTab />
+        </Tabs.Panel>
+        <Tabs.Panel value="calendar" pt="sm">
+          <WorkCalendarTab initialYear={Number(month.slice(0, 4))} />
         </Tabs.Panel>
         <Tabs.Panel value="settings" pt="sm">
           <SettingsTab />
@@ -239,10 +255,18 @@ function GridTab({ month }: { month: string }) {
   const longOf = (x: Shift) => (x.isNight ? d.breakRules.night.long : d.breakRules.day.long);
   const hours = (uid: string) =>
     d.shifts.filter((x) => x.userId === uid).reduce((a, x) => a + (x.durationMin - longOf(x)) / 60, 0);
+  const cal = new Map(d.calendar.map((c) => [c.date, c]));
   const required = (tplId: string, date: string, weekday: number) =>
     d.demand.dates.find((x) => x.templateId === tplId && x.date === date)?.required ??
-    d.demand.weekday.find((x) => x.templateId === tplId && x.weekday === weekday)?.required ??
+    d.demand.weekday.find(
+      (x) => x.templateId === tplId && x.weekday === demandWeekday(cal.get(date), weekday),
+    )?.required ??
     0;
+  // Нерабочий по календарю день (выходной или праздник) — подкрашен в сетке.
+  const dayBg = (date: string) => {
+    const c = cal.get(date);
+    return c && c.kind !== 'work' ? KIND_STYLE[c.kind].bg : undefined;
+  };
   const regenerate = () => {
     if (d.status !== 'none' && !window.confirm(s.regenerateConfirm)) return;
     gen.mutate(undefined);
@@ -339,12 +363,19 @@ function GridTab({ month }: { month: string }) {
                     width: cellW,
                     textAlign: 'center',
                     cursor: 'pointer',
-                    background: x.weekday >= 6 ? 'var(--mantine-color-red-0)' : undefined,
+                    background: dayBg(x.date),
                   }}
                   onClick={() => setBreaksDay(x.date)}
-                  title={s.dayBreaks}
+                  title={`${cal.get(x.date) ? dayTitle(cal.get(x.date)!) : ''}\n${s.dayBreaks}`}
+                  data-testid={`grid-day-${x.day}`}
+                  data-kind={cal.get(x.date)?.kind}
                 >
-                  <Text size="xs" fw={600} lh={1.2}>
+                  <Text
+                    size="xs"
+                    fw={600}
+                    lh={1.2}
+                    c={cal.get(x.date)?.kind === 'holiday' ? 'red.8' : undefined}
+                  >
                     {x.day}
                   </Text>
                   <Text size="10px" c={x.weekday >= 6 ? 'red.7' : 'dimmed'} lh={1.2}>
@@ -383,7 +414,7 @@ function GridTab({ month }: { month: string }) {
                         key={x.date}
                         p={0}
                         style={{
-                          background: x.weekday >= 6 && !sh ? 'var(--mantine-color-red-0)' : undefined,
+                          background: !sh ? dayBg(x.date) : undefined,
                         }}
                       >
                         <UnstyledButton
@@ -1010,6 +1041,9 @@ function DemandTab() {
           ))}
         </Table.Tbody>
       </Table>
+      <Text size="xs" c="dimmed">
+        {s.demandCalendarHint}
+      </Text>
       <Text fw={600} size="sm">
         {s.specialDates}
       </Text>
@@ -1226,10 +1260,12 @@ function SettingsTab() {
             {num('restFactor', s.restFactor, 0.5)}
             {num('maxConsecutiveDays', s.maxConsecutiveDays)}
             {num('maxShiftHours', s.maxShiftHours)}
-            {num('monthNormHours', s.monthNormHours)}
             {num('normTolerancePct', s.normTolerancePct)}
             {num('breakLateMin', s.breakLateMin)}
           </SimpleGrid>
+          <Text size="xs" c="dimmed" mt="xs" data-testid="norm-by-calendar">
+            {s.monthNormByCalendar}
+          </Text>
           <Button mt="md" onClick={() => saveRules.mutate(undefined)} loading={saveRules.isPending}>
             {t.save}
           </Button>
