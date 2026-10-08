@@ -115,6 +115,8 @@ export const DICTIONARIES: Record<string, DictSpec> = {
       f('name', name),
       f('address', optText),
       f('externalIds', z.record(z.string()).default({}), { json: true }),
+      // Вид объекта: АЗС или электрозарядная станция (ЭЗС).
+      f('kind', z.enum(['azs', 'ezs']).default('azs'), { filter: true }),
     ],
     orderBy: 'name',
     search: ['code', 'name', 'address'],

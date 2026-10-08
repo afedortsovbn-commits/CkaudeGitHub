@@ -231,6 +231,7 @@ export function ObjectsPage() {
           { key: 'code', label: t.org.kod },
           { key: 'name', label: t.org.nazvanie },
           { key: 'address', label: t.org.adres },
+          { key: 'kind', label: t.org.objectKind, render: (r) => t.org.objectKinds[String(r.kind)] ?? '' },
           {
             key: 'enterpriseId',
             label: t.org.predpriyatie,
@@ -258,6 +259,13 @@ export function ObjectsPage() {
           { key: 'code', label: t.org.kod, required: true },
           { key: 'name', label: t.org.nazvanie, required: true },
           { key: 'address', label: t.org.adres },
+          {
+            key: 'kind',
+            label: t.org.objectKind,
+            type: 'select',
+            required: true,
+            options: Object.entries(t.org.objectKinds).map(([value, label]) => ({ value, label })),
+          },
           { key: 'objguid', label: t.reviews.objectGuid, description: t.reviews.objectGuidHint },
         ]}
         toForm={(r) => ({

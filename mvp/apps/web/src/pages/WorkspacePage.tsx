@@ -16,6 +16,7 @@ import {
   Paper,
   Popover,
   ScrollArea,
+  SegmentedControl,
   Select,
   Stack,
   Switch,
@@ -38,7 +39,7 @@ import { notify, onRealtime, useRealtime } from '../lib/realtime';
 import { ExternalDataPanel } from './IvrAdminPages';
 import { renderTemplate, SlashList, useSlashTemplates } from '../components/AssistPanel';
 import { HintPanel } from '../components/HintPanel';
-import { AzsMapModal, type Station, useStations } from '../components/AzsMap';
+import { AzsMapModal, type Station, type StationKind, useStations } from '../components/AzsMap';
 import { softphone, useSoftphone } from '../lib/softphone';
 import { setDraft } from '../lib/app-version';
 import { EscalateModal, SubstitutesPanel, TicketList, useTicketCount } from './TicketPages';
@@ -947,7 +948,7 @@ const SUMMARY_KEY = 'issue_summary';
 const BLOCK_KEYS: Record<string, string[]> = {
   client: ['client_name', 'client_phone', 'feedback_channel', 'company_name'],
   cards: ['bonus_card', 'fuel_card', 'contract_no', 'contract_office', 'eq_number'],
-  azs: ['azs_number', 'azs_region'],
+  azs: ['azs_number', 'azs_region', 'ezs_station'],
 };
 const BLOCK_ORDER = ['issue', 'client', 'cards', 'azs'];
 const blockOf = (k: string) => Object.keys(BLOCK_KEYS).find((b) => BLOCK_KEYS[b]!.includes(k)) ?? 'issue';
@@ -1013,17 +1014,36 @@ function CallNote({ conv }: { conv: Row }) {
   );
 }
 
+/** Что выбирается в карточке по теме: своя настройка темы, иначе — родительской; по умолчанию — только АЗС. */
+function kindsFor(topicId: unknown, topics: Row[] | undefined): StationKind[] {
+  const byId = new Map((topics ?? []).map((x) => [String(x.id), x]));
+  for (
+    let x = byId.get(String(topicId ?? ''));
+    x;
+    x = x.parentId ? byId.get(String(x.parentId)) : undefined
+  ) {
+    const k = ((x.objectKinds as string[] | null) ?? []).filter(
+      (v): v is StationKind => v === 'azs' || v === 'ezs',
+    );
+    if (k.length) return k;
+  }
+  return ['azs'];
+}
+
 /**
- * АЗС: предприятие-владелец (из списка), номер (только цифры) — по ним находится АЗС справочника и её адрес;
- * или щелчок по АЗС на карте. Выбор заполняет и поля темы «№ и адрес АЗС», «Область нахождения АЗС».
+ * Объект обращения — АЗС или ЭЗС (что разрешено темой). АЗС: предприятие-владелец (из списка) и номер (только
+ * цифры) — по ним находится АЗС и её адрес. ЭЗС: поиск по названию и адресу. И то и другое — щелчком на карте.
+ * Выбор АЗС заполняет и поля темы «№ и адрес АЗС», «Область нахождения АЗС».
  */
-function AzsPicker({
+function StationPicker({
   conv,
+  kinds,
   closed,
   onPick,
   onOrg,
 }: {
   conv: Row;
+  kinds: StationKind[];
   closed: boolean;
   onPick(s: Station): void;
   onOrg(enterpriseId: string | null, departmentId: string | null): void;
@@ -1031,13 +1051,27 @@ function AzsPicker({
   const { stations } = useStations();
   const [mapOpen, setMapOpen] = useState(false);
   const cur = stations.find((s) => String(s.obj.id) === String(conv.objectId ?? ''));
+  // Вид: как у выбранного объекта, если тема его разрешает; иначе — первый разрешённый.
+  const [kind, setKind] = useState<StationKind>(kinds[0]!);
+  const kindsKey = kinds.join();
+  useEffect(() => {
+    setKind(cur && kinds.includes(cur.kind) ? cur.kind : kinds[0]!);
+  }, [conv.id, cur?.kind, kindsKey]);
   const [num, setNum] = useState('');
-  useEffect(() => setNum(cur?.num ?? ''), [conv.id, cur?.num]);
+  useEffect(() => setNum(cur?.kind === 'azs' ? cur.num : ''), [conv.id, cur?.num, cur?.kind]);
   const [problem, setProblem] = useState('');
-  useEffect(() => setProblem(''), [conv.id]);
+  useEffect(() => setProblem(''), [conv.id, kind]);
+  const azs = stations.filter((s) => s.kind === 'azs');
+  const ezsOptions = useMemo(
+    () =>
+      stations
+        .filter((s) => s.kind === 'ezs')
+        .map((s) => ({ value: String(s.obj.id), label: `${s.title}${s.address ? ` — ${s.address}` : ''}` })),
+    [stations],
+  );
   const find = () => {
-    if (!num || num === cur?.num) return;
-    const all = stations.filter((s) => s.num === num);
+    if (!num || (cur?.kind === 'azs' && num === cur.num)) return;
+    const all = azs.filter((s) => s.num === num);
     const own = conv.enterpriseId ? all.filter((s) => s.obj.enterpriseId === conv.enterpriseId) : all;
     if (own.length === 1) {
       setProblem('');
@@ -1046,8 +1080,31 @@ function AzsPicker({
     else if (!own.length) setProblem(t.workspace.azsNotFound(num));
     else setProblem(t.workspace.azsMany(num, own.length));
   };
+  const mapButton = (
+    <Button
+      size="xs"
+      variant="light"
+      color={kind === 'ezs' ? 'green' : 'blue'}
+      leftSection={<IconMap2 size={16} />}
+      onClick={() => setMapOpen(true)}
+      disabled={closed}
+      data-testid="azs-map-open"
+    >
+      {t.workspace.azsMapOpen}
+    </Button>
+  );
   return (
     <Stack gap={6}>
+      {kinds.length > 1 && (
+        <SegmentedControl
+          size="xs"
+          data={kinds.map((k) => ({ value: k, label: t.org.objectKinds[k] ?? k }))}
+          value={kind}
+          onChange={(v) => setKind(v as StationKind)}
+          disabled={closed}
+          data-testid="station-kind"
+        />
+      )}
       <OrgPicker
         enterpriseId={(conv.enterpriseId as string) ?? null}
         departmentId={(conv.departmentId as string) ?? null}
@@ -1056,43 +1113,58 @@ function AzsPicker({
         disabled={closed}
         testId="org"
       />
-      <Group gap="xs" align="flex-end" wrap="nowrap">
-        <TextInput
-          size="xs"
-          style={{ flex: 1 }}
-          label={t.workspace.azsNumber}
-          placeholder={t.workspace.azsNumberPlaceholder}
-          inputMode="numeric"
-          value={num}
-          onChange={(e) => {
-            setNum(e.currentTarget.value.replace(/\D/g, ''));
-            setProblem('');
-          }}
-          onBlur={find}
-          onKeyDown={(e) => e.key === 'Enter' && find()}
-          disabled={closed}
-          error={problem || undefined}
-          data-testid="azs-number"
-        />
-        <Button
-          size="xs"
-          variant="light"
-          leftSection={<IconMap2 size={16} />}
-          onClick={() => setMapOpen(true)}
-          disabled={closed}
-          data-testid="azs-map-open"
-        >
-          {t.workspace.azsMapOpen}
-        </Button>
-      </Group>
-      {cur && (
+      {kind === 'azs' ? (
+        <Group gap="xs" align="flex-end" wrap="nowrap">
+          <TextInput
+            size="xs"
+            style={{ flex: 1 }}
+            label={t.workspace.azsNumber}
+            placeholder={t.workspace.azsNumberPlaceholder}
+            inputMode="numeric"
+            value={num}
+            onChange={(e) => {
+              setNum(e.currentTarget.value.replace(/\D/g, ''));
+              setProblem('');
+            }}
+            onBlur={find}
+            onKeyDown={(e) => e.key === 'Enter' && find()}
+            disabled={closed}
+            error={problem || undefined}
+            data-testid="azs-number"
+          />
+          {mapButton}
+        </Group>
+      ) : (
+        <Group gap="xs" align="flex-end" wrap="nowrap">
+          <Select
+            size="xs"
+            style={{ flex: 1 }}
+            label={t.workspace.ezsStation}
+            placeholder={t.workspace.ezsStationPlaceholder}
+            data={ezsOptions}
+            value={cur?.kind === 'ezs' ? String(cur.obj.id) : null}
+            onChange={(v) => {
+              const s = stations.find((x) => String(x.obj.id) === v);
+              if (s) onPick(s);
+            }}
+            searchable
+            limit={50}
+            nothingFoundMessage={t.workspace.ezsNothing}
+            disabled={closed}
+            data-testid="ezs-station"
+          />
+          {mapButton}
+        </Group>
+      )}
+      {cur && cur.kind === kind && (
         <Text size="xs" c="dimmed" data-testid="azs-address">
-          {t.workspace.azsLabel(cur.num, cur.address)}
+          {cur.kind === 'azs' ? t.workspace.azsLabel(cur.num, cur.address) : `${cur.title}, ${cur.address}`}
           {cur.enterprise ? ` · ${cur.enterprise}` : ''}
         </Text>
       )}
       <AzsMapModal
         opened={mapOpen}
+        kind={kind}
         onClose={() => setMapOpen(false)}
         currentId={(conv.objectId as string) ?? null}
         onPick={(s) => {
@@ -1227,11 +1299,13 @@ function ConversationCard({ conv }: { conv: Row }) {
       upd.mutate({ fields: vals });
   };
   const defOf = (k: string) => (fields.data ?? []).find((f) => String(f.key) === k);
+  const kinds = kindsFor(conv.topicId, topics.data);
   const summaryDef = defOf(SUMMARY_KEY);
   const summaryMust = !!summaryDef && requiredNow(summaryDef);
   /** Поля темы «№ и адрес АЗС», «Область нахождения АЗС» по выбранной АЗС (only — только пустые). */
   const stationFields = (s: Station, base: Record<string, unknown>, only: boolean) => {
     const next = { ...base };
+    if (s.kind !== 'azs') return next;
     const blank = (k: string) => !only || base[k] === undefined || base[k] === null || String(base[k]) === '';
     if (defOf('azs_number') && blank('azs_number')) next.azs_number = t.workspace.azsLabel(s.num, s.address);
     const region = azsRegion(s.enterprise, s.address);
@@ -1372,7 +1446,7 @@ function ConversationCard({ conv }: { conv: Row }) {
       <Box key={b} data-testid={`block-${b}`}>
         <Group justify="space-between" gap={4} mb={shown.length || picker ? 2 : 0}>
           <Text size="xs" fw={700} c="dimmed">
-            {t.workspace.blocks[b]}
+            {azs ? kinds.map((k) => t.org.objectKinds[k] ?? k).join(' / ') : t.workspace.blocks[b]}
           </Text>
           {(hidden > 0 || isOpen) && (
             <Anchor size="xs" c="dimmed" onClick={() => toggleBlock(b)} data-testid="block-more">
@@ -1382,8 +1456,9 @@ function ConversationCard({ conv }: { conv: Row }) {
         </Group>
         <Stack gap={6}>
           {picker && (
-            <AzsPicker
+            <StationPicker
               conv={conv}
+              kinds={kinds}
               closed={closed}
               onPick={pickStation}
               onOrg={(e, d) =>

@@ -29,6 +29,13 @@ const TOPIC_FIELDS = [
     description: t.topics.pustoNasleduetsyaOtRoditelskoy,
   },
   { key: 'sortOrder', label: t.topics.poryadok, type: 'number' as const },
+  {
+    key: 'objectKinds',
+    label: t.topics.objectKinds,
+    type: 'multiselect' as const,
+    options: Object.entries(t.org.objectKinds).map(([value, label]) => ({ value, label })),
+    description: t.topics.objectKindsHint,
+  },
 ];
 
 const FIELD_TYPES = [
@@ -153,11 +160,14 @@ export function TopicsPage() {
       ]);
     return m;
   }, [list.data]);
-  const save = useAction((v: Record<string, unknown>) =>
-    editing?.row
+  const save = useAction((form: Record<string, unknown>) => {
+    // Пусто — как у родительской темы (null).
+    const kinds = form.objectKinds as string[] | undefined;
+    const v = { ...form, objectKinds: kinds?.length ? kinds : null };
+    return editing?.row
       ? patch(`/topics/${editing.row.id}`, v)
-      : post('/topics', { ...v, parentId: editing?.parentId ?? null }),
-  );
+      : post('/topics', { ...v, parentId: editing?.parentId ?? null });
+  });
   const toggle = useAction((r: Row) => post(`/topics/${r.id}/${r.isActive ? 'deactivate' : 'activate'}`));
 
   const norm = (v: string) => v.toLowerCase();
@@ -217,6 +227,11 @@ export function TopicsPage() {
                   {t.topics.dn}
                 </Badge>
               ) : null}
+              {((r.objectKinds as string[] | null) ?? []).length > 0 && (
+                <Badge variant="outline" color="teal" size="xs" data-testid="topic-object-kinds">
+                  {((r.objectKinds as string[]) ?? []).map((k) => t.org.objectKinds[k] ?? k).join(' + ')}
+                </Badge>
+              )}
               {Number(r.fieldCount) > 0 && (
                 <Badge variant="light" size="xs">
                   {t.topics.poley}

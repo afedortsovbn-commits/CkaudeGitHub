@@ -32,6 +32,13 @@ const TopicCreate = z
     isImportant: z.boolean().default(false),
     defaultResponseDays: z.number().int().min(1).max(365).nullable().optional(),
     sortOrder: z.number().int().default(0),
+    // Что выбирается в карточке обращения по теме: АЗС, ЭЗС или оба; null — как у родительской темы.
+    objectKinds: z
+      .array(z.enum(['azs', 'ezs']))
+      .max(2)
+      .nullable()
+      .optional()
+      .transform((v) => (v?.length ? [...new Set(v)] : v === undefined ? undefined : null)),
   })
   .strict();
 const TopicPatch = TopicCreate.omit({ parentId: true }).partial().strict();
@@ -248,8 +255,9 @@ export class OrgController {
       const id = newId();
       const row = await one(
         tx,
-        `INSERT INTO topic (id, parent_id, level, path, code, name, is_important, default_response_days, sort_order)
-         VALUES ($1, $2, 1, '{}', $3, $4, $5, $6, $7) RETURNING *`,
+        `INSERT INTO topic (id, parent_id, level, path, code, name, is_important, default_response_days, sort_order,
+                            object_kinds)
+         VALUES ($1, $2, 1, '{}', $3, $4, $5, $6, $7, $8) RETURNING *`,
         [
           id,
           b.parentId ?? null,
@@ -258,6 +266,7 @@ export class OrgController {
           b.isImportant,
           b.defaultResponseDays ?? null,
           b.sortOrder,
+          b.objectKinds ?? null,
         ],
       );
       await audit(tx, p, 'create', 'topic', id, null, row);
@@ -268,7 +277,9 @@ export class OrgController {
   @Patch('topics/:id')
   @RequirePerm('org.manage')
   async patchTopic(@CurrentUser() p: Principal, @Param('id') id: string, @Body() body: unknown) {
-    const data = parse(TopicPatch, body) as Record<string, unknown>;
+    const data = Object.fromEntries(
+      Object.entries(parse(TopicPatch, body) as Record<string, unknown>).filter(([, v]) => v !== undefined),
+    );
     const { cols, vals } = toCols(data);
     return withTx(this.ctx.pool, async (tx) => {
       const before = await one(tx, 'SELECT * FROM topic WHERE id = $1 FOR UPDATE', [id]);

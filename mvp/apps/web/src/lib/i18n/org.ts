@@ -79,4 +79,6 @@ export const org = {
   prichinaPereryva: 'Причина перерыва',
   shablonOblasti: 'Шаблон области',
   pravil: 'Правил',
+  objectKind: 'Вид',
+  objectKinds: { azs: 'АЗС', ezs: 'ЭЗС' } as Record<string, string>,
 };

@@ -35,4 +35,6 @@ export const topics = {
   temaIzmenenie: 'Тема: изменение',
   novayaPodtema: 'Новая подтема',
   novayaTema: 'Новая тема',
+  objectKinds: 'Что выбирать в карточке обращения',
+  objectKindsHint: 'АЗС и/или ЭЗС. Пусто — как у родительской темы (у темы верхнего уровня — только АЗС)',
 };

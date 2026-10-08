@@ -5,12 +5,22 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { type Row, useList } from '../lib/data';
 import { t } from '../lib/i18n';
 
-/** Официальная карта АЗС — для сверки (выбор в карточке — по нашей карте, там щелчок сразу выбирает АЗС). */
-export const AZS_SITE_MAP = 'https://azs.belorusneft.by/web-azs/ru/azs-map?country=BY';
+/** Официальные карты — для сверки (выбор в карточке — по нашей карте, там щелчок сразу выбирает станцию). */
+export const SITE_MAP: Record<StationKind, string> = {
+  azs: 'https://azs.belorusneft.by/web-azs/ru/azs-map?country=BY',
+  ezs: 'https://malankabn.by/',
+};
+
+/** Вид объекта: АЗС или электрозарядная станция (ЭЗС, сеть «Маланка»). */
+export type StationKind = 'azs' | 'ezs';
 
 export interface Station {
   obj: Row;
+  kind: StationKind;
+  /** Номер АЗС (у ЭЗС номера нет). */
   num: string;
+  /** Как показывать оператору: «АЗС №12» или название ЭЗС. */
+  title: string;
   address: string;
   enterprise: string;
   lat: number | null;
@@ -29,7 +39,7 @@ export const stationNum = (o: Row): string => {
   return String(ext.azsnum ?? /\d+/.exec(String(o.name))?.[0] ?? '');
 };
 
-/** АЗС справочника объектов с номером, адресом, предприятием-владельцем и координатами. */
+/** Станции справочника объектов (АЗС и ЭЗС) с номером, адресом, предприятием-владельцем и координатами. */
 export function useStations(enabled = true): { stations: Station[]; loading: boolean } {
   const objects = useList('/dict/objects?limit=2000', enabled);
   const enterprises = useList('/dict/enterprises', enabled);
@@ -39,9 +49,13 @@ export function useStations(enabled = true): { stations: Station[]; loading: boo
       const ext = (o.externalIds as Record<string, string> | undefined) ?? {};
       const lat = Number(ext.lat);
       const lon = Number(ext.lon);
+      const kind: StationKind = o.kind === 'ezs' ? 'ezs' : 'azs';
+      const num = kind === 'azs' ? stationNum(o) : '';
       return {
         obj: o,
-        num: stationNum(o),
+        kind,
+        num,
+        title: kind === 'azs' ? t.azsMap.station(num) : String(o.name),
         address: String(o.address ?? ''),
         enterprise: ent.get(String(o.enterpriseId)) ?? '',
         lat: ext.lat && Number.isFinite(lat) ? lat : null,
@@ -56,7 +70,7 @@ export function useStations(enabled = true): { stations: Station[]; loading: boo
 function tip(s: Station, current: boolean): HTMLElement {
   const div = document.createElement('div');
   for (const [text, bold] of [
-    [t.azsMap.station(s.num), true],
+    [s.title, true],
     [s.address, false],
     [s.enterprise, false],
     ...(current ? [[t.azsMap.current, false] as const] : []),
@@ -76,13 +90,16 @@ export function AzsMapModal({
   onClose,
   onPick,
   currentId,
+  kind,
 }: {
   opened: boolean;
   onClose(): void;
   onPick(s: Station): void;
   currentId: string | null;
+  kind: StationKind;
 }) {
-  const { stations, loading } = useStations(opened);
+  const { stations: all, loading } = useStations(opened);
+  const stations = useMemo(() => all.filter((s) => s.kind === kind), [all, kind]);
   const [q, setQ] = useState('');
   const box = useRef<HTMLDivElement | null>(null);
   const map = useRef<L.Map | null>(null);
@@ -95,7 +112,7 @@ export function AzsMapModal({
     const words = canon(q).split(' ').filter(Boolean);
     if (!words.length) return onMap;
     return onMap.filter((s) => {
-      const hay = canon(`${s.num} ${s.address} ${s.enterprise}`);
+      const hay = canon(`${s.num} ${s.kind === 'ezs' ? s.title : ''} ${s.address} ${s.enterprise}`);
       return words.every((w) => (/^\d+$/.test(w) ? s.num === w || hay.includes(w) : hay.includes(w)));
     });
   }, [onMap, q]);
@@ -140,8 +157,8 @@ export function AzsMapModal({
       if (isCur) cur = s;
       L.circleMarker([s.lat!, s.lon!], {
         radius: isCur ? 10 : 7,
-        color: isCur ? '#c92a2a' : '#1864ab',
-        fillColor: isCur ? '#fa5252' : '#339af0',
+        color: isCur ? '#c92a2a' : kind === 'ezs' ? '#2b8a3e' : '#1864ab',
+        fillColor: isCur ? '#fa5252' : kind === 'ezs' ? '#51cf66' : '#339af0',
         weight: 2,
         fillOpacity: 0.85,
       })
@@ -155,16 +172,16 @@ export function AzsMapModal({
         padding: [30, 30],
       });
     else if (!q && cur) m.setView([cur.lat!, cur.lon!], 13);
-  }, [shown, ready, currentId, q]);
+  }, [shown, ready, currentId, q, kind]);
 
   return (
-    <Modal opened={opened} onClose={onClose} title={t.azsMap.title} size="80%" data-testid="azs-map">
+    <Modal opened={opened} onClose={onClose} title={t.azsMap.title[kind]} size="80%" data-testid="azs-map">
       <Stack gap="xs">
         <Group gap="xs" wrap="nowrap">
           <TextInput
             style={{ flex: 1 }}
             size="xs"
-            placeholder={t.azsMap.search}
+            placeholder={t.azsMap.search[kind]}
             value={q}
             onChange={(e) => setQ(e.currentTarget.value)}
             data-testid="azs-map-search"
@@ -173,8 +190,8 @@ export function AzsMapModal({
           <Text size="xs" c="dimmed">
             {t.azsMap.found(shown.length)}
           </Text>
-          <Anchor size="xs" href={AZS_SITE_MAP} target="_blank" rel="noreferrer">
-            {t.azsMap.site}
+          <Anchor size="xs" href={SITE_MAP[kind]} target="_blank" rel="noreferrer">
+            {t.azsMap.site[kind]}
           </Anchor>
         </Group>
         {/* Немного совпадений — их можно выбрать и списком. */}
@@ -188,7 +205,7 @@ export function AzsMapModal({
                 onClick={() => onPick(s)}
                 data-testid="azs-map-result"
               >
-                {t.azsMap.station(s.num)}
+                {s.title}
                 {s.address ? `, ${s.address}` : ''}
               </Button>
             ))}
@@ -196,7 +213,7 @@ export function AzsMapModal({
         )}
         {!onMap.length && !loading && (
           <Text size="sm" c="dimmed">
-            {t.azsMap.empty}
+            {t.azsMap.empty[kind]}
           </Text>
         )}
         <div ref={box} style={{ height: '65vh', borderRadius: 8, overflow: 'hidden' }} />

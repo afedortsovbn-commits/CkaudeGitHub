@@ -271,6 +271,9 @@ export const workspace = {
   azsNotFoundAny: (n: string) => `АЗС №${n} нет в справочнике`,
   azsMany: (n: string, k: number) => `АЗС №${n} есть у ${k} предприятий — выберите предприятие`,
   azsLabel: (n: string, address: string) => `АЗС №${n}${address ? `, ${address}` : ''}`,
+  ezsStation: 'Электрозарядная станция',
+  ezsStationPlaceholder: 'Начните вводить название или адрес',
+  ezsNothing: 'Не найдено — попробуйте на карте',
   // Область АЗС по предприятию-владельцу (для поля «Область нахождения АЗС»).
   azsRegionByEnterprise: [
     ['Брест', 'Брестская'],
