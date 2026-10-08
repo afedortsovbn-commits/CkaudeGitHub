@@ -161,6 +161,17 @@ describe.skipIf(!ADMIN_URL)('Обращения Ф2 (интеграция)', () 
     expect(ids.rows.find((r) => r.kind === 'phone')?.value).toBe('+375291112233');
   });
 
+  it('сессия чата с каналом, которого больше нет (стенд сброшен), — «устарела» (401), виджет начнёт чат заново', async () => {
+    const stale = await t.ctx.tokens.signClient({
+      channelId: newId(),
+      contactId: newId(),
+      sessionKey: 'stale',
+    });
+    const r = await t.call('GET', '/api/v1/client/messages', stale);
+    expect(r.status).toBe(401);
+    expect(r.body.error).toBe('token_invalid');
+  });
+
   it('вложения: загрузка и скачивание оператором, чужие вложения нельзя прикрепить', async () => {
     const op = await t.login('operator1@demo.local');
     const up = await t.call('POST', '/api/v1/attachments', op, Buffer.from('файл'), {

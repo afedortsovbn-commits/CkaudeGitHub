@@ -119,7 +119,9 @@ export class ClientChatController {
     const channel = await one<ChannelRow>(this.ctx.pool, 'SELECT * FROM channel WHERE id = $1', [
       claims.channelId,
     ]);
-    if (!channel?.is_active) throw new ApiError(404, 'channel_not_found', 'Чат недоступен');
+    // Канала из сессии нет (стенд сброшен, канал пересоздан) — сессия устарела: виджет начнёт чат заново.
+    if (!channel) throw new ApiError(401, 'token_invalid', 'Сессия чата устарела');
+    if (!channel.is_active) throw new ApiError(404, 'channel_not_found', 'Чат недоступен');
     if (!originAllowed(channel, req.headers.origin))
       throw new ApiError(403, 'origin', 'Чат не разрешён на этом сайте');
     // Клиент мог быть присоединён к другому (слияние дублей, M-CARD-01) — сессия продолжается от основного.
