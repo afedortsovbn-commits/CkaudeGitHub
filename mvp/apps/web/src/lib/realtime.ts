@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { getAccessToken, refreshSession } from './api';
 
 export interface RtEvent {
-  type: 'event' | 'typing' | 'hello' | 'ticket' | 'app_version';
+  type: 'event' | 'typing' | 'hello' | 'ticket' | 'app_version' | 'staff_message';
   event?: string;
   data?: Record<string, unknown> & {
     conversationId?: string;

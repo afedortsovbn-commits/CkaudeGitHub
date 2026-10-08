@@ -73,8 +73,19 @@ export function deliverTicket(
  */
 export function deliverApp(
   peer: Peer,
-  e: Omit<EventEnvelope, 'data'> & { data: AppVersionEventData },
+  e: Omit<EventEnvelope, 'data'> & {
+    data: AppVersionEventData | { messageId: string; notifyUserIds: string[] };
+  },
 ): Record<string, unknown> | null {
-  if (peer.kind !== 'operator' || e.type !== APP_EVENTS.version) return null;
-  return { type: 'app_version', component: e.data.component, version: e.data.version };
+  if (peer.kind !== 'operator') return null;
+  // Рассылка сотрудникам — только получателям.
+  if (e.type === APP_EVENTS.staffMessage) {
+    const d = e.data as { messageId: string; notifyUserIds: string[] };
+    return d.notifyUserIds?.includes(peer.principal.id)
+      ? { type: 'staff_message', messageId: d.messageId }
+      : null;
+  }
+  if (e.type !== APP_EVENTS.version) return null;
+  const d = e.data as AppVersionEventData;
+  return { type: 'app_version', component: d.component, version: d.version };
 }

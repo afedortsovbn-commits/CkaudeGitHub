@@ -171,9 +171,9 @@ const fade = (h: number, s: number, l: number, a: number) =>
  * завершено, а карточка не закрыта. Они всегда сверху.
  */
 const STAGE: Record<string, { rank: number; bg: string; hint: string }> = {
-  offered: { rank: 0, bg: fade(0, 85, 62, 0.26), hint: t.workspace.stageOffered },
-  talk: { rank: 0, bg: fade(0, 85, 62, 0.22), hint: t.workspace.stageTalk },
-  wrapup: { rank: 1, bg: fade(45, 95, 55, 0.32), hint: t.workspace.stageWrapup },
+  offered: { rank: 0, bg: fade(0, 85, 62, 0.13), hint: t.workspace.stageOffered },
+  talk: { rank: 0, bg: fade(0, 85, 62, 0.11), hint: t.workspace.stageTalk },
+  wrapup: { rank: 1, bg: fade(45, 95, 55, 0.16), hint: t.workspace.stageWrapup },
 };
 const stageOf = (c: Row): string | null =>
   c.status === 'offered' ? 'offered' : ((c.stage as string | null | undefined) ?? null);

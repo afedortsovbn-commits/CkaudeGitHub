@@ -16,7 +16,6 @@ import {
 import { enqueueCommand, enqueueEvent } from '@cc/service-kit';
 import type { PoolClient } from 'pg';
 import { attachReview, refreshReview, reviewKnown, reviewOf } from './reviews';
-import { notifyClientMessage } from './tickets';
 
 interface ConvRow {
   id: string;
@@ -284,12 +283,15 @@ export async function ingestInbound(
   const email = m.channelKind === 'email' ? (m.meta?.email as EmailMeta | undefined) : undefined;
   // Цепочка писем (M-CH-06): ответ на письмо обращения (In-Reply-To/References) попадает в это обращение,
   // пока оно не закрыто — даже если клиент пишет с другого адреса.
+  // Обращение, переданное на 2-ю линию, новых сообщений не принимает (доработки 08.10.2026): общение с клиентом
+  // ведёт 1-я линия — новое сообщение становится новым обращением и распределяется как обычно; переписка и
+  // обращение 2-й линии видны оператору в истории клиента.
   let conversationId: string | undefined;
   if (email?.references.length) {
     const thread = await tx.query<{ id: string }>(
       `SELECT c.id FROM message msg JOIN conversation c ON c.id = msg.conversation_id
         WHERE msg.channel_kind = 'email' AND msg.external_id = ANY($1) AND c.channel_id = $2
-          AND c.status <> 'closed'
+          AND c.status NOT IN ('closed', 'waiting_2nd_line')
         ORDER BY msg.sent_at DESC LIMIT 1 FOR UPDATE OF c`,
       [email.references, m.channelId],
     );
@@ -297,7 +299,8 @@ export async function ingestInbound(
   }
   if (!conversationId) {
     const open = await tx.query<{ id: string }>(
-      `SELECT id FROM conversation WHERE contact_id = $1 AND channel_id = $2 AND status <> 'closed'
+      `SELECT id FROM conversation WHERE contact_id = $1 AND channel_id = $2
+          AND status NOT IN ('closed', 'waiting_2nd_line')
         ORDER BY created_at DESC LIMIT 1 FOR UPDATE`,
       [contactId, m.channelId],
     );
@@ -353,6 +356,19 @@ export async function ingestInbound(
           channelKind: m.channelKind,
         });
     }
+    // У клиента есть обращение на 2-й линии — пометка для оператора (само обращение 2-й линии не меняется).
+    const second = await tx.query<{ number: number }>(
+      `SELECT t.number FROM ticket t JOIN conversation c ON c.id = t.conversation_id
+        WHERE c.contact_id = $1 AND t.status <> 'closed' ORDER BY t.created_at DESC`,
+      [contactId],
+    );
+    if (second.rows.length)
+      await appendMessage(tx, {
+        conversationId,
+        direction: 'system',
+        body: `У клиента есть обращение на 2-й линии: ${second.rows.map((r) => `№${r.number}`).join(', ')} — переписка выше, в истории. Это новое обращение.`,
+        channelKind: m.channelKind,
+      });
     await emitConversation(tx, CONVERSATION_EVENTS.created, await loadRef(tx, conversationId));
   } else {
     if (review) await refreshReview(tx, conversationId, review);
@@ -381,14 +397,6 @@ export async function ingestInbound(
     id: m.id,
     ...(review ? { meta: { review: { rating: review.rating, edited: !created } } } : {}),
   });
-  if (msg && !created) {
-    // Обращение ждёт 2-ю линию: сообщение остаётся в обращении, видно в тикете, назначенным — уведомление;
-    // в очередь 1-й линии оно не направляется (M-TKT-03).
-    const st = await tx.query<{ status: string }>('SELECT status FROM conversation WHERE id = $1', [
-      conversationId,
-    ]);
-    if (st.rows[0]?.status === 'waiting_2nd_line') await notifyClientMessage(tx, conversationId, msg.id);
-  }
   if (msg && email) {
     // Тема — от первого письма обращения; Message-ID и References — для ответа в ту же цепочку.
     await tx.query(

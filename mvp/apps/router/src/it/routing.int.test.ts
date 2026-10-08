@@ -79,7 +79,9 @@ describe.skipIf(!ADMIN_URL)('Маршрутизация (ACD), Ф3', () => {
     );
     const c1 = await t.queuedConversation(q, ch, contact);
     expect(await assignQueued(t.pool, { maxChatsFallback: 5, batchSize: 10 }, noopOnOffer)).toBe(0);
-    expect((await t.pool.query(`SELECT status FROM conversation WHERE id = $1`, [c1])).rows[0].status).toBe('queued');
+    expect((await t.pool.query(`SELECT status FROM conversation WHERE id = $1`, [c1])).rows[0].status).toBe(
+      'queued',
+    );
     // Раздельный счёт: A недавно получал звонок (голос), B — чат. По текстовым дольше без обращений — A.
     await t.pool.query(
       `UPDATE system_setting SET value = '{"text":"auto","voice":"auto","email":"auto","idleScope":"split"}' WHERE key = 'routing.policy'`,
@@ -93,9 +95,14 @@ describe.skipIf(!ADMIN_URL)('Маршрутизация (ACD), Ф3', () => {
       [opB],
     );
     expect(await assignQueued(t.pool, { maxChatsFallback: 5, batchSize: 10 }, noopOnOffer)).toBe(1);
-    expect((await t.pool.query(`SELECT assignee_id FROM conversation WHERE id = $1`, [c1])).rows[0].assignee_id).toBe(opA);
+    expect(
+      (await t.pool.query(`SELECT assignee_id FROM conversation WHERE id = $1`, [c1])).rows[0].assignee_id,
+    ).toBe(opA);
     // Отметка группы обновилась у назначенного.
-    const a = await t.pool.query(`SELECT last_text_at > now() - interval '1 minute' AS fresh FROM agent_status WHERE user_id = $1`, [opA]);
+    const a = await t.pool.query(
+      `SELECT last_text_at > now() - interval '1 minute' AS fresh FROM agent_status WHERE user_id = $1`,
+      [opA],
+    );
     expect(a.rows[0].fresh).toBe(true);
     // По всем каналам вместе тот же расклад отдал бы обращение B (у A общее последнее назначение — только что).
     await t.pool.query(
@@ -103,7 +110,68 @@ describe.skipIf(!ADMIN_URL)('Маршрутизация (ACD), Ф3', () => {
     );
     const c2 = await t.queuedConversation(q, ch, contact);
     expect(await assignQueued(t.pool, { maxChatsFallback: 5, batchSize: 10 }, noopOnOffer)).toBe(1);
-    expect((await t.pool.query(`SELECT assignee_id FROM conversation WHERE id = $1`, [c2])).rows[0].assignee_id).toBe(opB);
+    expect(
+      (await t.pool.query(`SELECT assignee_id FROM conversation WHERE id = $1`, [c2])).rows[0].assignee_id,
+    ).toBe(opB);
+  });
+
+  it('«к тому же оператору»: новое обращение — тому, кто вёл клиента, если он на линии; иначе — как обычно', async () => {
+    const q = await t.queue({ name: 'К тому же' });
+    const ch = await t.channel(q);
+    const contact = await t.contact();
+    const opA = await t.operator(q);
+    const opB = await t.operator(q);
+    // Клиента вчера вёл B; по стратегии «дольше без обращений» сейчас первым был бы A.
+    const old = await t.queuedConversation(q, ch, contact);
+    await t.pool.query(
+      `UPDATE conversation SET status = 'closed', assignee_id = $2, created_at = now() - interval '1 day' WHERE id = $1`,
+      [old, opB],
+    );
+    await t.pool.query(
+      `UPDATE agent_status SET last_assigned_at = now() - interval '3 hours' WHERE user_id = $1`,
+      [opA],
+    );
+    await t.pool.query(`UPDATE agent_status SET last_assigned_at = now() WHERE user_id = $1`, [opB]);
+    const setPolicy = (v: object) =>
+      t.pool.query(`UPDATE system_setting SET value = $1 WHERE key = 'routing.policy'`, [JSON.stringify(v)]);
+    const base = { text: 'auto', voice: 'auto', email: 'auto', idleScope: 'combined' };
+    await setPolicy({ ...base, sticky: true, stickyDays: 30 });
+    const c1 = await t.queuedConversation(q, ch, contact);
+    expect(await assignQueued(t.pool, { maxChatsFallback: 5, batchSize: 10 }, noopOnOffer)).toBe(1);
+    expect(
+      (await t.pool.query(`SELECT assignee_id FROM conversation WHERE id = $1`, [c1])).rows[0].assignee_id,
+    ).toBe(opB);
+    // B не на линии — обычное распределение (A).
+    await t.pool.query(`UPDATE agent_status SET status = 'offline' WHERE user_id = $1`, [opB]);
+    const c2 = await t.queuedConversation(q, ch, contact);
+    expect(await assignQueued(t.pool, { maxChatsFallback: 5, batchSize: 10 }, noopOnOffer)).toBe(1);
+    expect(
+      (await t.pool.query(`SELECT assignee_id FROM conversation WHERE id = $1`, [c2])).rows[0].assignee_id,
+    ).toBe(opA);
+    // «Кто первый взял»: назначается только тому, кто вёл клиента (последним вёл A), остальные — в «Очереди».
+    await setPolicy({ ...base, text: 'pull', sticky: true, stickyDays: 30 });
+    const c3 = await t.queuedConversation(q, ch, contact);
+    const other = await t.queuedConversation(q, ch, await t.contact());
+    expect(await assignQueued(t.pool, { maxChatsFallback: 5, batchSize: 10 }, noopOnOffer)).toBe(1);
+    expect(
+      (await t.pool.query(`SELECT assignee_id FROM conversation WHERE id = $1`, [c3])).rows[0].assignee_id,
+    ).toBe(opA);
+    expect(
+      (await t.pool.query(`SELECT status FROM conversation WHERE id = $1`, [other])).rows[0].status,
+    ).toBe('queued');
+    // Выключено — «к тому же» не действует.
+    await t.pool.query(`UPDATE conversation SET status = 'closed' WHERE id = $1`, [other]);
+    await setPolicy({ ...base, sticky: false });
+    await t.pool.query(`UPDATE agent_status SET status = 'ready' WHERE user_id = $1`, [opB]);
+    await t.pool.query(
+      `UPDATE agent_status SET last_assigned_at = now() - interval '5 hours' WHERE user_id = $1`,
+      [opB],
+    );
+    const c4 = await t.queuedConversation(q, ch, contact);
+    expect(await assignQueued(t.pool, { maxChatsFallback: 5, batchSize: 10 }, noopOnOffer)).toBe(1);
+    expect(
+      (await t.pool.query(`SELECT assignee_id FROM conversation WHERE id = $1`, [c4])).rows[0].assignee_id,
+    ).toBe(opB);
   });
 
   it('отказ от предложения: обращение не предлагается повторно тому же оператору', async () => {

@@ -1552,9 +1552,11 @@ function CloseDialog({ t: tk, opened, onClose }: { t: Row; opened: boolean; onCl
   const [summary, setSummary] = useState('');
   const [files, setFiles] = useState<Att[]>([]);
   const [guilty, setGuilty] = useState<string | null>(null);
-  const [measures, setMeasures] = useState<string[]>([]);
+  // Мера — одна и только если есть вина работника.
+  const [measure, setMeasure] = useState<string | null>(null);
   const req = useRequired();
-  const realMeasures = measures.filter((m) => m !== 'none');
+  const needMeasure = guilty === 'yes';
+  const realMeasure = needMeasure && !!measure && measure !== 'none';
   // Шаблоны и примеры ответов 2-й линии по теме обращения (и темам выше), общие без темы — в конце.
   const tpls = useList(`/templates?line=second&forTopic=${String(tk.topicId)}`, opened);
   const [asTpl, setAsTpl] = useState(false);
@@ -1572,7 +1574,7 @@ function CloseDialog({ t: tk, opened, onClose }: { t: Row; opened: boolean; onCl
         answerSummary: summary,
         attachmentIds: files.map((f) => f.id),
         staffGuilty: guilty === 'yes',
-        measures,
+        measures: needMeasure && measure ? [measure] : [],
       }),
     t.tickets.tiketOtpravlenNaSoglasovanie,
     () => {
@@ -1589,7 +1591,7 @@ function CloseDialog({ t: tk, opened, onClose }: { t: Row; opened: boolean; onCl
       setAsTpl(false);
       setTplName('');
       setGuilty(null);
-      setMeasures([]);
+      setMeasure(null);
     },
   );
   return (
@@ -1668,23 +1670,22 @@ function CloseDialog({ t: tk, opened, onClose }: { t: Row; opened: boolean; onCl
               <Radio value="no" label={t.tickets.guiltNo} data-testid="close-guilt-no" />
             </Group>
           </Radio.Group>
-          <MultiSelect
-            label={t.tickets.measuresLabel}
-            description={t.tickets.measuresHint}
-            withAsterisk
-            data={Object.entries(t.tickets.measure).map(([value, label]) => ({ value, label }))}
-            value={measures}
-            // «Не применялись» и меры взаимоисключающие: последнее выбранное вытесняет противоположное.
-            onChange={(v) => {
-              const added = v.find((x) => !measures.includes(x));
-              setMeasures(added === 'none' ? ['none'] : v.filter((x) => x !== 'none'));
-            }}
-            error={req.error(!measures.length)}
-            data-testid="close-measures"
-          />
+          {needMeasure ? (
+            <Select
+              label={t.tickets.measuresLabel}
+              withAsterisk
+              data={Object.entries(t.tickets.measure).map(([value, label]) => ({ value, label }))}
+              value={measure}
+              onChange={setMeasure}
+              error={req.error(!measure)}
+              data-testid="close-measures"
+            />
+          ) : (
+            <span />
+          )}
         </Group>
         <Files value={files} onChange={setFiles} />
-        {realMeasures.length > 0 && !files.length && (
+        {realMeasure && !files.length && (
           <Alert color="yellow" variant="light" data-testid="measures-doc-hint">
             {t.tickets.measuresDocHint}
           </Alert>
@@ -1717,7 +1718,7 @@ function CloseDialog({ t: tk, opened, onClose }: { t: Row; opened: boolean; onCl
                 ...(!method ? [t.tickets.sposobOtveta] : []),
                 ...(!summary.trim() ? [t.tickets.sutOtveta] : []),
                 ...(!guilty ? [t.tickets.guilt] : []),
-                ...(!measures.length ? [t.tickets.measuresLabel] : []),
+                ...(needMeasure && !measure ? [t.tickets.measuresLabel] : []),
               ]) && close.mutate(undefined)
             }
             data-testid="close-submit"

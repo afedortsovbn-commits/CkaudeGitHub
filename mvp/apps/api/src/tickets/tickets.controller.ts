@@ -68,13 +68,15 @@ const CloseBody = z
     answerSummary: z.string().trim().min(1, 'Опишите суть ответа').max(10000),
     attachmentIds: z.array(uuid).max(20).default([]),
     staffGuilty: z.boolean({ required_error: 'Укажите, есть ли вина работника' }),
-    measures: z
-      .array(z.enum(TICKET_MEASURES))
-      .min(1, 'Укажите принятые меры (или «не применялись»)')
-      .max(5)
-      .refine((m) => !m.includes('none') || m.length === 1, '«Не применялись» нельзя сочетать с мерами'),
+    // Мера — одна и только при вине работника; нет вины — мер нет.
+    measures: z.array(z.enum(TICKET_MEASURES)).max(5).default([]),
   })
-  .strict();
+  .strict()
+  .superRefine((b, ctx) => {
+    if (b.staffGuilty && b.measures.length !== 1)
+      ctx.addIssue({ code: 'custom', path: ['measures'], message: 'Укажите одну принятую меру' });
+  })
+  .transform((b) => ({ ...b, measures: b.staffGuilty ? b.measures : [] }));
 const ApproveBody = z.object({ version, comment: z.string().max(5000).optional() }).strict();
 const ReturnBody = z
   .object({

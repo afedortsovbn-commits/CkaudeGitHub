@@ -83,6 +83,11 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
         description:
           'Смены, потребность в операторах, пожелания сотрудников, составление и публикация графика',
       },
+      {
+        code: 'staff.broadcast',
+        title: 'Рассылка сотрудникам',
+        description: 'Сообщения всем или ролям; видно, кто прочитал',
+      },
     ],
   },
   {

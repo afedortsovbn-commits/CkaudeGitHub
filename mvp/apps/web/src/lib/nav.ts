@@ -98,6 +98,13 @@ export const MENU: MenuItem[] = [
     icon: IconDeviceDesktopAnalytics,
   },
   {
+    to: '/staff-messages',
+    label: t.staffMessages.title,
+    perms: ['staff.broadcast'],
+    group: 'control',
+    icon: IconSpeakerphone,
+  },
+  {
     to: '/wallboard',
     label: t.wallboard.menu,
     perms: ['supervisor.monitor'],

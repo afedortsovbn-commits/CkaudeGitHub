@@ -39,6 +39,7 @@ import {
 import { AssistProvidersPage, AutoRepliesPage, KnowledgePage, TemplatesPage } from './pages/AutomationPages';
 import { ObjectSyncPage } from './pages/ObjectSyncPage';
 import { WallboardPage } from './pages/WallboardPage';
+import { StaffMessagesPage } from './pages/StaffMessagesPage';
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } },
@@ -69,6 +70,7 @@ function App() {
         <Route path="reports" element={<ReportsPage />} />
         <Route path="resources" element={<ResourcesPage />} />
         <Route path="schedule" element={<SchedulePage />} />
+        <Route path="staff-messages" element={<StaffMessagesPage />} />
         <Route path="tickets" element={<CabinetPage />} />
         <Route path="tickets/:id" element={<TicketPage />} />
         <Route path="tickets-control" element={<TicketControlPage />} />

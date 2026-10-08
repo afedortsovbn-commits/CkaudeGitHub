@@ -5,6 +5,8 @@
  */
 export const APP_EVENTS = {
   version: 'app.version',
+  /** Рассылка сотрудникам: получателям всплывает окно (notifyUserIds). */
+  staffMessage: 'app.staff_message',
 } as const;
 
 export interface AppVersionEventData {

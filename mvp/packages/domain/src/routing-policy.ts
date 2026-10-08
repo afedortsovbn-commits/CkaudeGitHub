@@ -7,6 +7,8 @@ import type { Pool, PoolClient } from 'pg';
  *   показывать всем в очереди, кто первый взял. Звонки — всегда `auto` (звонок не может ждать в списке).
  * - `idleScope`: `combined` — «дольше без обращений» считается по всем каналам вместе; `split` — отдельно по
  *   группе канала (текстовые, голосовые, почта).
+ * - `sticky`: новое обращение клиента сначала предлагается оператору, который вёл этого клиента последним (за
+ *   `stickyDays` дней), — если он на линии, «Готов» и свободен; иначе — как обычно.
  */
 export type ChannelGroup = 'text' | 'voice' | 'email';
 export interface RoutingPolicy {
@@ -14,6 +16,8 @@ export interface RoutingPolicy {
   voice: 'auto';
   email: 'auto' | 'pull';
   idleScope: 'combined' | 'split';
+  sticky: boolean;
+  stickyDays: number;
 }
 
 export const DEFAULT_ROUTING_POLICY: RoutingPolicy = {
@@ -21,6 +25,8 @@ export const DEFAULT_ROUTING_POLICY: RoutingPolicy = {
   voice: 'auto',
   email: 'auto',
   idleScope: 'combined',
+  sticky: false,
+  stickyDays: 30,
 };
 
 export const channelGroup = (kind: string): ChannelGroup =>
@@ -35,11 +41,14 @@ export async function loadRoutingPolicy(db: Pool | PoolClient): Promise<RoutingP
     `SELECT value FROM system_setting WHERE key = 'routing.policy'`,
   );
   const v = r.rows[0]?.value ?? {};
+  const days = Number(v.stickyDays);
   return {
     text: v.text === 'pull' ? 'pull' : 'auto',
     voice: 'auto',
     email: v.email === 'pull' ? 'pull' : 'auto',
     idleScope: v.idleScope === 'split' ? 'split' : 'combined',
+    sticky: v.sticky === true,
+    stickyDays: Number.isFinite(days) && days >= 1 ? Math.min(365, Math.round(days)) : 30,
   };
 }
 

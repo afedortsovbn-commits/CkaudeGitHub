@@ -10,7 +10,7 @@ import {
   type RoutingPolicy,
 } from '@cc/domain';
 import type { Logger } from '@cc/service-kit';
-import type { Pool } from 'pg';
+import type { Pool, PoolClient } from 'pg';
 import { declinedUserIds, eligibleCandidates, VOICE_BUSY } from './candidates';
 import { one, withTx } from './db';
 import { pickCandidate } from './strategies';
@@ -42,6 +42,20 @@ interface QueuedConv {
   channel_kind: string;
   topic_path: string[];
   queue_id: string;
+  contact_id: string;
+}
+
+/** Оператор, который вёл клиента последним (за `days` дней), — для «к тому же оператору». */
+async function lastOperator(tx: PoolClient, contactId: string, conversationId: string, days: number) {
+  const r = await one<{ user_id: string }>(
+    tx,
+    `SELECT assignee_id AS user_id FROM conversation
+      WHERE contact_id = $1 AND id <> $2 AND assignee_id IS NOT NULL
+        AND created_at > now() - make_interval(days => $3)
+      ORDER BY created_at DESC LIMIT 1`,
+    [contactId, conversationId, days],
+  );
+  return r?.user_id ?? null;
 }
 interface QueueRow {
   id: string;
@@ -61,11 +75,12 @@ async function assignOne(
   conversationId: string,
   maxChats: number,
   policy: RoutingPolicy,
+  onlySticky = false,
 ): Promise<OfferCreated | null> {
   return withTx(pool, async (tx) => {
     const conv = await one<QueuedConv>(
       tx,
-      `SELECT id, channel_kind, topic_path, queue_id FROM conversation
+      `SELECT id, channel_kind, topic_path, queue_id, contact_id FROM conversation
         WHERE id = $1 AND status = 'queued' FOR UPDATE SKIP LOCKED`,
       [conversationId],
     );
@@ -85,7 +100,13 @@ async function assignOne(
       voice: conv.channel_kind === 'voice',
       idleColumn: idleColumn(policy, channelGroup(conv.channel_kind)),
     });
-    const picked = pickCandidate(queue.strategy, candidates);
+    // «К тому же оператору»: вёл клиента раньше, сейчас «Готов» и свободен — ему; иначе — по стратегии очереди.
+    // В режиме «кто первый взял» назначается только такому оператору, остальные обращения ждут в «Очереди».
+    const stickyId = policy.sticky
+      ? await lastOperator(tx, conv.contact_id, conv.id, policy.stickyDays)
+      : null;
+    const sticky = stickyId ? candidates.find((c) => c.userId === stickyId) : undefined;
+    const picked = sticky ?? (onlySticky ? undefined : pickCandidate(queue.strategy, candidates));
     if (!picked) return null;
 
     // Ёмкость в eligibleCandidates — снимок без блокировки: два конкурентных тика могли выбрать
@@ -161,10 +182,27 @@ export async function assignQueued(
     [cfg.batchSize, pull],
   );
   const maxChats = await currentMaxChats(pool, cfg.maxChatsFallback);
+  // Группы «кто первый взял» при включённом «к тому же оператору»: такие обращения предлагаются вёвшему клиента.
+  const stickyPull =
+    policy.sticky && pull.length
+      ? await one<{ ids: string[] }>(
+          pool,
+          `SELECT coalesce(array_agg(id ORDER BY priority DESC, queued_at ASC), '{}') AS ids FROM (
+             SELECT id, priority, queued_at FROM conversation WHERE status = 'queued'
+                AND (CASE WHEN channel_kind = 'email' THEN 'email' ELSE 'text' END) = ANY($2::text[])
+                AND channel_kind <> 'voice'
+              ORDER BY priority DESC, queued_at ASC LIMIT $1) x`,
+          [cfg.batchSize, pull],
+        )
+      : null;
+  const todo = [
+    ...(waiting?.ids ?? []).map((id) => ({ id, onlySticky: false })),
+    ...(stickyPull?.ids ?? []).map((id) => ({ id, onlySticky: true })),
+  ];
   let assigned = 0;
-  for (const id of waiting?.ids ?? []) {
+  for (const { id, onlySticky } of todo) {
     try {
-      const offer = await assignOne(pool, id, maxChats, policy);
+      const offer = await assignOne(pool, id, maxChats, policy, onlySticky);
       if (offer) {
         assigned++;
         await onOffer(offer);

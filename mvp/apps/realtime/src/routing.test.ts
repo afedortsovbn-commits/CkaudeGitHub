@@ -137,4 +137,23 @@ describe('deliverApp (Ф11)', () => {
     expect(deliverApp({ kind: 'client', contactId: 'k1', channelId: 'ch' }, e)).toBeNull();
     expect(deliverApp({ kind: 'operator', principal: op([]) }, { ...e, type: 'app.other' })).toBeNull();
   });
+  it('рассылка сотрудникам — только получателям', () => {
+    const m = {
+      ...e,
+      type: 'app.staff_message',
+      source: 'staff-messages',
+      data: { messageId: 'm1', notifyUserIds: ['u1'] },
+    };
+    expect(deliverApp({ kind: 'operator', principal: op([]) }, m)).toEqual({
+      type: 'staff_message',
+      messageId: 'm1',
+    });
+    expect(
+      deliverApp(
+        { kind: 'operator', principal: op([]) },
+        { ...m, data: { messageId: 'm1', notifyUserIds: ['u2'] } },
+      ),
+    ).toBeNull();
+    expect(deliverApp({ kind: 'client', contactId: 'k1', channelId: 'ch' }, m)).toBeNull();
+  });
 });

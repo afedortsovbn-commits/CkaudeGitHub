@@ -77,6 +77,9 @@ const SETTINGS: Record<string, z.ZodTypeAny> = {
       voice: z.literal('auto'),
       email: z.enum(['auto', 'pull']),
       idleScope: z.enum(['combined', 'split']),
+      // К тому же оператору: вёл клиента последним за stickyDays дней и сейчас свободен.
+      sticky: z.boolean().default(false),
+      stickyDays: z.number().int().min(1).max(365).default(30),
     })
     .strict(),
   // График работы: перерывы дневной/ночной смены (минуты) и нормы трудового законодательства.

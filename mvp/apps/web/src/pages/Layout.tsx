@@ -28,6 +28,7 @@ import { BrowserWarning } from '../components/BrowserWarning';
 import { NotificationBell } from '../components/NotificationBell';
 import { SupervisorNotices } from '../components/SupervisorNotices';
 import { UpdateBanner } from '../components/UpdateBanner';
+import { StaffMessageInbox } from '../components/StaffMessageInbox';
 import { SoftphoneCall, SoftphoneStatus } from '../components/Softphone';
 import { useRealtime } from '../lib/realtime';
 import { softphone } from '../lib/softphone';
@@ -311,6 +312,7 @@ export function Layout() {
       <AppShell.Main>
         <BrowserWarning />
         <UpdateBanner />
+        <StaffMessageInbox />
         <Outlet />
         {phone && <SoftphoneCall />}
         {phone && userId && <SupervisorNotices userId={userId} />}

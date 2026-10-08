@@ -396,7 +396,8 @@ describe.skipIf(!ADMIN_URL)('Вторая линия Ф8 (интеграция)'
     });
     expect(closed.status).toBe(200);
     expect(closed.body.status).toBe('approval');
-    expect(closed.body).toMatchObject({ staffGuilty: false, measures: ['none'] });
+    // Нет вины — мер нет (переданные игнорируются).
+    expect(closed.body).toMatchObject({ staffGuilty: false, measures: [] });
     const hist = closed.body.history.map((h: { action: string }) => h.action);
     expect(hist.slice(-2)).toEqual(['opened', 'answered']);
   });
@@ -734,7 +735,7 @@ describe.skipIf(!ADMIN_URL)('Вторая линия Ф8 (интеграция)'
     await call('PATCH', `/enterprise-departments/${link.id}`, 'admin', { isActive: true });
   });
 
-  it('новое сообщение клиента по обращению с тикетом: добавляется в обращение, назначенным — уведомление, в очередь не идёт', async () => {
+  it('новое сообщение клиента, чьё обращение на 2-й линии: новое обращение в очередь 1-й линии с пометкой, тикет не меняется', async () => {
     const { conv, ticket } = await newTicket('op1');
     const before = await one(
       `SELECT count(*)::int AS n FROM notification WHERE ticket_id = $1 AND kind = 'client_message'`,
@@ -752,16 +753,25 @@ describe.skipIf(!ADMIN_URL)('Вторая линия Ф8 (интеграция)'
         receivedAt: Date.now(),
       }),
     );
-    expect(again).toMatchObject({ conversationId: conv, created: false });
+    expect(again.created).toBe(true);
+    expect(again.conversationId).not.toBe(conv);
     const st = await one('SELECT status FROM conversation WHERE id = $1', [conv]);
     expect(st.status).toBe('waiting_2nd_line');
+    const fresh = await one('SELECT status FROM conversation WHERE id = $1', [again.conversationId]);
+    expect(fresh.status).toBe('queued');
+    const note = await one(
+      `SELECT body FROM message WHERE conversation_id = $1 AND direction = 'system' ORDER BY seq LIMIT 1`,
+      [again.conversationId],
+    );
+    expect(note.body).toContain(`№${ticket.number}`);
+    // 2-я линия не получает сообщение и уведомление — его ведёт 1-я линия.
     const after = await one(
       `SELECT count(*)::int AS n FROM notification WHERE ticket_id = $1 AND kind = 'client_message'`,
       [ticket.id],
     );
-    expect(after.n - before.n).toBe(2); // ответственный и куратор
+    expect(after.n - before.n).toBe(0);
     const msgs = (await call('GET', `/tickets/${ticket.id}/messages`, 'r1')).body;
-    expect(msgs.some((m: { body: string }) => m.body === 'А что с моим вопросом?')).toBe(true);
+    expect(msgs.some((m: { body: string }) => m.body === 'А что с моим вопросом?')).toBe(false);
   });
 
   it('важность по теме, некорректная дата, уведомления участникам, отчёт по области, письма уволенному не уходят', async () => {

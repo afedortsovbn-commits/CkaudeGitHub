@@ -94,9 +94,11 @@ export function SettingsPage() {
           voice: 'auto',
           email: 'auto',
           idleScope: 'combined',
-          ...((v['routing.policy'] as Record<string, string> | undefined) ?? {}),
-        };
-        const setPolicy = (patch: Record<string, string>) =>
+          sticky: false,
+          stickyDays: 30,
+          ...((v['routing.policy'] as Record<string, unknown> | undefined) ?? {}),
+        } as { text: string; email: string; idleScope: string; sticky: boolean; stickyDays: number };
+        const setPolicy = (patch: Record<string, unknown>) =>
           setV({ ...v, 'routing.policy': { ...policy, ...patch } });
         const modes = [
           { value: 'auto', label: t.settingsPage.routingAuto },
@@ -131,6 +133,23 @@ export function SettingsPage() {
               onChange={(x) => x && setPolicy({ idleScope: x })}
               data-testid="routing-idle"
             />
+            <Switch
+              label={t.settingsPage.routingSticky}
+              description={t.settingsPage.routingStickyHint}
+              checked={policy.sticky}
+              onChange={(e) => setPolicy({ sticky: e.currentTarget.checked })}
+              data-testid="routing-sticky"
+            />
+            {policy.sticky && (
+              <NumberInput
+                label={t.settingsPage.routingStickyDays}
+                min={1}
+                max={365}
+                value={policy.stickyDays}
+                onChange={(x) => setPolicy({ stickyDays: Number(x) || 30 })}
+                data-testid="routing-sticky-days"
+              />
+            )}
           </>
         );
       })()}
