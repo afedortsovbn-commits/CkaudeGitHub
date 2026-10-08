@@ -17,7 +17,7 @@ import {
   Tooltip,
   VisuallyHidden,
 } from '@mantine/core';
-import { IconDialpad, IconHeadset, IconVolume } from '@tabler/icons-react';
+import { IconDialpad, IconHeadset, IconPhone, IconPhoneCall, IconVolume } from '@tabler/icons-react';
 import { notifications } from '@mantine/notifications';
 import { useEffect, useState } from 'react';
 import { audioDevices, type DeviceNotice } from '../lib/audio-devices';
@@ -41,6 +41,9 @@ const QUALITY = {
   fair: { color: 'yellow', label: t.softphoneUi.udovletvoritelnaya },
   poor: { color: 'red', label: t.softphoneUi.plokhaya },
 } as const;
+
+/** Код страны, уже вписанный в поле набора номера. */
+const DIAL_PREFIX = '+375 ';
 
 const fmt = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 
@@ -113,6 +116,16 @@ export function SoftphoneStatus() {
   );
   // Набрать номер можно, когда телефон готов и нет звонка; иначе значок только показывает состояние.
   const canDial = s.reg === 'registered' && !s.call;
+  const [dialError, setDialError] = useState(false);
+  const dial = () => {
+    if (number.replace(/\D/g, '').length < 3) {
+      setDialError(true);
+      return;
+    }
+    setDialOpen(false);
+    void softphone.call(number);
+    setNumber('');
+  };
   return (
     <Group gap={6}>
       <Tooltip label={`${t.softphoneUi.zvukHint}${s.headset ? t.softphoneUi.garnitura : ''}`}>
@@ -129,9 +142,20 @@ export function SoftphoneStatus() {
         </ActionIcon>
       </Tooltip>
       {settings && <AudioSettings onClose={() => setSettings(false)} />}
-      <Popover position="bottom-end" withArrow opened={dialOpen && canDial} onChange={setDialOpen}>
+      <Popover
+        position="bottom-end"
+        withArrow
+        shadow="xl"
+        trapFocus
+        transitionProps={{ transition: 'pop-top-right', duration: 160 }}
+        opened={dialOpen && canDial}
+        onChange={setDialOpen}
+      >
         <Popover.Target>
-          <Tooltip label={s.error ?? (canDial ? `${r.label} · ${t.softphoneUi.nabratHint}` : r.label)}>
+          <Tooltip
+            label={s.error ?? (canDial ? `${r.label} · ${t.softphoneUi.nabratHint}` : r.label)}
+            disabled={dialOpen && canDial}
+          >
             <Indicator
               color={r.color}
               size={10}
@@ -143,9 +167,15 @@ export function SoftphoneStatus() {
             >
               <ActionIcon
                 size="lg"
-                variant={canDial ? 'light' : 'subtle'}
+                variant={canDial ? (dialOpen ? 'filled' : 'light') : 'subtle'}
                 color={canDial ? 'green' : 'gray'}
-                onClick={() => canDial && setDialOpen(!dialOpen)}
+                onClick={() => {
+                  if (!canDial) return;
+                  // Код страны уже вписан — оператор набирает только номер (код можно стереть).
+                  if (!dialOpen && !number.trim()) setNumber(DIAL_PREFIX);
+                  setDialError(false);
+                  setDialOpen(!dialOpen);
+                }}
                 data-testid="dial-open"
                 aria-label={t.softphoneUi.nabrat}
               >
@@ -155,26 +185,41 @@ export function SoftphoneStatus() {
             </Indicator>
           </Tooltip>
         </Popover.Target>
-        <Popover.Dropdown>
-          <Group gap="xs">
+        <Popover.Dropdown p="md" w={300} style={{ borderTop: '3px solid var(--mantine-color-green-6)' }}>
+          <Stack gap="sm">
+            <Group gap={8}>
+              <IconPhoneCall size={20} color="var(--mantine-color-green-7)" />
+              <Text fw={700}>{t.softphoneUi.nabratHint}</Text>
+            </Group>
             <TextInput
-              size="xs"
+              size="md"
               placeholder="+375 29 123-45-67"
               value={number}
-              onChange={(e) => setNumber(e.currentTarget.value)}
+              onChange={(e) => {
+                setNumber(e.currentTarget.value);
+                setDialError(false);
+              }}
+              // Курсор — сразу в поле, в конце уже вписанного «+375 » (его можно стереть).
+              data-autofocus
+              onFocus={(e) => {
+                const el = e.currentTarget;
+                requestAnimationFrame(() => el.setSelectionRange(el.value.length, el.value.length));
+              }}
+              onKeyDown={(e) => e.key === 'Enter' && dial()}
+              error={dialError ? t.softphoneUi.vvediteNomer : undefined}
+              leftSection={<IconPhone size={18} />}
               data-testid="dial-number"
             />
             <Button
-              size="xs"
-              onClick={() => {
-                setDialOpen(false);
-                void softphone.call(number);
-              }}
+              color="green"
+              fullWidth
+              leftSection={<IconPhoneCall size={18} />}
+              onClick={dial}
               data-testid="dial-call"
             >
               {t.softphoneUi.pozvonit}
             </Button>
-          </Group>
+          </Stack>
         </Popover.Dropdown>
       </Popover>
     </Group>

@@ -7,6 +7,7 @@ import {
   ActionIcon,
   Card,
   Checkbox,
+  Collapse,
   FileButton,
   Grid,
   Group,
@@ -28,7 +29,14 @@ import {
   Tooltip,
   VisuallyHidden,
 } from '@mantine/core';
-import { IconChevronDown, IconFilter, IconMap2 } from '@tabler/icons-react';
+import {
+  IconAlertTriangle,
+  IconChevronDown,
+  IconFilter,
+  IconLayoutSidebarLeftCollapse,
+  IconLayoutSidebarLeftExpand,
+  IconMap2,
+} from '@tabler/icons-react';
 import { notifications } from '@mantine/notifications';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
@@ -36,6 +44,7 @@ import { errorText, get, openAttachment, patch, post, recordingUrl, upload } fro
 import { useAuth } from '../lib/auth';
 import { type Row, options, useAction, useList, useRequired } from '../lib/data';
 import { notify, onRealtime, useRealtime } from '../lib/realtime';
+import { setFocusMode } from '../lib/focus';
 import { ExternalDataPanel } from './IvrAdminPages';
 import { renderTemplate, SlashList, useSlashTemplates } from '../components/AssistPanel';
 import { HintPanel } from '../components/HintPanel';
@@ -182,12 +191,15 @@ function List({
   tab,
   selected,
   onSelect,
+  onTaken,
   important,
   callback,
 }: {
   tab: string;
   selected: string | null;
   onSelect(id: string): void;
+  /** Обращение взято в работу или принято — открыть его в режиме обработки. */
+  onTaken(id: string): void;
   important: boolean;
   callback: boolean;
 }) {
@@ -222,12 +234,15 @@ function List({
       )}
       {rows.map((c) => {
         const stage = STAGE[stageOf(c) ?? ''];
+        const urgent = !!c.isUrgent && c.status !== 'closed';
         return (
           <Card
             key={c.id}
             withBorder
             padding="xs"
             title={stage?.hint}
+            className={urgent ? 'cc-urgent' : undefined}
+            data-urgent={urgent || undefined}
             style={{
               cursor: 'pointer',
               borderColor: selected === c.id ? 'var(--mantine-color-blue-5)' : undefined,
@@ -265,8 +280,14 @@ function List({
                 </Badge>
               ) : null}
               {c.isUrgent ? (
-                <Badge size="xs" color="orange">
-                  {t.workspace.srochnoe}
+                <Badge
+                  size="xs"
+                  color="red"
+                  variant="filled"
+                  className={urgent ? 'cc-urgent-blink' : undefined}
+                  data-testid="badge-urgent"
+                >
+                  {t.workspace.urgentBadge}
                 </Badge>
               ) : null}
               {c.callbackRequested ? (
@@ -297,7 +318,7 @@ function List({
                 data-testid="take"
                 onClick={(e) => {
                   e.stopPropagation();
-                  take.mutate(c.id, { onSuccess: () => onSelect(c.id) });
+                  take.mutate(c.id, { onSuccess: () => onTaken(c.id) });
                 }}
               >
                 {t.workspace.vzyat}
@@ -311,7 +332,7 @@ function List({
                   data-testid="accept"
                   onClick={(e) => {
                     e.stopPropagation();
-                    accept.mutate(c.id, { onSuccess: () => onSelect(c.id) });
+                    accept.mutate(c.id, { onSuccess: () => onTaken(c.id) });
                   }}
                 >
                   {t.workspace.prinyat}
@@ -947,9 +968,13 @@ const SUMMARY_KEY = 'issue_summary';
 /** Логические блоки полей карточки: поле попадает в блок по ключу, остальные поля темы — в «Обращение». */
 const BLOCK_KEYS: Record<string, string[]> = {
   client: ['client_name', 'client_phone', 'feedback_channel', 'company_name'],
-  cards: ['bonus_card', 'fuel_card', 'contract_no', 'contract_office', 'eq_number'],
+  cards: ['bonus_card', 'fuel_card', 'contract_no', 'contract_office'],
   azs: ['azs_number', 'azs_region', 'ezs_station'],
 };
+/** Поля, свёрнутые по умолчанию, даже если тема требует их для 2-й линии (видны, когда обязательны сейчас). */
+const COLLAPSED_KEYS = ['company_name', 'fuel_card'];
+/** Поля, которые больше не показываются (могли остаться в старых обращениях). */
+const RETIRED_KEYS = ['eq_number', 'in_faq'];
 const BLOCK_ORDER = ['issue', 'client', 'cards', 'azs'];
 const blockOf = (k: string) => Object.keys(BLOCK_KEYS).find((b) => BLOCK_KEYS[b]!.includes(k)) ?? 'issue';
 /** Сколько полей в свёрнутом блоке АЗС без полей темы: предприятие и номер АЗС. */
@@ -965,7 +990,12 @@ function azsRegion(enterprise: string, address: string): string | null {
 /** Заметка к звонку — в правой колонке под сутью (клиент её не видит). */
 function CallNote({ conv }: { conv: Row }) {
   const [text, setText] = useState('');
-  useEffect(() => setText(''), [conv.id]);
+  // По умолчанию свёрнута — одна строка-ссылка; раскрывается плавно, курсор сразу в поле.
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    setText('');
+    setOpen(false);
+  }, [conv.id]);
   const dirty = !!text.trim();
   useEffect(() => {
     setDraft(`note:${String(conv.id)}`, dirty);
@@ -979,11 +1009,62 @@ function CallNote({ conv }: { conv: Row }) {
     if (dirty) save.mutate(undefined, { onSuccess: () => setText('') });
   };
   if (conv.status === 'closed') return null;
+  const shown = open || dirty;
+  return (
+    <Box>
+      <Anchor
+        size="xs"
+        fw={600}
+        onClick={() => setOpen(!shown)}
+        data-testid="call-note-toggle"
+        style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}
+      >
+        {t.workspace.callNote}
+        <IconChevronDown
+          size={14}
+          style={{ transition: 'transform 200ms ease', transform: shown ? 'rotate(180deg)' : 'none' }}
+        />
+      </Anchor>
+      <Collapse in={shown} transitionDuration={240}>
+        <Box pt={4} className={shown ? 'cc-reveal' : undefined}>
+          <CallNoteInput
+            text={text}
+            setText={setText}
+            submit={submit}
+            dirty={dirty}
+            pending={save.isPending}
+            focus={open}
+          />
+        </Box>
+      </Collapse>
+    </Box>
+  );
+}
+
+function CallNoteInput({
+  text,
+  setText,
+  submit,
+  dirty,
+  pending,
+  focus,
+}: {
+  text: string;
+  setText(v: string): void;
+  submit(): void;
+  dirty: boolean;
+  pending: boolean;
+  focus: boolean;
+}) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    if (focus) ref.current?.focus();
+  }, [focus]);
   return (
     <Box>
       <Textarea
+        ref={ref}
         size="xs"
-        label={t.workspace.callNote}
         placeholder={t.workspace.callNotePlaceholder}
         autosize
         minRows={2}
@@ -1004,7 +1085,7 @@ function CallNote({ conv }: { conv: Row }) {
           variant="light"
           onClick={submit}
           disabled={!dirty}
-          loading={save.isPending}
+          loading={pending}
           data-testid="call-note-save"
         >
           {t.workspace.saveNote}
@@ -1258,7 +1339,12 @@ function ConversationCard({ conv }: { conv: Row }) {
   const missingFor = (escalate: boolean): string[] => [
     ...(!conv.topicId && (escalate || behavior !== 'no_reply_needed') ? [t.workspace.topicField] : []),
     ...(fields.data ?? [])
-      .filter((f) => (escalate ? f.requiredOnEscalate : f.requiredOnClose) && empty(String(f.key)))
+      .filter(
+        (f) =>
+          (escalate ? f.requiredOnEscalate : f.requiredOnClose) &&
+          empty(String(f.key)) &&
+          !RETIRED_KEYS.includes(String(f.key)),
+      )
       .map((f) => String(f.label)),
     ...(!escalate && isPostponed && !callbackAt ? [t.workspace.callbackField] : []),
   ];
@@ -1358,18 +1444,29 @@ function ConversationCard({ conv }: { conv: Row }) {
   }
   const items: Item[] = [
     ...(fields.data ?? [])
-      .filter((f) => !isCommonField(String(f.key)) && String(f.key) !== SUMMARY_KEY)
+      .filter(
+        (f) =>
+          !isCommonField(String(f.key)) &&
+          String(f.key) !== SUMMARY_KEY &&
+          !RETIRED_KEYS.includes(String(f.key)),
+      )
       .map((f) => ({ key: String(f.key), def: f, label: String(f.label), common: false })),
-    ...COMMON_FIELD_KEYS.map((k) => ({
+    // Способ обратной связи нужен только 2-й линии — показывается при передаче на неё.
+    ...COMMON_FIELD_KEYS.filter((k) => k !== 'feedback_channel' || isEscalate).map((k) => ({
       key: k,
       def: defOf(k),
       label: t.workspace.commonFields[k] ?? k,
       common: true,
     })),
   ];
-  /** Видно без раскрытия блока: обязательное по теме (в т.ч. для 2-й линии), заполненное или подставленное. */
+  /**
+   * Видно без раскрытия блока: обязательное по теме (в т.ч. для 2-й линии), заполненное или подставленное.
+   * Предприятие клиента и № топливной карты свёрнуты, пока не обязательны прямо сейчас и не заполнены.
+   */
   const main = (i: Item) =>
-    !!i.def?.requiredOnClose || !!i.def?.requiredOnEscalate || !empty(i.key) || prefilled.includes(i.key);
+    COLLAPSED_KEYS.includes(i.key)
+      ? (!!i.def && requiredNow(i.def)) || !empty(i.key)
+      : !!i.def?.requiredOnClose || !!i.def?.requiredOnEscalate || !empty(i.key) || prefilled.includes(i.key);
   // Незаполненное обязательное — оранжевая рамка сразу; после нажатия «Завершить»/«Передать» — красная.
   // При передаче на 2-ю линию поля, обязательные только для неё, дополнительно выделены фиолетовым.
   const look = (i: Item) => {
@@ -1437,41 +1534,75 @@ function ConversationCard({ conv }: { conv: Row }) {
   const renderBlock = (b: string) => {
     const all = items.filter((i) => blockOf(i.key) === b);
     const isOpen = openBlocks.has(b);
-    const shown = all.filter((i) => isOpen || main(i));
+    const shown = all.filter(main);
+    const rest = all.filter((i) => !main(i));
     const azs = b === 'azs';
-    const picker = azs && (isOpen || shown.length > 0 || !!conv.enterpriseId || !!conv.objectId);
-    const hidden = all.length - shown.length + (azs && !picker ? AZS_PICKER_FIELDS : 0);
+    // АЗС/ЭЗС видны сразу, только если тема требует их заполнить или они уже выбраны; иначе блок свёрнут целиком.
+    const azsShown =
+      azs &&
+      (all.some((i) => !!i.def?.requiredOnClose || !!i.def?.requiredOnEscalate || !empty(i.key)) ||
+        !!conv.enterpriseId ||
+        !!conv.objectId);
+    const hidden = rest.length + (azs && !azsShown ? AZS_PICKER_FIELDS : 0);
     if (!all.length && !azs) return null;
+    const picker = azs && (
+      <StationPicker
+        conv={conv}
+        kinds={kinds}
+        closed={closed}
+        onPick={pickStation}
+        onOrg={(e, d) =>
+          upd.mutate({
+            enterpriseId: e,
+            departmentId: d,
+            ...(e !== conv.enterpriseId ? { objectId: null } : {}),
+          })
+        }
+      />
+    );
     return (
       <Box key={b} data-testid={`block-${b}`}>
-        <Group justify="space-between" gap={4} mb={shown.length || picker ? 2 : 0}>
+        <Group justify="space-between" gap={4} mb={shown.length || azsShown ? 2 : 0}>
           <Text size="xs" fw={700} c="dimmed">
             {azs ? kinds.map((k) => t.org.objectKinds[k] ?? k).join(' / ') : t.workspace.blocks[b]}
           </Text>
-          {(hidden > 0 || isOpen) && (
-            <Anchor size="xs" c="dimmed" onClick={() => toggleBlock(b)} data-testid="block-more">
+          {hidden > 0 && (
+            <Anchor
+              size="xs"
+              fw={600}
+              onClick={() => toggleBlock(b)}
+              data-testid="block-more"
+              data-open={isOpen || undefined}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}
+            >
               {isOpen ? t.workspace.blockLess : t.workspace.blockMore(hidden)}
+              <IconChevronDown
+                size={14}
+                style={{ transition: 'transform 200ms ease', transform: isOpen ? 'rotate(180deg)' : 'none' }}
+              />
             </Anchor>
           )}
         </Group>
         <Stack gap={6}>
-          {picker && (
-            <StationPicker
-              conv={conv}
-              kinds={kinds}
-              closed={closed}
-              onPick={pickStation}
-              onOrg={(e, d) =>
-                upd.mutate({
-                  enterpriseId: e,
-                  departmentId: d,
-                  ...(e !== conv.enterpriseId ? { objectId: null } : {}),
-                })
-              }
-            />
-          )}
+          {azsShown && picker}
           {shown.map(renderField)}
         </Stack>
+        {/* Свёрнутое раскрывается плавно и на миг подсвечивается — видно, что именно появилось. */}
+        {hidden > 0 && (
+          <Collapse in={isOpen} transitionDuration={260}>
+            <Stack
+              gap={6}
+              pt={6}
+              px={4}
+              pb={4}
+              className={isOpen ? 'cc-reveal' : undefined}
+              key={isOpen ? 'open' : 'closed'}
+            >
+              {azs && !azsShown && picker}
+              {rest.map(renderField)}
+            </Stack>
+          </Collapse>
+        )}
       </Box>
     );
   };
@@ -1479,6 +1610,23 @@ function ConversationCard({ conv }: { conv: Row }) {
   return (
     <Stack gap="sm">
       <EscalateModal conv={conv} opened={escalating} onClose={() => setEscalating(false)} />
+      {conv.isUrgent && !closed ? (
+        <Paper
+          p="xs"
+          bg="red.6"
+          c="white"
+          className="cc-urgent"
+          data-testid="urgent-banner"
+          style={{ border: '1px solid var(--mantine-color-red-7)' }}
+        >
+          <Group gap={6} wrap="nowrap">
+            <IconAlertTriangle size={18} className="cc-urgent-blink" />
+            <Text size="sm" fw={700}>
+              {t.workspace.urgentBanner}
+            </Text>
+          </Group>
+        </Paper>
+      ) : null}
       {(!!ticket || !!conv.chatCsat) && (
         <Group gap={6}>
           {ticket && (
@@ -1580,7 +1728,10 @@ function ConversationCard({ conv }: { conv: Row }) {
         fields={(conv.fields as Record<string, unknown>) ?? {}}
         defined={[
           ...(fields.data ?? []),
-          ...[...COMMON_FIELD_KEYS, SUMMARY_KEY, ...BLOCK_KEYS.azs!].map((k) => ({ id: k, key: k })),
+          ...[...COMMON_FIELD_KEYS, SUMMARY_KEY, ...BLOCK_KEYS.azs!, ...RETIRED_KEYS].map((k) => ({
+            id: k,
+            key: k,
+          })),
         ]}
       />
       <Accordion variant="contained" defaultValue={extrasOpen ? 'extra' : null} chevronPosition="left">
@@ -1923,6 +2074,8 @@ function CallsPanel({ convId }: { convId: string }) {
 
 /** Высота панелей рабочего места: экран минус шапка и отступы. */
 const PANEL_H = 'calc(100vh - 88px)';
+/** Статусы, в которых обращение «в работе» у оператора (режим обработки). */
+const WORK_STATUSES = ['active', 'hold', 'waiting_customer'];
 
 export function WorkspacePage() {
   const { me, can } = useAuth();
@@ -1935,6 +2088,16 @@ export function WorkspacePage() {
   const [callback, setCallback] = useState(false);
   const qc = useQueryClient();
   const rt = useRealtime(true);
+  // «Нет связи» — только если связи нет дольше нескольких секунд (при входе и коротких переподключениях не мигает).
+  const [rtOfflineLong, setRtOfflineLong] = useState(false);
+  useEffect(() => {
+    if (rt.connected) {
+      setRtOfflineLong(false);
+      return;
+    }
+    const id = setTimeout(() => setRtOfflineLong(true), 5000);
+    return () => clearTimeout(id);
+  }, [rt.connected]);
   const conv = useQuery({
     queryKey: [`/conversations/${selected}`],
     queryFn: () => get<Row>(`/conversations/${selected}`),
@@ -2031,176 +2194,281 @@ export function WorkspacePage() {
     [wsUi],
   );
 
+  // Режим обработки: обращение взято в работу — список скрыт (его можно показать кнопкой), меню свёрнуто.
+  const working =
+    !!conv.data &&
+    String(conv.data.id) === selected &&
+    conv.data.assigneeId === me?.id &&
+    WORK_STATUSES.includes(String(conv.data.status));
+  const [listHidden, setListHidden] = useState(false);
+  const focus = working && listHidden;
+  // Обращение закрыто, передано или открыто чужое/закрытое — список снова виден.
+  useEffect(() => {
+    if (conv.data && String(conv.data.id) === selected && !working) setListHidden(false);
+  }, [conv.data, selected, working]);
+  // Взятие в работу без кнопки на экране (ответ на звонок, принятие в шапке) — обращение стало «в работе».
+  const prevConv = useRef<{ id: string | null; status: string | null }>({ id: null, status: null });
+  useEffect(() => {
+    const d = conv.data;
+    const cur = { id: d ? String(d.id) : null, status: d ? String(d.status) : null };
+    const prev = prevConv.current;
+    prevConv.current = cur;
+    if (
+      d &&
+      d.assigneeId === me?.id &&
+      prev.id === cur.id &&
+      cur.status === 'active' &&
+      ['queued', 'offered', 'bot'].includes(String(prev.status))
+    )
+      setListHidden(true);
+  }, [conv.data, me?.id]);
+  useEffect(() => {
+    setFocusMode(focus);
+  }, [focus]);
+  useEffect(() => () => setFocusMode(false), []);
+  const startWork = (id: string) => {
+    setSelected(id);
+    setListHidden(true);
+  };
+
   return (
     <Grid gutter="md">
-      <Grid.Col span={3}>
-        {/* Список обращений — отдельная серая панель, чтобы не сливался с обработкой обращения. */}
-        <Paper
-          withBorder
-          radius="md"
-          p="xs"
-          bg="gray.0"
-          h={PANEL_H}
-          style={{ display: 'flex', flexDirection: 'column' }}
-          data-testid="conv-list-panel"
-        >
-          <Group gap={6} wrap="nowrap" mb="xs">
-            <Menu position="bottom-start" withinPortal>
-              <Menu.Target>
-                <Button
-                  size="xs"
-                  variant={curView ? 'white' : 'subtle'}
-                  color="dark"
-                  rightSection={<IconChevronDown size={14} />}
-                  style={{ flex: 1, minWidth: 0 }}
-                  justify="space-between"
-                  title={t.workspace.listViewHint}
-                  data-testid="list-view"
-                >
-                  {curView
-                    ? `${curView.label}${curView.n ? ` (${curView.n})` : ''}`
-                    : t.workspace.listViewHint}
-                </Button>
-              </Menu.Target>
-              <Menu.Dropdown>
-                {views.map((v, i) => (
-                  <Fragment key={v.value}>
-                    {i > 0 && views[i - 1]!.group !== v.group ? <Menu.Divider /> : null}
-                    <Menu.Item
-                      onClick={() => setTab(v.value)}
-                      fw={tab === v.value ? 700 : undefined}
-                      rightSection={
-                        v.n ? (
-                          <Badge size="xs" variant="light" color={v.value === 'mine' ? 'blue' : 'orange'}>
-                            {v.n}
-                          </Badge>
-                        ) : null
-                      }
-                      data-testid={`view-${v.value}`}
-                    >
-                      {v.label}
-                    </Menu.Item>
-                  </Fragment>
-                ))}
-              </Menu.Dropdown>
-            </Menu>
-            {hasQueue && (
-              <Tooltip label={t.workspace.queueBtnHint}>
-                <Button
-                  size="xs"
-                  px={8}
-                  variant={tab === 'queue' ? 'filled' : nQueue ? 'light' : 'default'}
-                  color={nQueue ? 'orange' : 'gray'}
-                  onClick={() => setTab('queue')}
-                  rightSection={
-                    <Badge size="sm" circle={nQueue < 10} color={nQueue ? 'orange' : 'gray'} variant="filled">
-                      {nQueue}
-                    </Badge>
-                  }
-                  data-testid="queue-open"
-                >
-                  {t.workspace.queueBtn}
-                </Button>
-              </Tooltip>
-            )}
-            {!secondLine && (
-              <Popover position="bottom-end" withArrow>
-                <Popover.Target>
-                  <Indicator disabled={!filtersOn} color="red" size={8} offset={3}>
-                    <ActionIcon
-                      size="md"
-                      variant={filtersOn ? 'filled' : 'default'}
-                      aria-label={t.workspace.filters}
-                      title={t.workspace.filters}
-                      data-testid="list-filters"
-                    >
-                      <IconFilter size={16} />
-                    </ActionIcon>
-                  </Indicator>
-                </Popover.Target>
-                <Popover.Dropdown>
-                  <Stack gap={6}>
-                    <Text size="xs" c="dimmed">
-                      {t.workspace.filtersOnlyHint}
-                    </Text>
-                    <Checkbox
-                      size="xs"
-                      label={t.workspace.filterImportant}
-                      checked={important}
-                      onChange={(e) => setImportant(e.currentTarget.checked)}
-                      data-testid="filter-important"
-                    />
-                    <Checkbox
-                      size="xs"
-                      label={t.workspace.filterCallback}
-                      checked={callback}
-                      onChange={(e) => setCallback(e.currentTarget.checked)}
-                      data-testid="filter-callback"
-                    />
-                  </Stack>
-                </Popover.Dropdown>
-              </Popover>
-            )}
-            <Tooltip label={rt.connected ? t.workspace.onlayn : t.workspace.netSvyazi}>
-              <Box
-                w={10}
-                h={10}
-                style={{
-                  borderRadius: '50%',
-                  flex: 'none',
-                  background: `var(--mantine-color-${rt.connected ? 'green' : 'red'}-6)`,
-                }}
-                data-testid="rt-status"
-              >
-                <VisuallyHidden>{rt.connected ? t.workspace.onlayn : t.workspace.netSvyazi}</VisuallyHidden>
-              </Box>
-            </Tooltip>
-          </Group>
-          <ScrollArea style={{ flex: 1 }} type="auto" offsetScrollbars>
-            {secondLine ? (
-              <Stack gap="xs">
-                <TicketList
-                  view={tab}
-                  extra={tab === 'created' ? '&status=new,in_work,approval,rework' : ''}
+      {!focus && (
+        <Grid.Col span={3} data-testid="conv-list-col">
+          {/* Список обращений — отдельная серая панель, чтобы не сливался с обработкой обращения. */}
+          <Paper
+            withBorder
+            radius="md"
+            p="xs"
+            bg="gray.0"
+            h={PANEL_H}
+            style={{ display: 'flex', flexDirection: 'column' }}
+            data-testid="conv-list-panel"
+          >
+            <Group gap={6} wrap="nowrap" mb="xs">
+              <Menu position="bottom-start" withinPortal>
+                <Menu.Target>
+                  <Button
+                    size="xs"
+                    variant={curView ? 'white' : 'subtle'}
+                    color="dark"
+                    rightSection={<IconChevronDown size={14} />}
+                    style={{ flex: 1, minWidth: 0 }}
+                    justify="space-between"
+                    title={t.workspace.listViewHint}
+                    data-testid="list-view"
+                  >
+                    {curView
+                      ? `${curView.label}${curView.n ? ` (${curView.n})` : ''}`
+                      : t.workspace.listViewHint}
+                  </Button>
+                </Menu.Target>
+                <Menu.Dropdown>
+                  {views.map((v, i) => (
+                    <Fragment key={v.value}>
+                      {i > 0 && views[i - 1]!.group !== v.group ? <Menu.Divider /> : null}
+                      <Menu.Item
+                        onClick={() => setTab(v.value)}
+                        fw={tab === v.value ? 700 : undefined}
+                        rightSection={
+                          v.n ? (
+                            <Badge size="xs" variant="light" color={v.value === 'mine' ? 'blue' : 'orange'}>
+                              {v.n}
+                            </Badge>
+                          ) : null
+                        }
+                        data-testid={`view-${v.value}`}
+                      >
+                        {v.label}
+                      </Menu.Item>
+                    </Fragment>
+                  ))}
+                </Menu.Dropdown>
+              </Menu>
+              {hasQueue && (
+                <Tooltip label={t.workspace.queueBtnHint}>
+                  <Button
+                    size="xs"
+                    px={8}
+                    variant={tab === 'queue' ? 'filled' : nQueue ? 'light' : 'default'}
+                    color={nQueue ? 'orange' : 'gray'}
+                    onClick={() => setTab('queue')}
+                    rightSection={
+                      <Badge
+                        size="sm"
+                        circle={nQueue < 10}
+                        color={nQueue ? 'orange' : 'gray'}
+                        variant="filled"
+                      >
+                        {nQueue}
+                      </Badge>
+                    }
+                    data-testid="queue-open"
+                  >
+                    {t.workspace.queueBtn}
+                  </Button>
+                </Tooltip>
+              )}
+              {!secondLine && (
+                <Popover position="bottom-end" withArrow>
+                  <Popover.Target>
+                    <Indicator disabled={!filtersOn} color="red" size={8} offset={3}>
+                      <ActionIcon
+                        size="md"
+                        variant={filtersOn ? 'filled' : 'default'}
+                        aria-label={t.workspace.filters}
+                        title={t.workspace.filters}
+                        data-testid="list-filters"
+                      >
+                        <IconFilter size={16} />
+                      </ActionIcon>
+                    </Indicator>
+                  </Popover.Target>
+                  <Popover.Dropdown>
+                    <Stack gap={6}>
+                      <Text size="xs" c="dimmed">
+                        {t.workspace.filtersOnlyHint}
+                      </Text>
+                      <Checkbox
+                        size="xs"
+                        label={t.workspace.filterImportant}
+                        checked={important}
+                        onChange={(e) => setImportant(e.currentTarget.checked)}
+                        data-testid="filter-important"
+                      />
+                      <Checkbox
+                        size="xs"
+                        label={t.workspace.filterCallback}
+                        checked={callback}
+                        onChange={(e) => setCallback(e.currentTarget.checked)}
+                        data-testid="filter-callback"
+                      />
+                    </Stack>
+                  </Popover.Dropdown>
+                </Popover>
+              )}
+              {/* Связь с сервером для мгновенных обновлений: есть — маленькая зелёная точка, нет — заметная плашка. */}
+              {rt.connected || !rtOfflineLong ? (
+                <Tooltip label={rt.connected ? t.workspace.onlayn : t.workspace.rtConnecting}>
+                  <Box
+                    w={8}
+                    h={8}
+                    style={{
+                      borderRadius: '50%',
+                      flex: 'none',
+                      background: `var(--mantine-color-${rt.connected ? 'green' : 'gray'}-6)`,
+                    }}
+                    data-testid="rt-status"
+                  >
+                    <VisuallyHidden>
+                      {rt.connected ? t.workspace.onlayn : t.workspace.rtConnecting}
+                    </VisuallyHidden>
+                  </Box>
+                </Tooltip>
+              ) : (
+                <Tooltip label={t.workspace.rtOfflineHint} multiline w={280} withArrow>
+                  <Badge
+                    color="red"
+                    variant="filled"
+                    size="sm"
+                    style={{ flex: 'none' }}
+                    data-testid="rt-status"
+                  >
+                    {t.workspace.rtOffline}
+                  </Badge>
+                </Tooltip>
+              )}
+            </Group>
+            <ScrollArea style={{ flex: 1 }} type="auto" offsetScrollbars>
+              {secondLine ? (
+                <Stack gap="xs">
+                  <TicketList
+                    view={tab}
+                    extra={tab === 'created' ? '&status=new,in_work,approval,rework' : ''}
+                  />
+                  {tab === 'approvals' && (
+                    <Paper withBorder p="xs">
+                      <Text size="sm" fw={600} mb={4}>
+                        {t.workspace.zamestitelNaPeriodOtsutstviya}
+                      </Text>
+                      <SubstitutesPanel />
+                    </Paper>
+                  )}
+                </Stack>
+              ) : (
+                <List
+                  tab={tab}
+                  selected={selected}
+                  onSelect={setSelected}
+                  onTaken={startWork}
+                  important={important}
+                  callback={callback}
                 />
-                {tab === 'approvals' && (
-                  <Paper withBorder p="xs">
-                    <Text size="sm" fw={600} mb={4}>
-                      {t.workspace.zamestitelNaPeriodOtsutstviya}
-                    </Text>
-                    <SubstitutesPanel />
-                  </Paper>
-                )}
-              </Stack>
-            ) : (
-              <List
-                tab={tab}
-                selected={selected}
-                onSelect={setSelected}
-                important={important}
-                callback={callback}
-              />
-            )}
-          </ScrollArea>
-        </Paper>
-      </Grid.Col>
-      <Grid.Col span={5}>
+              )}
+            </ScrollArea>
+          </Paper>
+        </Grid.Col>
+      )}
+      <Grid.Col span={focus ? 7 : 5}>
         {conv.data ? (
           <Stack gap="xs">
-            <Group justify="space-between">
-              <Box>
-                <Text fw={700}>{String(conv.data.contactName)}</Text>
-                <Text size="xs" c="dimmed">
-                  {CHANNEL[String(conv.data.channelKind)]} ·{' '}
-                  {STATUS[String(conv.data.status)] ?? String(conv.data.status)}
-                  {conv.data.assigneeName ? t.workspace.vedet(String(conv.data.assigneeName)) : ''}
-                </Text>
-              </Box>
+            <Group justify="space-between" wrap="nowrap">
+              <Group gap="xs" wrap="nowrap" style={{ minWidth: 0 }}>
+                {working && (
+                  <Tooltip label={focus ? t.workspace.focusHint : t.workspace.focusHideList} withArrow>
+                    <Indicator
+                      disabled={!focus || !nQueue}
+                      label={nQueue}
+                      size={16}
+                      color="orange"
+                      offset={4}
+                    >
+                      <Button
+                        size="xs"
+                        variant={focus ? 'light' : 'default'}
+                        px={8}
+                        leftSection={
+                          focus ? (
+                            <IconLayoutSidebarLeftExpand size={16} />
+                          ) : (
+                            <IconLayoutSidebarLeftCollapse size={16} />
+                          )
+                        }
+                        onClick={() => setListHidden(!focus)}
+                        data-testid="focus-toggle-list"
+                        data-focus={focus || undefined}
+                      >
+                        {focus ? t.workspace.focusShowList : t.workspace.focusHideList}
+                      </Button>
+                    </Indicator>
+                  </Tooltip>
+                )}
+                <Box style={{ minWidth: 0 }}>
+                  <Group gap={6} wrap="nowrap">
+                    <Text fw={700} truncate>
+                      {String(conv.data.contactName)}
+                    </Text>
+                    {conv.data.isUrgent && conv.data.status !== 'closed' ? (
+                      <Badge color="red" variant="filled" size="sm" className="cc-urgent-blink">
+                        {t.workspace.urgentBadge}
+                      </Badge>
+                    ) : null}
+                  </Group>
+                  <Text size="xs" c="dimmed">
+                    {CHANNEL[String(conv.data.channelKind)]} ·{' '}
+                    {STATUS[String(conv.data.status)] ?? String(conv.data.status)}
+                    {conv.data.assigneeName ? t.workspace.vedet(String(conv.data.assigneeName)) : ''}
+                  </Text>
+                </Box>
+              </Group>
               {conv.data.status === 'queued' && (
                 <Button
                   size="xs"
                   onClick={() =>
-                    void post(`/conversations/${selected}/take`).then(() => qc.invalidateQueries())
+                    void post(`/conversations/${selected}/take`).then(() => {
+                      setListHidden(true);
+                      return qc.invalidateQueries();
+                    })
                   }
                   data-testid="take-open"
                 >
@@ -2231,7 +2499,10 @@ export function WorkspacePage() {
                     color="green"
                     data-testid="accept-open"
                     onClick={() =>
-                      void post(`/conversations/${selected}/accept`).then(() => qc.invalidateQueries())
+                      void post(`/conversations/${selected}/accept`).then(() => {
+                        setListHidden(true);
+                        return qc.invalidateQueries();
+                      })
                     }
                   >
                     {t.workspace.prinyat}
@@ -2271,7 +2542,7 @@ export function WorkspacePage() {
           </Text>
         )}
       </Grid.Col>
-      <Grid.Col span={4}>
+      <Grid.Col span={focus ? 5 : 4}>
         {conv.data && (
           <Tabs defaultValue={rightTabs[0]?.value ?? 'card'}>
             <Tabs.List mb="xs">

@@ -8,7 +8,6 @@ import {
   IconBulb,
   IconCalendarTime,
   IconChartBar,
-  IconChecklist,
   IconDeviceDesktopAnalytics,
   IconDeviceTv,
   IconFileCode,
@@ -74,7 +73,14 @@ export const MENU: MenuItem[] = [
     group: 'work',
     icon: IconHeadset,
   },
-  { to: '/tickets', label: t.layout.kabinet2YLinii, perms: ['tickets.work'], group: 'work', icon: IconInbox },
+  // «2-я линия»: обращения ответственного и куратора и контроль супервизора (согласования, переназначение) — вкладки.
+  {
+    to: '/tickets',
+    label: t.layout.kabinet2YLinii,
+    perms: ['tickets.work', 'supervisor.approvals', 'admin.matrix'],
+    group: 'work',
+    icon: IconInbox,
+  },
   {
     to: '/kb',
     label: t.layout.bazaZnaniy,
@@ -110,13 +116,6 @@ export const MENU: MenuItem[] = [
     perms: ['supervisor.monitor'],
     group: 'control',
     icon: IconDeviceTv,
-  },
-  {
-    to: '/tickets-control',
-    label: t.layout.kontrol2YLinii,
-    perms: ['supervisor.approvals', 'admin.matrix'],
-    group: 'control',
-    icon: IconChecklist,
   },
   { to: '/reports', label: t.layout.otchety, perms: ['reports.view'], group: 'control', icon: IconChartBar },
   {

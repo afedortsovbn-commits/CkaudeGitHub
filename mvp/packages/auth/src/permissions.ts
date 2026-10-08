@@ -36,7 +36,7 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
       },
       {
         code: 'tickets.work',
-        title: 'Обращения на 2-й линии',
+        title: '2-я линия: работа с обращениями',
         description: 'Обращения, переданные на 2-ю линию: ответ клиенту, возврат, продление срока',
       },
     ],
@@ -53,7 +53,7 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
       },
       {
         code: 'supervisor.approvals',
-        title: 'Контроль 2-й линии',
+        title: '2-я линия: контроль',
         description: 'Согласования и контроль сроков 2-й линии',
       },
       {

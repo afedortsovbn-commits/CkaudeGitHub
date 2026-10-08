@@ -490,7 +490,6 @@ export class TicketsController {
     // Поля карточек тем — отдельными колонками (подписи по ключам), кроме общих полей (у них свои колонки).
     const COMMON: [string, string][] = [
       ['feedback_channel', 'Предпочтительный способ обратной связи'],
-      ['eq_number', '№ электронной очереди'],
       ['company_name', 'Предприятие клиента'],
       ['bonus_card', '№ карты лояльности'],
       ['fuel_card', '№ топливной карты'],
@@ -1133,7 +1132,7 @@ const LIST_SQL = `SELECT t.id, t.number, t.status, to_char(t.due_date, 'YYYY-MM-
     (SELECT string_agg(x.name, ' / ' ORDER BY array_position(t.topic_path, x.id)) FROM topic x WHERE x.id = ANY(t.topic_path)) AS topic_name,
     cu.full_name AS creator_name,
     COALESCE(ct.display_name, ct.phone, ct.email, 'Клиент') AS contact_name, ct.phone AS contact_phone, ct.email AS contact_email,
-    c.channel_kind,
+    c.channel_kind, c.is_urgent,
     (SELECT a.kind FROM ticket_assignee a WHERE a.ticket_id = t.id AND a.user_id = $1 AND a.is_active) AS my_role,
     (SELECT string_agg(u.full_name, ', ' ORDER BY u.full_name) FROM ticket_assignee a JOIN app_user u ON u.id = a.user_id
       WHERE a.ticket_id = t.id AND a.is_active AND a.kind = 'responsible') AS responsible_names,

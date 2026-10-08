@@ -90,6 +90,9 @@ export async function setAgentStatus(page: Page, status: 'ready' | 'break' | 'of
 
 /** Вид списка обращений на рабочем месте оператора: «Очередь» — отдельная кнопка, остальное — выпадающий список. */
 export async function listView(page: Page, view: string) {
+  // В режиме обработки обращения список скрыт — показать его.
+  const show = page.locator('[data-testid="focus-toggle-list"][data-focus]');
+  if (await show.isVisible()) await show.click();
   if (view === 'queue') {
     await page.getByTestId('queue-open').click();
     return;

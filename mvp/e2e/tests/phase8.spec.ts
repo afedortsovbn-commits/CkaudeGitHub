@@ -133,7 +133,7 @@ test.describe.serial('Ф8: вторая линия', () => {
     // Ответственный видит тикет выделенным в кабинете (фильтр «Я ответственный»), открывает — «В работе».
     const r3 = await as(browser, 'resp3@demo.local');
     await expect(r3.getByTestId('bell-count')).toBeVisible();
-    await nav(r3, 'Обращения на 2-й линии');
+    await nav(r3, '2-я линия');
     // По умолчанию у ответственного применён фильтр «Ответственный — я».
     await expect(r3.getByTestId('flt-responsible')).toHaveAttribute('data-active', 'true');
     const mine = r3.getByTestId('ticket-item').filter({ hasText: `№${number}` });
@@ -216,7 +216,8 @@ test.describe.serial('Ф8: вторая линия', () => {
 
     // Супервизор видит тикет в списке всех согласований.
     const sup = await as(browser, 'supervisor@demo.local');
-    await nav(sup, 'Контроль 2-й линии');
+    await nav(sup, '2-я линия');
+    await sup.getByTestId('tab-approvals-all').click();
     await expect(sup.getByTestId('ticket-item').filter({ hasText: `№${number}` })).toBeVisible();
 
     // Оператор принимает: тикет и обращение закрыты.

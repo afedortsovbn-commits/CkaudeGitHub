@@ -20,6 +20,7 @@ export const softphoneUi = {
   garnitura: ' · гарнитура',
   nabrat: 'Набрать',
   pozvonit: 'Позвонить',
+  vvediteNomer: 'Введите номер телефона',
   konsultatsiyaPeredPerevodom: 'Консультация перед переводом',
   perevestiZvonok: 'Перевести звонок',
   kuda: 'Куда',

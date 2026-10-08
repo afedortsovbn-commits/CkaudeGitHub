@@ -5,7 +5,6 @@
  */
 export const COMMON_FIELD_KEYS = [
   'feedback_channel',
-  'eq_number',
   'company_name',
   'bonus_card',
   'fuel_card',

@@ -1,11 +1,12 @@
 import '@mantine/core/styles.css';
 import '@mantine/notifications/styles.css';
+import './app.css';
 import { Center, Loader, MantineProvider } from '@mantine/core';
 import { Notifications } from '@mantine/notifications';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { BrowserRouter, Route, Routes, useLocation } from 'react-router';
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router';
 import { AuthProvider, useAuth } from './lib/auth';
 import { AuditPage, SettingsPage } from './pages/AdminPages';
 import { ResourcesPage } from './pages/ResourcesPage';
@@ -19,7 +20,7 @@ import { DepartmentsPage, DictionariesPage, EnterprisesPage, ObjectsPage } from 
 import { SupervisorPage } from './pages/SupervisorPage';
 import { ReportsPage } from './pages/ReportsPage';
 import { TopicsPage } from './pages/TopicsPage';
-import { CabinetPage, TicketControlPage, TicketPage } from './pages/TicketPages';
+import { SecondLinePage, TicketPage } from './pages/TicketPages';
 import { DemoLoginPage } from './pages/DemoLoginPage';
 import { AppFramePage, ExternalAppsPage } from './pages/ExternalAppsPages';
 import { RolesPage } from './pages/RolesPage';
@@ -71,9 +72,10 @@ function App() {
         <Route path="resources" element={<ResourcesPage />} />
         <Route path="schedule" element={<SchedulePage />} />
         <Route path="staff-messages" element={<StaffMessagesPage />} />
-        <Route path="tickets" element={<CabinetPage />} />
+        <Route path="tickets" element={<SecondLinePage />} />
         <Route path="tickets/:id" element={<TicketPage />} />
-        <Route path="tickets-control" element={<TicketControlPage />} />
+        {/* Бывший раздел «Контроль 2-й линии» — теперь вкладки раздела «2-я линия» (старые ссылки работают). */}
+        <Route path="tickets-control" element={<Navigate to="/tickets?tab=approvals" replace />} />
         <Route path="channels" element={<ChannelsPage />} />
         <Route path="ivr" element={<FlowListPage kind="voice" key="voice" />} />
         <Route path="ivr/:id" element={<FlowEditorPage />} />

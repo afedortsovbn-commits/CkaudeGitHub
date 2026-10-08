@@ -1,0 +1,76 @@
+/*
+ * Общие стили интерфейса, которых нет в теме Mantine.
+ */
+
+/* Выпадающие окна и списки — заметная тень и рамка, чтобы белое не сливалось с белым фоном страницы. */
+.mantine-Popover-dropdown,
+.mantine-Menu-dropdown,
+.mantine-Combobox-dropdown,
+.mantine-Select-dropdown,
+.mantine-MultiSelect-dropdown,
+.mantine-Autocomplete-dropdown,
+.mantine-TagsInput-dropdown,
+.cc-dropdown {
+  border-color: var(--mantine-color-gray-4);
+  box-shadow:
+    0 10px 28px rgba(0, 0, 0, 0.2),
+    0 2px 8px rgba(0, 0, 0, 0.12);
+}
+
+/* Срочное обращение — мигающая красная рамка и подсветка, видна всем, у кого оно в списке или открыто. */
+@keyframes cc-urgent-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 2px var(--mantine-color-red-6);
+  }
+  50% {
+    box-shadow:
+      0 0 0 4px var(--mantine-color-red-4),
+      0 0 14px rgba(250, 82, 82, 0.55);
+  }
+}
+@keyframes cc-urgent-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+.cc-urgent {
+  animation: cc-urgent-pulse 1.2s ease-in-out infinite;
+  border-color: var(--mantine-color-red-6) !important;
+}
+.cc-urgent-blink {
+  animation: cc-urgent-blink 1s ease-in-out infinite;
+}
+
+/* Только что раскрытое — кратко подсвечивается, чтобы было видно, что именно появилось. */
+@keyframes cc-reveal {
+  from {
+    background-color: var(--mantine-color-blue-1);
+  }
+  to {
+    background-color: transparent;
+  }
+}
+.cc-reveal {
+  animation: cc-reveal 1.4s ease-out;
+  border-radius: var(--mantine-radius-sm);
+}
+
+/* Поле набора номера — появляется с небольшим «выездом». */
+@keyframes cc-pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.cc-pop-in {
+  animation: cc-pop-in 0.18s ease-out;
+}

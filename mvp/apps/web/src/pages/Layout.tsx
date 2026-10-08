@@ -31,6 +31,7 @@ import { UpdateBanner } from '../components/UpdateBanner';
 import { StaffMessageInbox } from '../components/StaffMessageInbox';
 import { SoftphoneCall, SoftphoneStatus } from '../components/Softphone';
 import { useRealtime } from '../lib/realtime';
+import { useFocusMode } from '../lib/focus';
 import { softphone } from '../lib/softphone';
 import { useAuth, type Me } from '../lib/auth';
 import { applyRoleFavicon } from '../lib/favicon';
@@ -184,7 +185,13 @@ export function Layout() {
   const [menuOpened, menu] = useDisclosure(false);
   // Узкое меню (только иконки): только по кнопке сотрудника, одинаково во всех разделах; запоминается в браузере.
   const [railPref, setRailPref] = useState<boolean>(() => pref.get('cc.nav.rail', false));
-  const compact = railPref && !menuOpened;
+  // Режим обработки обращения на рабочем месте — меню на время свёрнуто до значков (выбор сотрудника не меняется).
+  const focus = useFocusMode();
+  const [focusMenuOpen, setFocusMenuOpen] = useState(false);
+  useEffect(() => {
+    if (!focus) setFocusMenuOpen(false);
+  }, [focus]);
+  const compact = (focus ? !focusMenuOpen : railPref) && !menuOpened;
   const items = useMenu(me);
   useEffect(() => {
     menu.close();
@@ -212,6 +219,10 @@ export function Layout() {
     return () => softphone.stop();
   }, [phone, userId]);
   const toggleRail = () => {
+    if (focus) {
+      setFocusMenuOpen(!focusMenuOpen);
+      return;
+    }
     setRailPref(!railPref);
     pref.set('cc.nav.rail', !railPref);
   };

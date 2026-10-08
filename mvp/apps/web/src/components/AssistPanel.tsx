@@ -166,7 +166,7 @@ export function useSlashTemplates(text: string, channel: string) {
 
 export function SlashList({ items, onPick }: { items: Row[]; onPick(r: Row): void }) {
   return (
-    <Paper withBorder shadow="sm" p={4} data-testid="slash-list">
+    <Paper withBorder p={4} className="cc-dropdown" data-testid="slash-list">
       {!items.length && (
         <Text size="xs" c="dimmed" p={4}>
           {t.assistPanelUi.shablonyNeNaydeny}

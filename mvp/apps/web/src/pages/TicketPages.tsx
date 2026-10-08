@@ -29,7 +29,7 @@ import {
 import { notifications } from '@mantine/notifications';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router';
+import { useNavigate, useParams, useSearchParams } from 'react-router';
 import { api, authBlobUrl, errorText, get, post, upload } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { type Row, options, useAction, useList, useRequired } from '../lib/data';
@@ -370,6 +370,7 @@ function TicketCard({ t: tk, selected, onOpen }: { t: Row; selected?: boolean; o
       withBorder
       padding="xs"
       onClick={() => onOpen(tk.id)}
+      className={tk.isUrgent && !dim ? 'cc-urgent' : undefined}
       style={{
         cursor: 'pointer',
         borderLeft: `4px solid ${overdue ? 'var(--mantine-color-red-7)' : mine === 'responsible' ? 'var(--mantine-color-blue-6)' : mine === 'curator' ? 'var(--mantine-color-gray-5)' : 'transparent'}`,
@@ -392,6 +393,11 @@ function TicketCard({ t: tk, selected, onOpen }: { t: Row; selected?: boolean; o
           {tk.isImportant ? (
             <Badge color={dim ? 'gray' : 'red'} size="xs" variant={dim ? 'outline' : 'filled'}>
               {t.tickets.osoboVazhnoe}
+            </Badge>
+          ) : null}
+          {tk.isUrgent && !dim ? (
+            <Badge color="red" size="xs" variant="filled" className="cc-urgent-blink">
+              {t.workspace.urgentBadge}
             </Badge>
           ) : null}
           {mine ? (
@@ -429,6 +435,42 @@ function TicketCard({ t: tk, selected, onOpen }: { t: Row; selected?: boolean; o
         )}
       </Group>
     </Card>
+  );
+}
+
+/** Срочное обращение (отмечено на 1-й линии) — мигающий значок, пока обращение не закрыто. */
+function UrgentMark({ t: tk }: { t: Row }) {
+  const urgent = !!(tk.isUrgent ?? (tk.conversation as Row | null)?.isUrgent);
+  if (!urgent || tk.status === 'closed') return null;
+  return (
+    <Badge color="red" variant="filled" className="cc-urgent-blink" data-testid="ticket-urgent">
+      {t.workspace.urgentBadge}
+    </Badge>
+  );
+}
+
+/** Роль сотрудника в выбранном обращении: куратор работает в том же интерфейсе, но видит, что он куратор. */
+function MyRoleNote({ t: tk }: { t: Row }) {
+  if (tk.myRole !== 'curator' && tk.myRole !== 'responsible') return null;
+  const curator = tk.myRole === 'curator';
+  return (
+    <Paper
+      p={6}
+      px="xs"
+      mb="xs"
+      radius="sm"
+      bg={curator ? 'gray.1' : 'blue.0'}
+      style={{ borderLeft: `4px solid var(--mantine-color-${curator ? 'gray-5' : 'blue-6'})` }}
+      data-testid="my-role-note"
+      data-role={String(tk.myRole)}
+    >
+      <Text size="sm" fw={600}>
+        {curator ? t.tickets.youCurator : t.tickets.youResponsible}
+      </Text>
+      <Text size="xs" c="dimmed">
+        {curator ? t.tickets.youCuratorHint : t.tickets.youResponsibleHint}
+      </Text>
+    </Paper>
   );
 }
 
@@ -515,11 +557,13 @@ function ScrollBlock({ children, h, testId }: { children: React.ReactNode; h: st
 }
 
 /**
- * Обращения на 2-й линии (M-TKT-05): список с фильтрами значками и справа — сведения о выбранном. Ответственному и
+ * Обращения 2-й линии (M-TKT-05): список с фильтрами значками и справа — сведения о выбранном. Ответственному и
  * куратору сразу открыто верхнее обращение; по умолчанию — «я ответственный»/«я куратор» и последние 30 дней.
  */
-export function CabinetPage() {
+export function CabinetPage({ inTabs = false }: { inTabs?: boolean }) {
   const { me, can } = useAuth();
+  // Во вкладках раздела «2-я линия» над списком — строка вкладок.
+  const tabsH = inTabs ? 50 : 0;
   const qc = useQueryClient();
   // Только 2-я линия (не оператор, не супервизор, не администратор): по умолчанию — «я», верхнее открыто.
   const secondLine =
@@ -601,7 +645,7 @@ export function CabinetPage() {
             exporting={exporting}
           />
         </Box>
-        <ScrollBlock h="calc(100vh - 200px)" testId="ticket-list-scroll">
+        <ScrollBlock h={`calc(100vh - ${200 + tabsH}px)`} testId="ticket-list-scroll">
           <Stack gap={6} p={4} data-testid="ticket-list">
             {(list.data ?? []).length === 0 && (
               <Text c="dimmed" size="sm">
@@ -616,15 +660,19 @@ export function CabinetPage() {
       </Grid.Col>
       <Grid.Col span={{ base: 12, md: 7 }}>
         {preview.data ? (
-          <ScrollBlock h="calc(100vh - 100px)" testId="ticket-preview-scroll">
+          <ScrollBlock h={`calc(100vh - ${100 + tabsH}px)`} testId="ticket-preview-scroll">
             <Paper withBorder p="md" data-testid="ticket-preview">
               <Group justify="space-between" mb="xs">
-                <Title order={4} data-testid="ticket-title">
-                  {t.tickets.tiket}
-                  {String(preview.data.number)}
-                </Title>
+                <Group gap="xs">
+                  <Title order={4} data-testid="ticket-title">
+                    {t.tickets.tiket}
+                    {String(preview.data.number)}
+                  </Title>
+                  <UrgentMark t={preview.data} />
+                </Group>
                 <StatusBadge status={String(preview.data.status)} />
               </Group>
+              <MyRoleNote t={preview.data} />
               <TicketActions t={preview.data} onDialog={setDialog} />
               <ExtensionNotice t={preview.data} />
               <TicketFacts t={preview.data} />
@@ -1006,7 +1054,7 @@ function TicketFacts({ t: tk }: { t: Row }) {
               {topicFields.map(([k, v]) => (
                 <Line
                   key={k}
-                  label={labels.get(k) ?? k}
+                  label={labels.get(k) ?? t.workspace.commonFields[k] ?? k}
                   value={typeof v === 'object' ? JSON.stringify(v) : v}
                 />
               ))}
@@ -1486,6 +1534,7 @@ export function TicketPage() {
             {String(tk.number)}
           </Title>
           <StatusBadge status={String(tk.status)} />
+          <UrgentMark t={tk} />
           {tk.isImportant ? (
             <Badge color="red" variant="filled">
               {t.tickets.osoboVazhnoe}
@@ -2113,33 +2162,46 @@ export function SubstitutesPanel({ all = false }: { all?: boolean }) {
   );
 }
 
-/** Контроль 2-й линии: «Все согласования» супервизора, «требуют переназначения», заместители, матрица (M-TKT-09, M-TKT-12a). */
-export function TicketControlPage() {
+/**
+ * Раздел «2-я линия»: обращения (ответственный и куратор — один и тот же интерфейс) и контроль — «Все согласования»
+ * супервизора, «требуют переназначения», заместители, матрица (M-TKT-05, M-TKT-09, M-TKT-12a). Вкладки — по правам;
+ * у кого только работа с обращениями — сразу список без вкладок.
+ */
+export function SecondLinePage() {
   const { can } = useAuth();
-  const nav = useNavigate();
-  const [tab, setTab] = useState<string | null>(can('supervisor.approvals') ? 'approvals' : 'attention');
+  const [params, setParams] = useSearchParams();
   const apply = useAction(
     () => post<{ changed: number; unchanged: number; unresolved: string[] }>('/tickets/apply-matrix'),
     t.tickets.matritsaPrimenenaKOtkrytym,
   );
+  const tabs = [
+    ...(can('tickets.work', 'supervisor.approvals') ? [{ value: 'list', label: t.tickets.tabList }] : []),
+    ...(can('supervisor.approvals')
+      ? [{ value: 'approvals', label: t.tickets.vseSoglasovaniya, testId: 'tab-approvals-all' }]
+      : []),
+    ...(can('supervisor.approvals', 'admin.matrix')
+      ? [{ value: 'attention', label: t.tickets.trebuyutPerenaznacheniya, testId: 'tab-attention' }]
+      : []),
+    ...(can('admin.users') ? [{ value: 'substitutes', label: t.tickets.zamestiteli }] : []),
+  ];
+  const asked = params.get('tab');
+  // По умолчанию: кто работает с обращениями — список, супервизор без этой работы — контроль (согласования).
+  const first = can('tickets.work') ? 'list' : (tabs.find((x) => x.value !== 'list')?.value ?? 'list');
+  const tab = tabs.some((x) => x.value === asked) ? asked! : first;
+  if (tabs.length <= 1) return <CabinetPage />;
   return (
-    <Stack>
-      <Tabs value={tab} onChange={setTab}>
-        <Tabs.List mb="sm">
-          {can('supervisor.approvals') && (
-            <Tabs.Tab value="approvals" data-testid="tab-approvals-all">
-              {t.tickets.vseSoglasovaniya}
-            </Tabs.Tab>
-          )}
-          <Tabs.Tab value="attention" data-testid="tab-attention">
-            {t.tickets.trebuyutPerenaznacheniya}
+    <Tabs value={tab} onChange={(v) => setParams(v && v !== 'list' ? { tab: v } : {}, { replace: true })}>
+      <Tabs.List mb="sm">
+        {tabs.map((x) => (
+          <Tabs.Tab key={x.value} value={x.value} data-testid={x.testId ?? `tab-2nd-${x.value}`}>
+            {x.label}
           </Tabs.Tab>
-          {can('admin.users') && <Tabs.Tab value="substitutes">{t.tickets.zamestiteli}</Tabs.Tab>}
-        </Tabs.List>
-        <Tabs.Panel value="approvals">
-          <TicketList view="approvals_all" />
-        </Tabs.Panel>
-        <Tabs.Panel value="attention">
+        ))}
+      </Tabs.List>
+      <Tabs.Panel value="list">{tab === 'list' && <CabinetPage inTabs />}</Tabs.Panel>
+      <Tabs.Panel value="approvals">{tab === 'approvals' && <TicketList view="approvals_all" />}</Tabs.Panel>
+      <Tabs.Panel value="attention">
+        {tab === 'attention' && (
           <Stack>
             <Group>
               <Text size="sm" c="dimmed" style={{ flex: 1 }}>
@@ -2159,14 +2221,9 @@ export function TicketControlPage() {
             </Group>
             <TicketList view="attention" />
           </Stack>
-        </Tabs.Panel>
-        <Tabs.Panel value="substitutes">
-          <SubstitutesPanel all />
-        </Tabs.Panel>
-      </Tabs>
-      <Anchor size="xs" onClick={() => nav('/tickets')}>
-        {t.tickets.kabinet2YLinii}
-      </Anchor>
-    </Stack>
+        )}
+      </Tabs.Panel>
+      <Tabs.Panel value="substitutes">{tab === 'substitutes' && <SubstitutesPanel all />}</Tabs.Panel>
+    </Tabs>
   );
 }
