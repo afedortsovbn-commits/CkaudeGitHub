@@ -27,7 +27,6 @@ import {
   TextInput,
   Title,
   Tooltip,
-  VisuallyHidden,
 } from '@mantine/core';
 import {
   IconAlertTriangle,
@@ -226,7 +225,8 @@ function List({
     t.workspace.obrashchenieOtkloneno,
   );
   return (
-    <Stack gap={6}>
+    // Отступы — чтобы выбранная карточка (чуть крупнее, с тенью) не обрезалась краями списка.
+    <Stack gap={6} p={6}>
       {rows.length === 0 && (
         <Text c="dimmed" size="sm" ta="center" mt="md">
           {t.workspace.netObrashcheniy}
@@ -234,19 +234,20 @@ function List({
       )}
       {rows.map((c) => {
         const stage = STAGE[stageOf(c) ?? ''];
-        const urgent = !!c.isUrgent && c.status !== 'closed';
+        // Особо важное и срочное (отмечаются при передаче на 2-ю линию) — у оператора просто красным.
+        const hot = (!!c.isUrgent || !!c.isImportant) && c.status !== 'closed';
+        const isSel = selected === c.id;
         return (
           <Card
             key={c.id}
             withBorder
             padding="xs"
             title={stage?.hint}
-            className={urgent ? 'cc-urgent' : undefined}
-            data-urgent={urgent || undefined}
+            className={['cc-item', hot ? 'cc-hot' : '', isSel ? 'cc-selected' : ''].join(' ')}
+            data-urgent={(hot && !!c.isUrgent) || undefined}
+            data-selected={isSel || undefined}
             style={{
               cursor: 'pointer',
-              borderColor: selected === c.id ? 'var(--mantine-color-blue-5)' : undefined,
-              boxShadow: selected === c.id ? '0 0 0 1px var(--mantine-color-blue-5)' : undefined,
               background: stage ? `${stage.bg}, var(--mantine-color-body)` : undefined,
             }}
             onClick={() => onSelect(c.id)}
@@ -280,13 +281,7 @@ function List({
                 </Badge>
               ) : null}
               {c.isUrgent ? (
-                <Badge
-                  size="xs"
-                  color="red"
-                  variant="filled"
-                  className={urgent ? 'cc-urgent-blink' : undefined}
-                  data-testid="badge-urgent"
-                >
+                <Badge size="xs" color="red" variant="filled" data-testid="badge-urgent">
                   {t.workspace.urgentBadge}
                 </Badge>
               ) : null}
@@ -1371,8 +1366,7 @@ function ConversationCard({ conv }: { conv: Row }) {
   const closed = conv.status === 'closed';
   const tagMissing = !!conv.queueRequireTag && !((conv.tagIds as string[]) ?? []).length;
   const ticket = conv.ticket as { id: string; number: number; status: string } | null;
-  const extrasOpen =
-    !!conv.queueRequireTag || !!conv.isUrgent || ((conv.tagIds as string[]) ?? []).length > 0;
+  const extrasOpen = !!conv.queueRequireTag || ((conv.tagIds as string[]) ?? []).length > 0;
   const saveField = (k: string, v: unknown) => {
     const next = { ...vals, [k]: v };
     setVals(next);
@@ -1610,19 +1604,15 @@ function ConversationCard({ conv }: { conv: Row }) {
   return (
     <Stack gap="sm">
       <EscalateModal conv={conv} opened={escalating} onClose={() => setEscalating(false)} />
-      {conv.isUrgent && !closed ? (
-        <Paper
-          p="xs"
-          bg="red.6"
-          c="white"
-          className="cc-urgent"
-          data-testid="urgent-banner"
-          style={{ border: '1px solid var(--mantine-color-red-7)' }}
-        >
+      {(conv.isUrgent || conv.isImportant) && !closed ? (
+        <Paper p="xs" bg="red.0" c="red.8" className="cc-hot" data-testid="urgent-banner">
           <Group gap={6} wrap="nowrap">
-            <IconAlertTriangle size={18} className="cc-urgent-blink" />
+            <IconAlertTriangle size={18} />
             <Text size="sm" fw={700}>
-              {t.workspace.urgentBanner}
+              {[conv.isImportant && t.workspace.osoboVazhnoe2, conv.isUrgent && t.workspace.srochnoe2]
+                .filter(Boolean)
+                .join(' · ')}
+              {t.workspace.hotFor2nd}
             </Text>
           </Group>
         </Paper>
@@ -1713,6 +1703,29 @@ function ConversationCard({ conv }: { conv: Row }) {
             onChange={(e) => setDisp(e.currentTarget.checked ? String(escalateDisp.id) : null)}
             data-testid="escalate-toggle"
           />
+          {/* «Особо важное» и «Срочное» — для 2-й линии: оператор отмечает их при передаче. */}
+          <Collapse in={isEscalate} transitionDuration={220}>
+            <Group mt="xs" gap="lg" className={isEscalate ? 'cc-reveal' : undefined}>
+              <Tooltip label={t.workspace.stavitsyaAvtomaticheskiPoTeme}>
+                <Switch
+                  size="sm"
+                  color="red"
+                  label={t.workspace.osoboVazhnoe2}
+                  checked={!!conv.isImportant}
+                  onChange={(e) => upd.mutate({ isImportant: e.currentTarget.checked })}
+                  data-testid="esc-important"
+                />
+              </Tooltip>
+              <Switch
+                size="sm"
+                color="red"
+                label={t.workspace.srochnoe2}
+                checked={!!conv.isUrgent}
+                onChange={(e) => upd.mutate({ isUrgent: e.currentTarget.checked })}
+                data-testid="esc-urgent"
+              />
+            </Group>
+          </Collapse>
         </Paper>
       )}
       <Paper withBorder p="xs" data-testid="topic-fields">
@@ -1737,44 +1750,20 @@ function ConversationCard({ conv }: { conv: Row }) {
       <Accordion variant="contained" defaultValue={extrasOpen ? 'extra' : null} chevronPosition="left">
         <Accordion.Item value="extra">
           <Accordion.Control py={4}>
-            <Text size="sm">
-              {t.workspace.stepExtra}
-              {conv.isImportant ? ' · ❗' : ''}
-              {conv.isUrgent ? ` · ${t.workspace.srochnoe2}` : ''}
-            </Text>
+            <Text size="sm">{t.workspace.stepExtra}</Text>
           </Accordion.Control>
           <Accordion.Panel>
-            <Stack gap={6}>
-              <MultiSelect
-                size="xs"
-                label={t.workspace.tegi2}
-                withAsterisk={!!conv.queueRequireTag}
-                description={conv.queueRequireTag ? t.workspace.vEtoyOcherediTeg : undefined}
-                data={options(tags.data)}
-                value={(conv.tagIds as string[]) ?? []}
-                onChange={(v) => upd.mutate({ tagIds: v })}
-                disabled={closed}
-                data-testid="tags"
-              />
-              <Group>
-                <Tooltip label={t.workspace.stavitsyaAvtomaticheskiPoTeme}>
-                  <Switch
-                    size="xs"
-                    label={t.workspace.osoboVazhnoe2}
-                    checked={!!conv.isImportant}
-                    onChange={(e) => upd.mutate({ isImportant: e.currentTarget.checked })}
-                    disabled={closed}
-                  />
-                </Tooltip>
-                <Switch
-                  size="xs"
-                  label={t.workspace.srochnoe2}
-                  checked={!!conv.isUrgent}
-                  onChange={(e) => upd.mutate({ isUrgent: e.currentTarget.checked })}
-                  disabled={closed}
-                />
-              </Group>
-            </Stack>
+            <MultiSelect
+              size="xs"
+              label={t.workspace.tegi2}
+              withAsterisk={!!conv.queueRequireTag}
+              description={conv.queueRequireTag ? t.workspace.vEtoyOcherediTeg : undefined}
+              data={options(tags.data)}
+              value={(conv.tagIds as string[]) ?? []}
+              onChange={(v) => upd.mutate({ tagIds: v })}
+              disabled={closed}
+              data-testid="tags"
+            />
           </Accordion.Panel>
         </Accordion.Item>
       </Accordion>
@@ -2088,16 +2077,6 @@ export function WorkspacePage() {
   const [callback, setCallback] = useState(false);
   const qc = useQueryClient();
   const rt = useRealtime(true);
-  // «Нет связи» — только если связи нет дольше нескольких секунд (при входе и коротких переподключениях не мигает).
-  const [rtOfflineLong, setRtOfflineLong] = useState(false);
-  useEffect(() => {
-    if (rt.connected) {
-      setRtOfflineLong(false);
-      return;
-    }
-    const id = setTimeout(() => setRtOfflineLong(true), 5000);
-    return () => clearTimeout(id);
-  }, [rt.connected]);
   const conv = useQuery({
     queryKey: [`/conversations/${selected}`],
     queryFn: () => get<Row>(`/conversations/${selected}`),
@@ -2347,37 +2326,6 @@ export function WorkspacePage() {
                   </Popover.Dropdown>
                 </Popover>
               )}
-              {/* Связь с сервером для мгновенных обновлений: есть — маленькая зелёная точка, нет — заметная плашка. */}
-              {rt.connected || !rtOfflineLong ? (
-                <Tooltip label={rt.connected ? t.workspace.onlayn : t.workspace.rtConnecting}>
-                  <Box
-                    w={8}
-                    h={8}
-                    style={{
-                      borderRadius: '50%',
-                      flex: 'none',
-                      background: `var(--mantine-color-${rt.connected ? 'green' : 'gray'}-6)`,
-                    }}
-                    data-testid="rt-status"
-                  >
-                    <VisuallyHidden>
-                      {rt.connected ? t.workspace.onlayn : t.workspace.rtConnecting}
-                    </VisuallyHidden>
-                  </Box>
-                </Tooltip>
-              ) : (
-                <Tooltip label={t.workspace.rtOfflineHint} multiline w={280} withArrow>
-                  <Badge
-                    color="red"
-                    variant="filled"
-                    size="sm"
-                    style={{ flex: 'none' }}
-                    data-testid="rt-status"
-                  >
-                    {t.workspace.rtOffline}
-                  </Badge>
-                </Tooltip>
-              )}
             </Group>
             <ScrollArea style={{ flex: 1 }} type="auto" offsetScrollbars>
               {secondLine ? (
@@ -2449,7 +2397,7 @@ export function WorkspacePage() {
                       {String(conv.data.contactName)}
                     </Text>
                     {conv.data.isUrgent && conv.data.status !== 'closed' ? (
-                      <Badge color="red" variant="filled" size="sm" className="cc-urgent-blink">
+                      <Badge color="red" variant="filled" size="sm">
                         {t.workspace.urgentBadge}
                       </Badge>
                     ) : null}

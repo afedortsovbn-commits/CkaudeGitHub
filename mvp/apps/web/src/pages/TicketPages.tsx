@@ -365,21 +365,22 @@ function TicketCard({ t: tk, selected, onOpen }: { t: Row; selected?: boolean; o
   const overdue = !!tk.isOverdue;
   const c = dim ? 'dimmed' : undefined;
   const fresh = !!tk.isNew;
+  // Особо важное и срочное (отметил оператор при передаче) — мерцает, пока ответственный не закрыл его.
+  const hot = (!!tk.isImportant || !!tk.isUrgent) && !dim;
   return (
     <Card
       withBorder
       padding="xs"
       onClick={() => onOpen(tk.id)}
-      className={tk.isUrgent && !dim ? 'cc-urgent' : undefined}
+      // Выбранное — «приподнято»: чуть крупнее и с тенью, как будто впереди остальных.
+      className={['cc-item', hot ? 'cc-urgent' : '', selected ? 'cc-selected' : ''].join(' ')}
       style={{
         cursor: 'pointer',
         borderLeft: `4px solid ${overdue ? 'var(--mantine-color-red-7)' : mine === 'responsible' ? 'var(--mantine-color-blue-6)' : mine === 'curator' ? 'var(--mantine-color-gray-5)' : 'transparent'}`,
         background: deadlineColor(tk),
-        // Выбранное — заметно: толстая синяя рамка и тень.
-        outline: selected ? '3px solid var(--mantine-color-blue-6)' : undefined,
-        boxShadow: selected ? '0 2px 10px rgba(34, 139, 230, 0.45)' : undefined,
         opacity: dim && !selected ? 0.75 : undefined,
       }}
+      data-hot={hot || undefined}
       data-testid="ticket-item"
       data-selected={selected || undefined}
       data-overdue={overdue || undefined}
@@ -391,7 +392,12 @@ function TicketCard({ t: tk, selected, onOpen }: { t: Row; selected?: boolean; o
             №{String(tk.number)}
           </Text>
           {tk.isImportant ? (
-            <Badge color={dim ? 'gray' : 'red'} size="xs" variant={dim ? 'outline' : 'filled'}>
+            <Badge
+              color={dim ? 'gray' : 'red'}
+              size="xs"
+              variant={dim ? 'outline' : 'filled'}
+              className={hot ? 'cc-urgent-blink' : undefined}
+            >
               {t.tickets.osoboVazhnoe}
             </Badge>
           ) : null}
@@ -497,7 +503,7 @@ export function TicketList({ view, extra = '' }: { view: string; extra?: string 
   const [important, setImportant] = useState(false);
   const list = useList(`/tickets?view=${view}${extra}${important ? '&important=true' : ''}`);
   return (
-    <Stack gap={6}>
+    <Stack gap={6} p={6}>
       <Group justify="flex-end">
         <ImportantToggle value={important} onChange={setImportant} />
       </Group>
@@ -646,7 +652,7 @@ export function CabinetPage({ inTabs = false }: { inTabs?: boolean }) {
           />
         </Box>
         <ScrollBlock h={`calc(100vh - ${200 + tabsH}px)`} testId="ticket-list-scroll">
-          <Stack gap={6} p={4} data-testid="ticket-list">
+          <Stack gap={6} p={8} data-testid="ticket-list">
             {(list.data ?? []).length === 0 && (
               <Text c="dimmed" size="sm">
                 {t.tickets.netTiketov}

@@ -417,9 +417,13 @@ export class TicketsController {
       }
       if (parts.length) add(`(${parts.join(' OR ')})`, ...vals);
     }
-    // Порядок: просроченные; требующие закрытия (новые, в работе, на доработке); на согласовании; остальные.
+    // Порядок: неоткрытые мной (требующие закрытия); особо важные и срочные (отметил оператор при передаче);
+    // просроченные; требующие закрытия (новые, в работе, на доработке); на согласовании; остальные.
     // Внутри — по дате поступления, свежие сверху.
-    const order = `ORDER BY ${OVERDUE} DESC, (t.status IN ('new', 'in_work', 'rework')) DESC, (t.status = 'approval') DESC,
+    const ACTIVE = `t.status IN ('new', 'in_work', 'rework')`;
+    const order = `ORDER BY (${ACTIVE} AND NOT EXISTS (SELECT 1 FROM ticket_view v WHERE v.ticket_id = t.id AND v.user_id = $1)) DESC,
+                   (${ACTIVE} AND (t.is_important OR c.is_urgent)) DESC,
+                   ${OVERDUE} DESC, (${ACTIVE}) DESC, (t.status = 'approval') DESC,
                    t.created_at DESC, t.number DESC`;
     return { where: where.join(' AND '), params, order };
   }

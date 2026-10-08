@@ -32,6 +32,7 @@ import { StaffMessageInbox } from '../components/StaffMessageInbox';
 import { SoftphoneCall, SoftphoneStatus } from '../components/Softphone';
 import { useRealtime } from '../lib/realtime';
 import { useFocusMode } from '../lib/focus';
+import { ConnectionAlert } from '../components/ConnectionAlert';
 import { softphone } from '../lib/softphone';
 import { useAuth, type Me } from '../lib/auth';
 import { applyRoleFavicon } from '../lib/favicon';
@@ -213,7 +214,7 @@ export function Layout() {
     if (roleKey) applyRoleFavicon(roleKey.split(','));
   }, [roleKey]);
   // Одно общее соединение: колокольчик и рабочее место получают события по нему.
-  useRealtime(!!userId);
+  const rt = useRealtime(!!userId);
   useEffect(() => {
     if (phone && userId) void softphone.start(userId);
     return () => softphone.stop();
@@ -237,7 +238,8 @@ export function Layout() {
       padding="md"
     >
       <AppShell.Header>
-        <Group h="100%" px="md" justify="space-between" wrap="nowrap">
+        <Group h="100%" px="md" justify="space-between" wrap="nowrap" pos="relative">
+          <ConnectionAlert connected={rt.connected} phone={phone} />
           <Group gap="xs" wrap="nowrap">
             <Burger
               opened={menuOpened}
