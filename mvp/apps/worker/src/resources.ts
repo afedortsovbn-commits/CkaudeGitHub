@@ -1,12 +1,20 @@
 import { readFile, statfs } from 'node:fs/promises';
 import { cpus } from 'node:os';
-import { checkBreaks, pruneOutbox, type ResourceProbe, runResourceCheck } from '@cc/domain';
+import {
+  checkBreaks,
+  pruneOutbox,
+  remindTestDeadlines,
+  type ResourceProbe,
+  runResourceCheck,
+} from '@cc/domain';
 import { ensureJobQueue, type JobQueue, type Logger } from '@cc/service-kit';
 import type { Pool } from 'pg';
 
 export const RESOURCE_QUEUE = 'worker.resources';
 export const HOUSEKEEPING_QUEUE = 'worker.housekeeping';
 export const BREAKS_QUEUE = 'worker.breaks';
+/** Напоминания о сроке тестов сотрудников (раз в день после времени ежедневной рассылки). */
+export const TESTS_QUEUE = 'worker.test-deadlines';
 
 /** Замер диска, памяти, подкачки и процессора сервера изнутри контейнера (диск — тот, где данные Docker). */
 export async function probeResources(diskPath = '/'): Promise<ResourceProbe> {
@@ -64,5 +72,12 @@ export class ResourceMonitor {
       if (r.lateStart || r.lateEnd) logger.info(r, 'нарушение перерывов по графику — уведомлены супервизоры');
     });
     await boss.schedule(BREAKS_QUEUE, '* * * * *');
+    // Тесты сотрудников: за 3 дня до срока и каждый день просрочки — сотруднику и супервизорам в колокольчик.
+    await ensureJobQueue(boss, TESTS_QUEUE);
+    await boss.work(TESTS_QUEUE, async () => {
+      const r = await remindTestDeadlines(pool);
+      if (r.operators || r.managers) logger.info(r, 'напоминания о сроке тестов отправлены');
+    });
+    await boss.schedule(TESTS_QUEUE, '*/10 * * * *');
   }
 }

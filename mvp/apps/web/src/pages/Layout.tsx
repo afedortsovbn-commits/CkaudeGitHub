@@ -33,6 +33,7 @@ import { SoftphoneCall, SoftphoneStatus } from '../components/Softphone';
 import { useRealtime } from '../lib/realtime';
 import { useFocusMode } from '../lib/focus';
 import { ConnectionAlert } from '../components/ConnectionAlert';
+import { TestDueBadge } from '../components/TestAttempt';
 import { softphone } from '../lib/softphone';
 import { useAuth, type Me } from '../lib/auth';
 import { applyRoleFavicon } from '../lib/favicon';
@@ -271,6 +272,7 @@ export function Layout() {
             {can('conversations.work') && loc.pathname.startsWith('/workspace') && <AgentStatusMenu />}
           </Group>
           <Group gap="xs" wrap="nowrap">
+            <TestDueBadge />
             {phone && <SoftphoneStatus />}
             <NotificationBell />
             {can('conversations.work') && <BreakReminder />}

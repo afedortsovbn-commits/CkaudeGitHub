@@ -7,7 +7,9 @@ import {
   IconBuildingSkyscraper,
   IconBulb,
   IconCalendarTime,
+  IconCertificate,
   IconChartBar,
+  IconClipboardCheck,
   IconDeviceDesktopAnalytics,
   IconDeviceTv,
   IconFileCode,
@@ -32,6 +34,7 @@ import {
   IconTable,
   IconTemplate,
   IconTransfer,
+  IconTrophy,
   IconUsers,
   IconVolume,
   IconWebhook,
@@ -95,6 +98,13 @@ export const MENU: MenuItem[] = [
     group: 'work',
     icon: IconTemplate,
   },
+  {
+    to: '/my-tests',
+    label: t.tests.navMy,
+    perms: ['conversations.work', 'tickets.work'],
+    group: 'work',
+    icon: IconCertificate,
+  },
   // Контроль и отчёты
   {
     to: '/supervisor',
@@ -116,6 +126,20 @@ export const MENU: MenuItem[] = [
     perms: ['supervisor.monitor'],
     group: 'control',
     icon: IconDeviceTv,
+  },
+  {
+    to: '/ratings',
+    label: t.tests.navRating,
+    perms: ['rating.view'],
+    group: 'control',
+    icon: IconTrophy,
+  },
+  {
+    to: '/tests',
+    label: t.tests.navManage,
+    perms: ['tests.manage'],
+    group: 'control',
+    icon: IconClipboardCheck,
   },
   { to: '/reports', label: t.layout.otchety, perms: ['reports.view'], group: 'control', icon: IconChartBar },
   {

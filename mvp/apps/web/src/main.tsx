@@ -41,6 +41,9 @@ import { AssistProvidersPage, AutoRepliesPage, KnowledgePage, TemplatesPage } fr
 import { ObjectSyncPage } from './pages/ObjectSyncPage';
 import { WallboardPage } from './pages/WallboardPage';
 import { StaffMessagesPage } from './pages/StaffMessagesPage';
+import { TestsPage } from './pages/TestsPage';
+import { MyTestsPage } from './pages/MyTestsPage';
+import { RatingsPage } from './pages/RatingsPage';
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } },
@@ -72,6 +75,9 @@ function App() {
         <Route path="resources" element={<ResourcesPage />} />
         <Route path="schedule" element={<SchedulePage />} />
         <Route path="staff-messages" element={<StaffMessagesPage />} />
+        <Route path="tests" element={<TestsPage />} />
+        <Route path="my-tests" element={<MyTestsPage />} />
+        <Route path="ratings" element={<RatingsPage />} />
         <Route path="tickets" element={<SecondLinePage />} />
         <Route path="tickets/:id" element={<TicketPage />} />
         {/* Бывший раздел «Контроль 2-й линии» — теперь вкладки раздела «2-я линия» (старые ссылки работают). */}

@@ -27,6 +27,7 @@ import { ReportsController } from './reports/reports.controller';
 import { ReleaseController } from './release/release.controller';
 import { NotificationsController } from './tickets/notifications.controller';
 import { StaffMessagesController } from './org/staff-messages.controller';
+import { TestsController } from './org/tests.controller';
 import { TicketsController } from './tickets/tickets.controller';
 import { ConfigController } from './config/config.controller';
 import { DocsController } from './ext/docs.controller';
@@ -60,6 +61,7 @@ export class AppModule {
         TicketsController,
         NotificationsController,
         StaffMessagesController,
+        TestsController,
         ExtController,
         IntegrationsAdminController,
         ConfigController,
