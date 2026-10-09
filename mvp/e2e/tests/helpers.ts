@@ -84,7 +84,10 @@ export function totpCode(secretB32: string, shift = 0): string {
 
 /** Статус оператора (меню в шапке): «В работе», «Перерыв» (первая причина), «Завершить смену». */
 export async function setAgentStatus(page: Page, status: 'ready' | 'break' | 'offline') {
-  await page.getByTestId('agent-status').click();
+  const btn = page.getByTestId('agent-status');
+  await expect(btn).toHaveAttribute('data-status', /.+/);
+  if (status !== 'break' && (await btn.getAttribute('data-status')) === status) return;
+  await btn.click();
   await page.getByTestId(status === 'break' ? 'agent-status-break-0' : `agent-status-${status}`).click();
 }
 

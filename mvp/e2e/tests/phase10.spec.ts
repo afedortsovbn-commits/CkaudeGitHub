@@ -64,7 +64,7 @@ async function handle(
   // «Особо важное» отмечает оператор (переключатель — в блоке передачи на 2-ю линию).
   if (important) {
     await op.getByTestId('escalate-toggle').click({ force: true });
-    await expect(op.getByTestId('esc-important')).toBeVisible();
+    await expect(op.getByTestId('escalate-toggle-box').getByText('Особо важное')).toBeVisible();
     await op.getByTestId('esc-important').click({ force: true });
     await expect(op.getByTestId('esc-important')).toBeChecked();
     await op.getByTestId('escalate-toggle').click({ force: true });
