@@ -375,9 +375,14 @@ function TestsTab() {
                 </Table.Td>
                 <Table.Td>
                   {r.avgScore !== null ? (
-                    <Badge color={scoreColor(Number(r.avgScore))} variant="light">
-                      {String(r.avgScore)} % · {String(r.attempts)}
-                    </Badge>
+                    <Group gap={4} wrap="nowrap">
+                      <Badge color={scoreColor(Number(r.avgScore))} variant="light" style={{ flex: 'none' }}>
+                        {String(r.avgScore)} %
+                      </Badge>
+                      <Text size="xs" c="dimmed">
+                        ×{String(r.attempts)}
+                      </Text>
+                    </Group>
                   ) : (
                     '—'
                   )}

@@ -138,9 +138,14 @@ export function AttemptsTable({ rows, onOpen }: { rows: Row[]; onOpen(id: string
             </Table.Td>
             <Table.Td>{t.tests.tryNo(Number(r.tryNo))}</Table.Td>
             <Table.Td>
-              <Badge color={scoreColor(Number(r.score))} variant="light">
-                {String(r.score)} % · {String(r.correct)}/{String(r.total)}
-              </Badge>
+              <Group gap={4} wrap="nowrap">
+                <Badge color={scoreColor(Number(r.score))} variant="light" style={{ flex: 'none' }}>
+                  {String(r.score)} %
+                </Badge>
+                <Text size="xs" c="dimmed">
+                  {String(r.correct)}/{String(r.total)}
+                </Text>
+              </Group>
             </Table.Td>
             <Table.Td>
               <Text size="sm" c={r.passed ? 'green.8' : 'red.7'}>
