@@ -1361,7 +1361,7 @@ function ConversationCard({ conv }: { conv: Row }) {
     const x = byId.get(String(conv.topicId ?? ''));
     if (!x) return '';
     const parent = x.parentId ? byId.get(String(x.parentId)) : undefined;
-    return `${parent ? `${String(parent.name)} › ` : ''}${String(x.name)}${x.isImportant ? ' ❗' : ''}`;
+    return `${parent ? `${String(parent.name)} › ` : ''}${String(x.name)}`;
   })();
   const closed = conv.status === 'closed';
   const tagMissing = !!conv.queueRequireTag && !((conv.tagIds as string[]) ?? []).length;
@@ -1706,16 +1706,14 @@ function ConversationCard({ conv }: { conv: Row }) {
           {/* «Особо важное» и «Срочное» — для 2-й линии: оператор отмечает их при передаче. */}
           <Collapse in={isEscalate} transitionDuration={220}>
             <Group mt="xs" gap="lg" className={isEscalate ? 'cc-reveal' : undefined}>
-              <Tooltip label={t.workspace.stavitsyaAvtomaticheskiPoTeme}>
-                <Switch
-                  size="sm"
-                  color="red"
-                  label={t.workspace.osoboVazhnoe2}
-                  checked={!!conv.isImportant}
-                  onChange={(e) => upd.mutate({ isImportant: e.currentTarget.checked })}
-                  data-testid="esc-important"
-                />
-              </Tooltip>
+              <Switch
+                size="sm"
+                color="red"
+                label={t.workspace.osoboVazhnoe2}
+                checked={!!conv.isImportant}
+                onChange={(e) => upd.mutate({ isImportant: e.currentTarget.checked })}
+                data-testid="esc-important"
+              />
               <Switch
                 size="sm"
                 color="red"

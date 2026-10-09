@@ -123,8 +123,8 @@ export async function enqueueFromIvr(
   );
   const topic = o.topicId
     ? (
-        await tx.query<{ path: string[]; is_important: boolean; name: string }>(
-          `SELECT path, is_important, name FROM topic WHERE id = $1 AND is_active`,
+        await tx.query<{ path: string[]; name: string }>(
+          `SELECT path, name FROM topic WHERE id = $1 AND is_active`,
           [o.topicId],
         )
       ).rows[0]
@@ -134,16 +134,9 @@ export async function enqueueFromIvr(
     `UPDATE conversation SET status = 'queued', queue_id = $2, assignee_id = NULL, priority = $3, escalated = false,
        queued_at = now(), offered_at = NULL,
        topic_id = COALESCE($4, topic_id), topic_path = COALESCE($5, topic_path),
-       is_important = is_important OR $6, version = version + 1, updated_at = now()
+       version = version + 1, updated_at = now()
      WHERE id = $1`,
-    [
-      c.conversation_id,
-      o.queueId,
-      priority,
-      topic ? o.topicId : null,
-      topic?.path ?? null,
-      !!topic?.is_important,
-    ],
+    [c.conversation_id, o.queueId, priority, topic ? o.topicId : null, topic?.path ?? null],
   );
   await tx.query(
     `UPDATE call SET state = 'queued', agent_channel = NULL, on_hold = false, version = version + 1, updated_at = now()

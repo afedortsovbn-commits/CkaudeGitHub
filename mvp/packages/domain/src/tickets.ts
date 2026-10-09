@@ -380,15 +380,6 @@ async function notifyUi(
   });
 }
 
-/** Тема (или её предок) помечена «особо важной» — отметка ставится автоматически (M-CARD-08). */
-async function topicImportant(db: Db, topicPath: string[]): Promise<boolean> {
-  const { rows } = await db.query<{ v: boolean }>(
-    'SELECT COALESCE(bool_or(is_important), false) AS v FROM topic WHERE id = ANY($1)',
-    [topicPath],
-  );
-  return rows[0]!.v;
-}
-
 async function actorName(db: Db, id: string | null): Promise<string> {
   if (!id) return '';
   const { rows } = await db.query<{ full_name: string }>('SELECT full_name FROM app_user WHERE id = $1', [
@@ -485,12 +476,9 @@ export async function createTicket(tx: PoolClient, i: CreateTicketInput): Promis
   const due = i.dueDate ?? (await defaultDueDate(tx, topic.path, now));
   if (due < localDate(now, tz)) throw bad('Срок ответа не может быть в прошлом');
 
-  // «Особо важное» (M-CARD-08, M-TKT-02): автоматически по теме тикета; вручную можно отметить тикет по любой
-  // другой теме — явным флагом формы или перенесённой ручной отметкой обращения. Автоматическую не снять.
-  const auto = await topicImportant(tx, topic.path);
-  const manualMark = i.isImportant ?? (conv.important_manual ? conv.is_important : false);
-  const important = auto || manualMark;
-  const manual = !auto && manualMark;
+  // «Особо важное» (M-TKT-02) отмечает сотрудник, не тема: флаг формы или отметка оператора на обращении.
+  const important = i.isImportant ?? conv.is_important;
+  const manual = important;
 
   const id = newId();
   await tx.query(
@@ -949,20 +937,17 @@ export async function redirectTicket(
     throw bad('По матрице ответственных не найдено — выберите ответственного вручную');
   await assertAssignable(tx, [...responsibleIds, ...curatorIds]);
 
-  const auto = await topicImportant(tx, topicPath);
-  const important = auto || (t.important_manual && t.is_important);
   await tx.query(
     `UPDATE ticket SET enterprise_department_id = $2, enterprise_id = $3, department_id = $4, topic_id = $5, topic_path = $6,
-            is_important = $7, version = version + 1, updated_at = now() WHERE id = $1`,
-    [id, edId, enterpriseId, departmentId, topicId, topicPath, important],
+            version = version + 1, updated_at = now() WHERE id = $1`,
+    [id, edId, enterpriseId, departmentId, topicId, topicPath],
   );
   const change = await setAssignees(tx, id, { responsibleIds, curatorIds }, actorId, 'redirect');
   if (dimsChanged)
     await tx.query(
       `UPDATE conversation SET topic_id = $2, topic_path = $3, enterprise_id = $4, department_id = $5,
-              is_important = CASE WHEN important_manual THEN is_important ELSE $6 END,
               version = version + 1, updated_at = now() WHERE id = $1`,
-      [t.conversation_id, topicId, topicPath, enterpriseId, departmentId, auto],
+      [t.conversation_id, topicId, topicPath, enterpriseId, departmentId],
     );
   await addComment(tx, id, actorId, 'redirect', comment);
   await transition(tx, t, actorId, 'redirected', t.status, t.status, {
@@ -1046,14 +1031,9 @@ export async function reassignTicket(
     if (i.dueDate < localDate(i.now ?? new Date(), tz)) throw bad('Срок ответа не может быть в прошлом');
     set('due_date', i.dueDate);
   }
-  if (i.isImportant !== undefined) {
-    // Автоматическую отметку по теме не снять; вручную — отметить тикет по любой другой теме.
-    const auto = await topicImportant(tx, t.topic_path);
-    const important = auto || i.isImportant;
-    if (important !== t.is_important) {
-      set('is_important', important);
-      set('important_manual', !auto && important);
-    }
+  if (i.isImportant !== undefined && i.isImportant !== t.is_important) {
+    set('is_important', i.isImportant);
+    set('important_manual', i.isImportant);
   }
   const change = await setAssignees(tx, id, { responsibleIds, curatorIds }, actorId, 'reassigned');
   if (!change.changed && !sets.length) throw bad('Нечего менять');

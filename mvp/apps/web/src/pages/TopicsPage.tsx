@@ -21,7 +21,6 @@ import { t } from '../lib/i18n';
 const TOPIC_FIELDS = [
   { key: 'name', label: t.topics.nazvanie, required: true },
   { key: 'code', label: t.topics.kod },
-  { key: 'isImportant', label: t.topics.osoboVazhnayaBystryyFiltr, type: 'switch' as const },
   {
     key: 'defaultResponseDays',
     label: t.topics.srokOtveta2Y,
@@ -214,11 +213,6 @@ export function TopicsPage() {
                 <Text size="xs" c="dimmed">
                   ({kids})
                 </Text>
-              ) : null}
-              {r.isImportant ? (
-                <Badge color="red" size="xs">
-                  {t.topics.osoboVazhnaya}
-                </Badge>
               ) : null}
               {r.defaultResponseDays ? (
                 <Badge variant="outline" size="xs">

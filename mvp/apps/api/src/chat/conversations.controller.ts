@@ -486,9 +486,8 @@ export class ConversationsController {
         vals.push(v);
         sets.push(`${col} = $${vals.length}`);
       };
-      let manual = c.important_manual;
+      // «Особо важное» ставит только сотрудник (не тема): оператор при передаче на 2-ю линию.
       if (b.isImportant !== undefined) {
-        manual = true;
         set('important_manual', true);
         set('is_important', b.isImportant);
       }
@@ -500,18 +499,9 @@ export class ConversationsController {
           if (!t) throw notFound('Тема');
           set('topic_id', b.topicId);
           set('topic_path', t.path);
-          if (!manual) {
-            const imp = await one<{ v: boolean }>(
-              tx,
-              'SELECT bool_or(is_important) AS v FROM topic WHERE id = ANY($1)',
-              [t.path],
-            );
-            set('is_important', !!imp?.v);
-          }
         } else {
           set('topic_id', null);
           set('topic_path', []);
-          if (!manual) set('is_important', false);
         }
       }
       if (b.enterpriseId !== undefined) set('enterprise_id', b.enterpriseId);

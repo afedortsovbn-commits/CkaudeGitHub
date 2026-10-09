@@ -42,10 +42,9 @@ test.describe.serial('Ф1: администрирование оргструкт
     await nav(page, 'Темы и поля');
     await page.getByRole('button', { name: 'Добавить тему' }).click();
     await dlg.getByLabel('Название').fill(TOPIC);
-    await dlg.getByLabel(/Особо важная/).check();
     await dlg.getByRole('button', { name: 'Создать' }).click();
     const topicRow = page.getByTestId(`topic-${TOPIC}`);
-    await expect(topicRow.getByText('особо важная')).toBeVisible();
+    await expect(topicRow).toBeVisible();
     await topicRow.getByTitle('Добавить подтему').click();
     await dlg.getByLabel('Название').fill(SUB);
     await dlg.getByLabel(/Срок ответа/).fill('5');

@@ -39,7 +39,14 @@ async function choose(page: Page, testId: string, option: string) {
 }
 
 /** Оператор берёт обращение из очереди, указывает предприятие и тему и закрывает «Решено на 1-й линии». */
-async function handle(op: Page, client: string, enterprise: string, topic: string, station?: string) {
+async function handle(
+  op: Page,
+  client: string,
+  enterprise: string,
+  topic: string,
+  station?: string,
+  important = false,
+) {
   await listView(op, 'queue');
   const item = op.getByTestId('conv-item').filter({ hasText: client });
   await expect(item).toBeVisible({ timeout: 15_000 });
@@ -53,6 +60,13 @@ async function handle(op: Page, client: string, enterprise: string, topic: strin
   if (station) {
     await op.getByRole('textbox', { name: 'Номер АЗС' }).fill(station);
     await op.getByRole('textbox', { name: 'Номер АЗС' }).blur();
+  }
+  // «Особо важное» отмечает оператор (переключатель — в блоке передачи на 2-ю линию).
+  if (important) {
+    await op.getByTestId('escalate-toggle').click({ force: true });
+    await op.getByTestId('esc-important').click({ force: true });
+    await expect(op.getByTestId('esc-important')).toBeChecked();
+    await op.getByTestId('escalate-toggle').click({ force: true });
   }
   await op.getByTestId('reply').fill('Здравствуйте! Вопрос решён.');
   await op.getByTestId('send').click();
@@ -120,8 +134,8 @@ test.describe.serial('Ф10: упрощённая аналитика', () => {
     const op = await as(browser, 'operator1@demo.local');
     await nav(op, 'Рабочее место оператора');
     await handle(op, south, 'Предприятие «Юг»', 'Сайт');
-    // Тема особо важная — обращение помечается автоматически.
-    await handle(op, north, 'Предприятие «Север»', 'Жалобы на персонал АЗС ❗', '12');
+    // Оператор отмечает обращение «Особо важное».
+    await handle(op, north, 'Предприятие «Север»', 'Жалобы на персонал АЗС', '12', true);
 
     // Администратор (область — всё) видит оба предприятия.
     const admin = await as(browser, ADMIN.email, ADMIN.password);
@@ -140,7 +154,7 @@ test.describe.serial('Ф10: упрощённая аналитика', () => {
     await sup.getByTestId('report-filter-enterpriseId').click();
     await sup.getByRole('option', { name: 'Предприятие «Юг»', exact: true }).click(); // снять выбор
 
-    // «Особо важные»: только обращения по особо важным темам.
+    // «Особо важные»: только отмеченные оператором обращения.
     await choose(sup, 'report-group', 'по темам');
     await expect(sup.getByTestId('report-table')).toContainText('Жалобы на персонал АЗС');
     await sup.getByText('Особо важные', { exact: true }).click();

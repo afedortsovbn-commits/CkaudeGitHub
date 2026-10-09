@@ -774,10 +774,10 @@ describe.skipIf(!ADMIN_URL)('Вторая линия Ф8 (интеграция)'
     expect(msgs.some((m: { body: string }) => m.body === 'А что с моим вопросом?')).toBe(false);
   });
 
-  it('важность по теме, некорректная дата, уведомления участникам, отчёт по области, письма уволенному не уходят', async () => {
+  it('важность ставит сотрудник (не тема), отметки на 2-й линии, некорректная дата, уведомления участникам, отчёт по области, письма уволенному не уходят', async () => {
     const staff = (await one(`SELECT id FROM topic WHERE name = 'Жалобы на персонал АЗС'`)).id as string;
     const base = { enterpriseId: id.e1, departmentId: id.ops, summary: 'Суть', responsibleIds: [id.r1] };
-    // Обращение по особо важной теме (отметка автоматическая), тикет — по обычной: отметка не переносится.
+    // Тема сама не делает обращение «особо важным» — отметку ставит только сотрудник.
     const c1 = await conversation('op1', staff);
     const plain = await call('POST', `/conversations/${c1}/escalate`, 'op1', { ...base, topicId: id.fuel });
     expect(plain.status, JSON.stringify(plain.body)).toBe(200);
@@ -797,21 +797,22 @@ describe.skipIf(!ADMIN_URL)('Вторая линия Ф8 (интеграция)'
       curatorIds: [id.c1],
     });
     expect(marked.body.isImportant).toBe(true);
-    // Автоматическую отметку особо важной темы не снять.
-    const c3 = await conversation('op1', staff);
-    const imp = await call('POST', `/conversations/${c3}/escalate`, 'op1', {
-      ...base,
-      departmentId: id.client,
-      topicId: staff,
+    // Отметки на 2-й линии ставят оператор-создатель, супервизор, администратор; ответственный — нет.
+    expect((await call('POST', `/tickets/${marked.body.id}/flags`, 'r1', { isUrgent: true })).status).toBe(
+      403,
+    );
+    const flagged = await call('POST', `/tickets/${plain.body.id}/flags`, 'op1', {
+      isImportant: true,
+      isUrgent: true,
     });
-    expect(imp.body.isImportant).toBe(true);
-    const off = await call('POST', `/tickets/${imp.body.id}/reassign`, 'op1', {
-      version: imp.body.version,
-      isImportant: false,
-    });
-    expect(off.status).toBe(400);
-    expect((await one('SELECT is_important FROM ticket WHERE id = $1', [imp.body.id])).is_important).toBe(
-      true,
+    expect(flagged.status, JSON.stringify(flagged.body)).toBe(200);
+    expect(flagged.body.isImportant).toBe(true);
+    expect(flagged.body.conversation.isUrgent).toBe(true);
+    expect(flagged.body.can.flags).toBe(true);
+    const unflagged = await call('POST', `/tickets/${plain.body.id}/flags`, 'op1', { isImportant: false });
+    expect(unflagged.body.isImportant).toBe(false);
+    expect((await one('SELECT is_important FROM ticket WHERE id = $1', [plain.body.id])).is_important).toBe(
+      false,
     );
 
     // Уведомления участникам (M-TKT-12): взят в работу — создателю; снят с тикета — снятому.

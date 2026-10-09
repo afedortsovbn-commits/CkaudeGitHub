@@ -79,18 +79,20 @@ test.describe.serial('Ф8: вторая линия', () => {
     await client.w.getByTestId('cc-input').fill('Сотрудник АЗС №12 нагрубил');
     await client.w.getByTestId('cc-send').click();
 
-    // Оператор берёт обращение, классифицирует (тема особо важная — срок 10 дней), выбирает «Передать на 2-ю линию».
+    // Оператор берёт обращение, классифицирует (срок темы — 10 дней), выбирает «Передать на 2-ю линию» и отмечает «Особо важное».
     const op = await as(browser, 'operator1@demo.local');
     await nav(op, 'Рабочее место оператора');
     await listView(op, 'queue');
     const item = op.getByTestId('conv-item').filter({ hasText: CLIENT });
     await expect(item).toBeVisible({ timeout: 15_000 });
     await item.getByTestId('take').click();
-    await select(op, 'topic', 'Жалобы на персонал АЗС ❗');
+    await select(op, 'topic', 'Жалобы на персонал АЗС');
     await op.getByRole('textbox', { name: 'Номер АЗС' }).fill('12');
     await op.getByRole('textbox', { name: 'Номер АЗС' }).blur();
     await op.getByTestId('disposition').click();
     await op.getByRole('option', { name: 'Передать на 2-ю линию' }).click();
+    await op.getByTestId('esc-important').click({ force: true });
+    await expect(op.getByTestId('esc-important')).toBeChecked();
     await op.getByTestId('escalate').click();
 
     const form = op.getByTestId('escalate-form');

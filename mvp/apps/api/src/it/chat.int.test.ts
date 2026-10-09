@@ -81,7 +81,7 @@ describe.skipIf(!ADMIN_URL)('Обращения Ф2 (интеграция)', () 
     const patched = await t.call('PATCH', `/api/v1/conversations/${conversationId}`, op, {
       topicId: staff.id,
     });
-    expect(patched.body.isImportant).toBe(true); // тема помечена «особо важная» → автоматически
+    expect(patched.body.isImportant).toBe(false); // тема не ставит «особо важное» — его отмечает сотрудник
     const missing = await t.call('POST', `/api/v1/conversations/${conversationId}/close`, op, {
       dispositionId: disp,
     });

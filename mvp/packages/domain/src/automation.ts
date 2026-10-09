@@ -475,8 +475,8 @@ async function handoff(
   );
   const topic = a.topicId
     ? (
-        await tx.query<{ path: string[]; is_important: boolean; name: string }>(
-          `SELECT path, is_important, name FROM topic WHERE id = $1 AND is_active`,
+        await tx.query<{ path: string[]; name: string }>(
+          `SELECT path, name FROM topic WHERE id = $1 AND is_active`,
           [a.topicId],
         )
       ).rows[0]
@@ -485,7 +485,7 @@ async function handoff(
     `UPDATE conversation SET status = 'queued', queue_id = $2, priority = $3, escalated = false, queued_at = now(),
        offered_at = NULL, bot_wake_at = NULL,
        topic_id = COALESCE($4, topic_id), topic_path = COALESCE($5, topic_path),
-       is_important = is_important OR $6, version = version + 1, updated_at = now()
+       version = version + 1, updated_at = now()
      WHERE id = $1`,
     [
       c.id,
@@ -493,7 +493,6 @@ async function handoff(
       base + a.priority + (seg.rows[0]?.boost ?? 0),
       topic ? a.topicId : null,
       topic?.path ?? null,
-      !!topic?.is_important,
     ],
   );
   c.status = 'queued';

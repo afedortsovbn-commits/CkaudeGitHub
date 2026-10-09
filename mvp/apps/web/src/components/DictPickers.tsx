@@ -7,7 +7,7 @@ import { type TreeNode, TreePicker } from './TreePicker';
 const byOrder = (a: Row, b: Row) =>
   Number(a.sortOrder ?? 0) - Number(b.sortOrder ?? 0) || String(a.name).localeCompare(String(b.name), 'ru');
 
-/** Дерево тем: тема → подтемы (и глубже). Особо важные помечены «❗». */
+/** Дерево тем: тема → подтемы (и глубже). */
 export function useTopicTree(): TreeNode[] {
   const topics = useList('/topics');
   return useMemo(() => {
@@ -20,7 +20,7 @@ export function useTopicTree(): TreeNode[] {
     const build = (parent: string | null): TreeNode[] =>
       (kids.get(parent) ?? []).map((r) => ({
         value: String(r.id),
-        label: `${String(r.name)}${r.isImportant ? ' ❗' : ''}`,
+        label: String(r.name),
         children: build(String(r.id)),
       }));
     return build(null);

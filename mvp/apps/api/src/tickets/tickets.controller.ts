@@ -1,8 +1,10 @@
 import { Body, Controller, Get, HttpCode, Inject, Param, Post, Query, Req, Res } from '@nestjs/common';
 import { inScope, scopeFilter, type Principal } from '@cc/auth';
-import { newId } from '@cc/contracts';
+import { CONVERSATION_EVENTS, newId } from '@cc/contracts';
 import {
   applyMatrixToOpenTickets,
+  emitConversation,
+  loadRef,
   approveTicket,
   canApprove,
   closeTicketByResponsible,
@@ -121,6 +123,10 @@ const DeclineBody = z.object({ comment: z.string().max(5000).default('') }).stri
 const EditBody = z
   .object({ version, summary: z.string().trim().min(1, 'Суть не может быть пустой').max(5000) })
   .strict();
+const FlagsBody = z
+  .object({ isImportant: z.boolean().optional(), isUrgent: z.boolean().optional() })
+  .strict()
+  .refine((b) => b.isImportant !== undefined || b.isUrgent !== undefined, 'Нечего менять');
 const CommentBody = z
   .object({ body: z.string().max(10000).default(''), attachmentIds: z.array(uuid).max(20).default([]) })
   .strict();
@@ -874,6 +880,52 @@ export class TicketsController {
     return this.detail(p, id);
   }
 
+  /**
+   * «Особо важное» и «Срочное» на обращении 2-й линии — их ставит сотрудник (не тема): оператор, передавший
+   * обращение, супервизор или администратор. Срочность хранится на обращении 1-й линии (видна в обоих списках).
+   */
+  @Post('tickets/:id/flags')
+  @HttpCode(200)
+  async flags(@CurrentUser() p: Principal, @Param('id') id: string, @Body() body: unknown) {
+    const b = parse(FlagsBody, body);
+    await withTx(this.ctx.pool, async (tx) => {
+      const t = await this.visible(p, id, tx);
+      if (!this.canReassign(p, t)) throw forbidden();
+      if (t.status === 'closed') throw new ApiError(409, 'bad_status', 'Обращение закрыто');
+      const before = await one<{ is_urgent: boolean }>(
+        tx,
+        'SELECT is_urgent FROM conversation WHERE id = $1',
+        [t.conversation_id],
+      );
+      if (b.isImportant !== undefined && b.isImportant !== t.is_important)
+        await tx.query(
+          `UPDATE ticket SET is_important = $2, important_manual = $2, version = version + 1, updated_at = now()
+            WHERE id = $1`,
+          [id, b.isImportant],
+        );
+      if (b.isUrgent !== undefined && b.isUrgent !== before?.is_urgent) {
+        await tx.query(
+          'UPDATE conversation SET is_urgent = $2, version = version + 1, updated_at = now() WHERE id = $1',
+          [t.conversation_id, b.isUrgent],
+        );
+        // Списки 1-й линии и супервизора обновятся сразу (событие — и для журнала отчётов).
+        await emitConversation(tx, CONVERSATION_EVENTS.updated, await loadRef(tx, t.conversation_id), {
+          action: 'flags',
+        });
+      }
+      await audit(
+        tx,
+        p,
+        'update',
+        'ticket',
+        id,
+        { isImportant: t.is_important, isUrgent: before?.is_urgent ?? false },
+        { isImportant: b.isImportant ?? t.is_important, isUrgent: b.isUrgent ?? before?.is_urgent ?? false },
+      );
+    });
+    return this.detail(p, id);
+  }
+
   @Post('tickets/:id/comments')
   @HttpCode(200)
   async comment(@CurrentUser() p: Principal, @Param('id') id: string, @Body() body: unknown) {
@@ -1116,6 +1168,7 @@ export class TicketsController {
         redirect: !!t.my_role && active,
         approve: canApproveNow,
         reassign: t.status !== 'closed' && this.canReassign(p, t),
+        flags: t.status !== 'closed' && this.canReassign(p, t),
         comment:
           !!t.my_role ||
           t.created_by === p.id ||

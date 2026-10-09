@@ -95,7 +95,7 @@ export async function seedDemo(tx: PoolClient, demoPassword: string): Promise<bo
         ['staff.rude', 'Некорректное поведение'],
         ['staff.service', 'Качество обслуживания'],
       ],
-      { is_important: true, default_response_days: 10 },
+      { default_response_days: 10 },
     ],
     ['site', 'Сайт'],
     ['gift', 'Подарочные сертификаты'],
@@ -119,7 +119,7 @@ export async function seedDemo(tx: PoolClient, demoPassword: string): Promise<bo
       'b2b',
       'Топливные карты B2B',
       [
-        ['b2b.block', 'Блокировка карты', { is_important: true, default_response_days: 3 }],
+        ['b2b.block', 'Блокировка карты', { default_response_days: 3 }],
         ['b2b.limits', 'Лимиты'],
       ],
     ],

@@ -43,6 +43,7 @@ export const tickets = {
   prosrochennye: 'Просроченные',
   osoboVazhnye: 'Особо важные',
   kabinet2YLinii: '2-я линия',
+  flagsSaved: 'Отметка сохранена',
   tabList: 'Обращения',
   youCurator: 'Вы — куратор этого обращения',
   youCuratorHint: 'Контролируете ход работы и срок ответа; возможности — те же, что у ответственного.',

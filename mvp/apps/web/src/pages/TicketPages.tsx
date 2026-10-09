@@ -18,6 +18,7 @@ import {
   ScrollArea,
   Select,
   Stack,
+  Switch,
   Table,
   Tabs,
   Text,
@@ -455,6 +456,42 @@ function UrgentMark({ t: tk }: { t: Row }) {
   );
 }
 
+/**
+ * «Особо важное» и «Срочное» на обращении 2-й линии: ставят оператор, передавший обращение, супервизор или
+ * администратор (не тема). Остальным — только значки в заголовке.
+ */
+function TicketFlags({ t: tk }: { t: Row }) {
+  const can = (tk.can as Record<string, boolean> | undefined) ?? {};
+  const urgent = !!(tk.conversation as Row | null)?.isUrgent;
+  const save = useTicketAction(
+    (b: { isImportant?: boolean; isUrgent?: boolean }) => post(`/tickets/${String(tk.id)}/flags`, b),
+    t.tickets.flagsSaved,
+  );
+  if (!can.flags) return null;
+  return (
+    <Group gap="lg" mb="xs" data-testid="ticket-flags">
+      <Switch
+        size="sm"
+        color="red"
+        label={t.workspace.osoboVazhnoe2}
+        checked={!!tk.isImportant}
+        disabled={save.isPending}
+        onChange={(e) => save.mutate({ isImportant: e.currentTarget.checked })}
+        data-testid="ticket-flag-important"
+      />
+      <Switch
+        size="sm"
+        color="red"
+        label={t.workspace.srochnoe2}
+        checked={urgent}
+        disabled={save.isPending}
+        onChange={(e) => save.mutate({ isUrgent: e.currentTarget.checked })}
+        data-testid="ticket-flag-urgent"
+      />
+    </Group>
+  );
+}
+
 /** Роль сотрудника в выбранном обращении: куратор работает в том же интерфейсе, но видит, что он куратор. */
 function MyRoleNote({ t: tk }: { t: Row }) {
   if (tk.myRole !== 'curator' && tk.myRole !== 'responsible') return null;
@@ -679,6 +716,7 @@ export function CabinetPage({ inTabs = false }: { inTabs?: boolean }) {
                 <StatusBadge status={String(preview.data.status)} />
               </Group>
               <MyRoleNote t={preview.data} />
+              <TicketFlags t={preview.data} />
               <TicketActions t={preview.data} onDialog={setDialog} />
               <ExtensionNotice t={preview.data} />
               <TicketFacts t={preview.data} />
@@ -1547,6 +1585,7 @@ export function TicketPage() {
             </Badge>
           ) : null}
         </Group>
+        <TicketFlags t={tk} />
         <TicketActions t={tk} onDialog={setDialog} />
       </Group>
       <ExtensionNotice t={tk} />
