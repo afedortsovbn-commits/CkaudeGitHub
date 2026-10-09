@@ -350,11 +350,12 @@ describe.skipIf(!ADMIN_URL)('Ф12: согласия, сроки хранения
       await t.ctx.storage.put(key, Buffer.from('RIFF'), 'audio/wav');
       return id;
     };
-    const old = await mk(200, `rec/old-${newId()}.wav`);
+    // Срок хранения записей по умолчанию — 5 лет (1825 дней, решение владельца 06.10.2026).
+    const old = await mk(1900, `rec/old-${newId()}.wav`);
     const fresh = await mk(10, `rec/new-${newId()}.wav`);
     const r = await t.call('POST', '/api/v1/admin/retention/run', admin);
     expect(r.status, JSON.stringify(r.body)).toBe(200);
-    expect(r.body).toMatchObject({ days: 180 });
+    expect(r.body).toMatchObject({ days: 1825 });
     expect(r.body.deleted).toBeGreaterThanOrEqual(1);
     expect(
       (await one(`SELECT deleted_at FROM call_recording WHERE id = $1`, [old])).deleted_at,
@@ -369,7 +370,7 @@ describe.skipIf(!ADMIN_URL)('Ф12: согласия, сроки хранения
     expect(
       (await one(`SELECT deleted_at FROM call_recording WHERE id = $1`, [fresh])).deleted_at,
     ).not.toBeNull();
-    await t.call('PATCH', '/api/v1/settings', admin, { 'recording.retention_days': 180 });
+    await t.call('PATCH', '/api/v1/settings', admin, { 'recording.retention_days': 1825 });
   });
 
   it('обезличивание клиента: профиль, идентификаторы, тексты и файлы, журнал событий; факт согласия и обращения остаются', async () => {
