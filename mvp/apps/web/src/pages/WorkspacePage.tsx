@@ -2179,28 +2179,31 @@ export function WorkspacePage() {
   );
 
   // Режим обработки: обращение взято в работу — список скрыт (его можно показать кнопкой), меню свёрнуто.
+  // Идущий разговор (оператор ответил) — обращение в работе сразу, не дожидаясь, пока догрузится карточка.
+  const answered =
+    phone.call && !phone.call.listen && phone.call.state === 'active' ? phone.call.conversationId : null;
   const working =
-    !!conv.data &&
-    String(conv.data.id) === selected &&
-    conv.data.assigneeId === me?.id &&
-    WORK_STATUSES.includes(String(conv.data.status));
+    (!!answered && answered === selected) ||
+    (!!conv.data &&
+      String(conv.data.id) === selected &&
+      conv.data.assigneeId === me?.id &&
+      WORK_STATUSES.includes(String(conv.data.status)));
   const [listHidden, setListHidden] = useState(false);
-  const focus = working && listHidden;
+  // Список прячется сам один раз на обращение — в момент взятия в работу (на звонке — в момент ответа, в том же
+  // кадре). Если сотрудник потом открыл список, поздние обновления статуса его уже не прячут.
+  const autoHidden = useRef(new Set<string>());
+  const pendingAuto = !!answered && answered === selected && !autoHidden.current.has(answered);
+  const focus = working && (listHidden || pendingAuto);
   // Обращение закрыто, передано или открыто чужое/закрытое — список снова виден.
   useEffect(() => {
     if (conv.data && String(conv.data.id) === selected && !working) setListHidden(false);
   }, [conv.data, selected, working]);
-  // Список прячется сам один раз на обращение — в момент взятия в работу. Если сотрудник потом открыл список,
-  // поздние обновления статуса его уже не прячут.
-  const autoHidden = useRef(new Set<string>());
   const autoHide = (id: string) => {
     if (autoHidden.current.has(id)) return;
     autoHidden.current.add(id);
     setListHidden(true);
   };
   // Ответ на звонок — сразу по софтфону, не дожидаясь обновления обращения.
-  const answered =
-    phone.call && !phone.call.listen && phone.call.state === 'active' ? phone.call.conversationId : null;
   useEffect(() => {
     if (answered) autoHide(answered);
   }, [answered]);

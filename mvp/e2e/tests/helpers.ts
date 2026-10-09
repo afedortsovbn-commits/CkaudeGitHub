@@ -93,13 +93,39 @@ export async function setAgentStatus(page: Page, status: 'ready' | 'break' | 'of
 
 /** Вид списка обращений на рабочем месте оператора: «Очередь» — отдельная кнопка, остальное — выпадающий список. */
 export async function listView(page: Page, view: string) {
-  // В режиме обработки обращения список скрыт — показать его.
+  // В режиме обработки обращения список скрыт — показать его. Режим может включиться в этот момент (обращение
+  // только что взято в работу): тогда список пропадёт вместе с меню — показать его снова и повторить.
   const show = page.locator('[data-testid="focus-toggle-list"][data-focus]');
-  if (await show.isVisible()) await show.click();
-  if (view === 'queue') {
-    await page.getByTestId('queue-open').click();
-    return;
+  const visible = (l: Locator) =>
+    l
+      .waitFor({ state: 'visible', timeout: 3000 })
+      .then(() => true)
+      .catch(() => false);
+  for (let i = 0; i < 4; i++) {
+    if (await show.isVisible()) await show.click();
+    if (view === 'queue') {
+      if (await visible(page.getByTestId('queue-open'))) {
+        await page
+          .getByTestId('queue-open')
+          .click({ timeout: 3000 })
+          .catch(() => undefined);
+        if (await page.getByTestId('conv-list-panel').isVisible()) return;
+      }
+      continue;
+    }
+    if (!(await visible(page.getByTestId('list-view')))) continue;
+    await page
+      .getByTestId('list-view')
+      .click({ timeout: 3000 })
+      .catch(() => undefined);
+    const item = page.getByTestId(`view-${view}`);
+    if (await visible(item)) {
+      const ok = await item
+        .click({ timeout: 3000 })
+        .then(() => true)
+        .catch(() => false);
+      if (ok && (await page.getByTestId('conv-list-panel').isVisible())) return;
+    }
   }
-  await page.getByTestId('list-view').click();
-  await page.getByTestId(`view-${view}`).click();
+  throw new Error(`Не удалось открыть вид списка «${view}»`);
 }
