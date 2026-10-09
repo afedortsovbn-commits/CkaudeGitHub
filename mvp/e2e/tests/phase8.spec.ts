@@ -174,7 +174,6 @@ test.describe.serial('Ф8: вторая линия', () => {
     await cf.getByTestId('close-guilt-yes').click();
     await cf.getByTestId('close-measures').click();
     await r1.getByRole('option', { name: 'Замечание' }).click();
-    await r1.keyboard.press('Escape');
     await cf.getByTestId('close-submit').click();
     await expect(r1.getByTestId('ticket-status')).toHaveText('На согласовании');
 
@@ -195,7 +194,7 @@ test.describe.serial('Ф8: вторая линия', () => {
       .click();
     await expect(op.getByTestId('ticket-title')).toHaveText(`Обращение (2 линия) №${number}`);
     await op.getByRole('tab', { name: 'Комментарии и документы' }).click();
-    await expect(op.getByTestId('ticket-comments')).toContainText('письмо.pdf');
+    await expect(op.getByTestId('ticket-comments').first()).toContainText('письмо.pdf');
     await op.getByTestId('ticket-return').click();
     await op.getByTestId('return-comment').fill('Нет подписи на письме');
     await op.getByTestId('return-submit').click();
@@ -212,7 +211,6 @@ test.describe.serial('Ф8: вторая линия', () => {
     await cf.getByTestId('close-guilt-yes').click();
     await cf.getByTestId('close-measures').click();
     await r1.getByRole('option', { name: 'Замечание' }).click();
-    await r1.keyboard.press('Escape');
     await cf.getByTestId('close-submit').click();
     await expect(r1.getByTestId('ticket-status')).toHaveText('На согласовании');
 

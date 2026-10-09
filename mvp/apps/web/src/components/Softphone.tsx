@@ -44,6 +44,15 @@ const QUALITY = {
 
 /** Код страны, уже вписанный в поле набора номера. */
 const DIAL_PREFIX = '+375 ';
+/**
+ * Вставили (или набрали) полный номер после уже вписанного кода — «+375 8 029…», «+375 +375 29…», «+375 375…»:
+ * вписанный код убирается, иначе получится неверный номер.
+ */
+function withoutDoublePrefix(v: string): string {
+  if (!v.startsWith(DIAL_PREFIX)) return v;
+  const rest = v.slice(DIAL_PREFIX.length).trimStart();
+  return /^(\+|8\s*0|375)/.test(rest) ? rest : v;
+}
 
 const fmt = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 
@@ -196,14 +205,16 @@ export function SoftphoneStatus() {
               placeholder="+375 29 123-45-67"
               value={number}
               onChange={(e) => {
-                setNumber(e.currentTarget.value);
+                setNumber(withoutDoublePrefix(e.currentTarget.value));
                 setDialError(false);
               }}
               // Курсор — сразу в поле, в конце уже вписанного «+375 » (его можно стереть).
               data-autofocus
               onFocus={(e) => {
                 const el = e.currentTarget;
-                requestAnimationFrame(() => el.setSelectionRange(el.value.length, el.value.length));
+                requestAnimationFrame(() => {
+                  if (el.value === DIAL_PREFIX) el.setSelectionRange(el.value.length, el.value.length);
+                });
               }}
               onKeyDown={(e) => e.key === 'Enter' && dial()}
               error={dialError ? t.softphoneUi.vvediteNomer : undefined}

@@ -71,9 +71,10 @@ test.describe.serial('Ф2: чат на сайте → оператор', () => {
     await page.getByTestId('disposition').click();
     await page.getByRole('option', { name: 'Решено на 1-й линии' }).click();
     await page.getByTestId('close').click();
-    await expect(page.getByText('Укажите тему обращения')).toBeVisible();
+    await expect(page.getByText('Заполните обязательные поля')).toBeVisible();
     await page.getByTestId('topic').click();
     await page.getByRole('option', { name: 'Сайт', exact: true }).click();
+    await expect(page.getByTestId('topic-full')).toContainText('Сайт');
     await page.getByTestId('close').click();
     await expect(page.getByText('Обращение закрыто.')).toBeVisible();
     await expect(client.w.locator('.m.system').filter({ hasText: 'Диалог завершён' })).toBeVisible();

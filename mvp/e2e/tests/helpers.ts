@@ -17,7 +17,7 @@ export async function login(page: Page, email: string, password: string) {
 
 export async function nav(page: Page, name: string) {
   const menu = page.getByRole('navigation');
-  const link = menu.getByRole('link', { name });
+  const link = menu.getByRole('link', { name, exact: true });
   // Ф16: разделы сгруппированы, свёрнутые группы прячут пункты — раскрыть группы, если пункт не виден.
   const closed = menu.locator('[data-testid^="nav-group-"]:not([data-expanded])');
   // Меню может перестроиться (например, после входа — переход на стартовую страницу с узким меню): короткие

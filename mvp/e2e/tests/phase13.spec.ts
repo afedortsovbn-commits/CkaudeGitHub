@@ -42,7 +42,9 @@ test.describe.serial('Ф13: отзывы с карт (Rocket Data) и синхр
     const text = `Грубый кассир на АЗС, отзыв ${stamp}`;
     const review = {
       TicketMapId: `9${stamp}`,
-      DateReceipt: '2026-09-30T10:08:05',
+      DateReceipt: new Date(Date.now() - 3_600_000)
+        .toLocaleString('sv-SE', { timeZone: 'Europe/Minsk' })
+        .replace(' ', 'T'),
       // GUID демо-АЗС №1 — в виде, как в отзыве Rocket Data (с дефисами).
       StationGuid: 'DE000000-0000-0000-0000-000000000001',
       StationType: 'АЗС',

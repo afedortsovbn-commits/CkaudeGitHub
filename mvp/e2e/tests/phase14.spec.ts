@@ -456,6 +456,7 @@ test.describe.serial('Ф14: бот, очередь, супервизор', () =>
     await sup.getByRole('option', { name: 'Решено на 1-й линии' }).click();
     await sup.getByTestId('topic').click();
     await sup.getByRole('option', { name: 'Сайт', exact: true }).click();
+    await expect(sup.getByTestId('topic-full')).toContainText('Сайт');
     await sup.getByTestId('close').click();
     await expect(sup.getByText('Обращение закрыто.')).toBeVisible();
   });

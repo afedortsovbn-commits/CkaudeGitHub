@@ -64,6 +64,7 @@ async function handle(
   // «Особо важное» отмечает оператор (переключатель — в блоке передачи на 2-ю линию).
   if (important) {
     await op.getByTestId('escalate-toggle').click({ force: true });
+    await expect(op.getByTestId('esc-important')).toBeVisible();
     await op.getByTestId('esc-important').click({ force: true });
     await expect(op.getByTestId('esc-important')).toBeChecked();
     await op.getByTestId('escalate-toggle').click({ force: true });
@@ -162,6 +163,6 @@ test.describe.serial('Ф10: упрощённая аналитика', () => {
     await expect(sup.getByTestId('report-table')).not.toContainText('Сайт');
     // Реестр просроченных открывается и у супервизора.
     await choose(sup, 'report-kind', 'Реестр просроченных тикетов');
-    await expect(sup.getByTestId('report-table')).toContainText('№ тикета');
+    await expect(sup.getByTestId('report-table')).toContainText('№ обращения (2 линия)');
   });
 });

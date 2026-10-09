@@ -62,7 +62,7 @@ test.describe.serial('Ф7: автоответы, бот, подсказки, ш�
     await expect(msgs).toContainText('Выберите, пожалуйста, тему обращения');
     await expect(msgs).toContainText('Бот собрал');
     await expect(msgs).toContainText('+375291234567');
-    await expect(page.getByTestId('topic')).toHaveValue(/Баланс бонусов/);
+    await expect(page.getByTestId('topic-full')).toContainText('Баланс бонусов');
 
     // Подсказки: шаблон и статья БЗ; вставка одним кликом.
     const assist = page.getByTestId('assist');

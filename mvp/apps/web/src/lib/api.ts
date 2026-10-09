@@ -106,15 +106,26 @@ export async function api<T = unknown>(
   body?: unknown,
   retry = true,
 ): Promise<T> {
-  const res = await fetch(`/api/v1${path}`, {
-    method,
-    credentials: 'same-origin',
-    headers: {
-      ...(body !== undefined ? { 'content-type': 'application/json' } : {}),
-      ...(accessToken ? { authorization: `Bearer ${accessToken}` } : {}),
-    },
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  });
+  const send = () =>
+    fetch(`/api/v1${path}`, {
+      method,
+      credentials: 'same-origin',
+      headers: {
+        ...(body !== undefined ? { 'content-type': 'application/json' } : {}),
+        ...(accessToken ? { authorization: `Bearer ${accessToken}` } : {}),
+      },
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    });
+  let res: Response;
+  try {
+    res = await send();
+  } catch (e) {
+    // Мгновенный обрыв соединения (перезапуск сервиса, переключение сети): чтение и вход безопасно повторить
+    // один раз — сотрудник не видит «Failed to fetch» из-за доли секунды без связи. Изменения не повторяются.
+    if (method !== 'GET' && path !== '/auth/login') throw e;
+    await new Promise((ok) => setTimeout(ok, 500));
+    res = await send();
+  }
   if (res.status === 401 && retry && !path.startsWith('/auth/')) {
     if (await refreshSession()) return api<T>(method, path, body, false);
     accessToken = null;

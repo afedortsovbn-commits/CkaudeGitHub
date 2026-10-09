@@ -1269,6 +1269,10 @@ function ConversationCard({ conv }: { conv: Row }) {
   const [to, setTo] = useState<string | null>(null);
   useEffect(() => setVals((conv.fields as Record<string, unknown>) ?? {}), [conv.id, conv.fields]);
   const upd = useAction((b: Record<string, unknown>) => patch(`/conversations/${conv.id}`, b));
+  // Тема, выбранная только что: проверки «Завершить»/«Передать» видят её сразу, до ответа сервера.
+  const [topicPick, setTopicPick] = useState<string | null | undefined>(undefined);
+  useEffect(() => setTopicPick(undefined), [conv.id, conv.topicId]);
+  const topicNow = topicPick !== undefined ? topicPick : ((conv.topicId as string | null) ?? null);
   const behavior = dispositions.data?.find((d) => d.id === disp)?.behavior;
   const isPostponed = behavior === 'postponed';
   const isEscalate = behavior === 'escalate';
@@ -1332,7 +1336,7 @@ function ConversationCard({ conv }: { conv: Row }) {
   }, [fields.data, contact.data, conv.id, conv.topicId, conv.fields, conv.status]);
   /** Что не заполнено для передачи на 2-ю линию или для закрытия — подписи полей. */
   const missingFor = (escalate: boolean): string[] => [
-    ...(!conv.topicId && (escalate || behavior !== 'no_reply_needed') ? [t.workspace.topicField] : []),
+    ...(!topicNow && (escalate || behavior !== 'no_reply_needed') ? [t.workspace.topicField] : []),
     ...(fields.data ?? [])
       .filter(
         (f) =>
@@ -1646,12 +1650,15 @@ function ConversationCard({ conv }: { conv: Row }) {
             label={t.workspace.stepTopic}
             description={!conv.topicId && !closed ? t.workspace.stepTopicHint : undefined}
             placeholder={t.workspace.stepTopicPlaceholder}
-            value={(conv.topicId as string) ?? null}
-            onChange={(v) => upd.mutate({ topicId: v })}
+            value={topicNow}
+            onChange={(v) => {
+              setTopicPick(v);
+              upd.mutate({ topicId: v });
+            }}
             clearable
             disabled={closed}
             withAsterisk
-            error={req.error(!conv.topicId)}
+            error={req.error(!topicNow)}
             testId="topic"
           />
           {topicLabel ? (
@@ -2183,7 +2190,21 @@ export function WorkspacePage() {
   useEffect(() => {
     if (conv.data && String(conv.data.id) === selected && !working) setListHidden(false);
   }, [conv.data, selected, working]);
-  // Взятие в работу без кнопки на экране (ответ на звонок, принятие в шапке) — обращение стало «в работе».
+  // Список прячется сам один раз на обращение — в момент взятия в работу. Если сотрудник потом открыл список,
+  // поздние обновления статуса его уже не прячут.
+  const autoHidden = useRef(new Set<string>());
+  const autoHide = (id: string) => {
+    if (autoHidden.current.has(id)) return;
+    autoHidden.current.add(id);
+    setListHidden(true);
+  };
+  // Ответ на звонок — сразу по софтфону, не дожидаясь обновления обращения.
+  const answered =
+    phone.call && !phone.call.listen && phone.call.state === 'active' ? phone.call.conversationId : null;
+  useEffect(() => {
+    if (answered) autoHide(answered);
+  }, [answered]);
+  // Взятие в работу без кнопки на экране (принятие в шапке, перевод от коллеги) — обращение стало «в работе».
   const prevConv = useRef<{ id: string | null; status: string | null }>({ id: null, status: null });
   useEffect(() => {
     const d = conv.data;
@@ -2197,7 +2218,7 @@ export function WorkspacePage() {
       cur.status === 'active' &&
       ['queued', 'offered', 'bot'].includes(String(prev.status))
     )
-      setListHidden(true);
+      autoHide(String(d.id));
   }, [conv.data, me?.id]);
   useEffect(() => {
     setFocusMode(focus);
@@ -2205,7 +2226,7 @@ export function WorkspacePage() {
   useEffect(() => () => setFocusMode(false), []);
   const startWork = (id: string) => {
     setSelected(id);
-    setListHidden(true);
+    autoHide(id);
   };
 
   return (
@@ -2412,7 +2433,7 @@ export function WorkspacePage() {
                   size="xs"
                   onClick={() =>
                     void post(`/conversations/${selected}/take`).then(() => {
-                      setListHidden(true);
+                      if (selected) autoHide(selected);
                       return qc.invalidateQueries();
                     })
                   }
@@ -2446,7 +2467,7 @@ export function WorkspacePage() {
                     data-testid="accept-open"
                     onClick={() =>
                       void post(`/conversations/${selected}/accept`).then(() => {
-                        setListHidden(true);
+                        if (selected) autoHide(selected);
                         return qc.invalidateQueries();
                       })
                     }
