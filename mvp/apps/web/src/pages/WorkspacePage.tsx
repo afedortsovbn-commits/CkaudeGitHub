@@ -37,7 +37,7 @@ import {
   IconMap2,
 } from '@tabler/icons-react';
 import { notifications } from '@mantine/notifications';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { errorText, get, openAttachment, patch, post, recordingUrl, upload } from '../lib/api';
 import { useAuth } from '../lib/auth';
@@ -171,6 +171,19 @@ function useCount(tab: string): number {
   return q.data?.length ?? 0;
 }
 
+/**
+ * Режим распределения «по загрузке» (Д-017): звонки и чаты выдаёт система, неспешная очередь берётся кнопкой
+ * «Взять следующее» — ручное «Взять» у строк скрыто (кроме супервизора). Запрос общий со статусом в шапке.
+ */
+function useLoadMode(): boolean {
+  const q = useQuery({
+    queryKey: ['/agent-status/me'],
+    queryFn: () => get<Row>('/agent-status/me'),
+    refetchInterval: 30_000,
+  });
+  return q.data?.routingMode === 'load';
+}
+
 /** Полупрозрачный цвет слева, уходящий в прозрачность вправо (как в списке 2-й линии). */
 const fade = (h: number, s: number, l: number, a: number) =>
   `linear-gradient(90deg, hsla(${h}, ${s}%, ${l}%, ${a}) 0%, hsla(${h}, ${s}%, ${l}%, 0) 60%)`;
@@ -202,7 +215,9 @@ function List({
   important: boolean;
   callback: boolean;
 }) {
-  const { me } = useAuth();
+  const { me, can } = useAuth();
+  const loadMode = useLoadMode();
+  const manualTake = !loadMode || can('supervisor.monitor');
   const list = useList(
     `/conversations?tab=${tab}${important ? '&important=true' : ''}${callback ? '&callback=true' : ''}`,
   );
@@ -306,7 +321,7 @@ function List({
                 </Badge>
               ) : null}
             </Group>
-            {tab === 'queue' && (
+            {tab === 'queue' && manualTake && (
               <Button
                 size="compact-xs"
                 mt={6}
@@ -2231,6 +2246,20 @@ export function WorkspacePage() {
     setSelected(id);
     autoHide(id);
   };
+  // «Взять следующее» (Д-017): сервер выдаёт верхнее по приоритету неспешное обращение; пустая очередь — подсказка.
+  const loadMode = useLoadMode();
+  const takeNext = useMutation({
+    mutationFn: () => post<{ id: string | null }>('/conversations/take-next'),
+    onSuccess: (r) => {
+      void qc.invalidateQueries();
+      if (r.id) {
+        notifications.show({ color: 'green', message: t.workspace.takeNextTaken });
+        startWork(r.id);
+      } else notifications.show({ color: 'blue', message: t.workspace.takeNextEmpty });
+    },
+    onError: (e) =>
+      notifications.show({ color: 'red', title: t.error, message: errorText(e), autoClose: 8000 }),
+  });
 
   return (
     <Grid gutter="md">
@@ -2307,6 +2336,20 @@ export function WorkspacePage() {
                     data-testid="queue-open"
                   >
                     {t.workspace.queueBtn}
+                  </Button>
+                </Tooltip>
+              )}
+              {hasQueue && loadMode && !secondLine && (
+                <Tooltip label={t.workspace.takeNextHint}>
+                  <Button
+                    size="xs"
+                    px={8}
+                    color="teal"
+                    loading={takeNext.isPending}
+                    onClick={() => takeNext.mutate()}
+                    data-testid="take-next"
+                  >
+                    {t.workspace.takeNext}
                   </Button>
                 </Tooltip>
               )}
@@ -2431,7 +2474,7 @@ export function WorkspacePage() {
                   </Text>
                 </Box>
               </Group>
-              {conv.data.status === 'queued' && (
+              {conv.data.status === 'queued' && (!loadMode || can('supervisor.monitor')) && (
                 <Button
                   size="xs"
                   onClick={() =>

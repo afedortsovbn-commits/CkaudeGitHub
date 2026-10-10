@@ -5,9 +5,16 @@ import {
   addHint,
   appendMessage,
   emitConversation,
+  isPullItem,
+  LOAD_CAPACITY,
   loadRef,
+  loadRoutingPolicy,
+  operatorLoad,
+  QUEUED_ITEM_COLS,
   setAgentStatus,
+  sortByUrgency,
   takeoverConversation,
+  toQueuedItem,
   markAssigned,
 } from '@cc/domain';
 import type { FastifyReply, FastifyRequest } from 'fastify';
@@ -80,7 +87,7 @@ interface Conv {
 }
 
 const LIST_SQL = `SELECT c.id, c.status, c.channel_kind, c.queue_id, c.assignee_id, c.topic_id, c.enterprise_id,
-    c.is_important, c.is_urgent, c.callback_requested, c.last_message_at, c.created_at, c.assigned_at, c.closed_at, c.seq, c.contact_id,
+    c.is_important, c.is_urgent, c.callback_requested, c.last_message_at, c.created_at, c.assigned_at, c.closed_at, c.seq, c.contact_id, c.due_at,
     COALESCE(ct.display_name, ct.phone, ct.email, 'Клиент') AS contact_name, q.name AS queue_name, q.require_tag AS queue_require_tag, u.full_name AS assignee_name,
     t.name AS topic_name, (c.channel_meta #>> '{review,rating}')::int AS review_rating,
     (SELECT left(m.body, 140) FROM message m WHERE m.conversation_id = c.id AND m.direction IN ('in','out')
@@ -382,22 +389,88 @@ export class ConversationsController {
       );
       if ((active?.n ?? 0) >= Number(max?.value ?? 5))
         throw new ApiError(409, 'limit', `Достигнут лимит одновременных чатов (${Number(max?.value ?? 5)})`);
-      await tx.query(
-        `UPDATE conversation SET assignee_id = $2, status = 'active', assigned_at = now(), version = version + 1, updated_at = now() WHERE id = $1`,
-        [id, p.id],
-      );
-      // Только отметка для стратегии least_recent (общая и по группе канала); статус не трогаем — ручное «Взять»
-      // не делает оператора «Готов».
-      await markAssigned(tx, p.id, c.channel_kind);
-      await appendMessage(tx, {
-        conversationId: id,
-        direction: 'system',
-        body: `Оператор ${p.fullName} подключился к диалогу`,
-        channelKind: c.channel_kind,
-      });
-      await emitConversation(tx, CONVERSATION_EVENTS.updated, await loadRef(tx, id), { action: 'assigned' });
+      await this.assignToMe(tx, p, c);
     });
     return this.get(p, id);
+  }
+
+  /** Назначить обращение сотруднику вручную («Взять», «Взять следующее»). */
+  private async assignToMe(
+    tx: PoolClient,
+    p: Principal,
+    c: Pick<Conv, 'id' | 'channel_kind'>,
+  ): Promise<void> {
+    await tx.query(
+      `UPDATE conversation SET assignee_id = $2, status = 'active', assigned_at = now(), version = version + 1, updated_at = now() WHERE id = $1`,
+      [c.id, p.id],
+    );
+    // Только отметка для стратегии least_recent (общая и по группе канала); статус не трогаем — ручное «Взять»
+    // не делает оператора «Готов».
+    await markAssigned(tx, p.id, c.channel_kind);
+    await appendMessage(tx, {
+      conversationId: c.id,
+      direction: 'system',
+      body: `Оператор ${p.fullName} подключился к диалогу`,
+      channelKind: c.channel_kind,
+    });
+    await emitConversation(tx, CONVERSATION_EVENTS.updated, await loadRef(tx, c.id), { action: 'assigned' });
+  }
+
+  /**
+   * «Взять следующее» (Д-017, п.3): верхнее по эффективному приоритету неспешное обращение (отзывы, почта,
+   * срочные и особо важные — ранги 4–5, со старением по сроку) из очередей сотрудника — при свободной ёмкости не
+   * меньше `load.pullMinFree` и в пределах лимита чатов. Конкурентно безопасно: строка блокируется
+   * FOR UPDATE SKIP LOCKED, занятую другим сотрудником пропускаем и берём следующую. Пустая очередь — `{ id: null }`.
+   */
+  @Post('conversations/take-next')
+  @HttpCode(200)
+  async takeNext(@CurrentUser() p: Principal) {
+    const id = await withTx(this.ctx.pool, async (tx) => {
+      const policy = await loadRoutingPolicy(tx);
+      const max = await one<{ value: number }>(
+        tx,
+        `SELECT value FROM system_setting WHERE key = 'operator.max_chats'`,
+      );
+      const active = await one<{ n: number }>(
+        tx,
+        `SELECT count(*)::int AS n FROM conversation WHERE assignee_id = $1 AND status IN ('active', 'hold', 'offered') AND channel_kind <> 'voice'`,
+        [p.id],
+      );
+      if ((active?.n ?? 0) >= Number(max?.value ?? 5))
+        throw new ApiError(409, 'limit', `Достигнут лимит одновременных чатов (${Number(max?.value ?? 5)})`);
+      const free = LOAD_CAPACITY - (await operatorLoad(tx, p.id, policy));
+      if (free < policy.load.pullMinFree)
+        throw new ApiError(
+          409,
+          'busy',
+          `Сначала завершите текущие обращения: свободно ${Math.max(0, free)} из ${LOAD_CAPACITY}, нужно ${policy.load.pullMinFree}`,
+        );
+      const sc = scopeFilter(p.scope, SCOPE_COLS, 2);
+      const items = (
+        await rows<Parameters<typeof toQueuedItem>[0]>(
+          tx,
+          `SELECT ${QUEUED_ITEM_COLS} FROM conversation c
+            WHERE c.status = 'queued' AND c.assignee_id IS NULL AND c.channel_kind <> 'voice'
+              AND (c.queue_id IS NULL OR c.queue_id IN (SELECT queue_id FROM user_queue WHERE user_id = $1))
+              AND (${sc.sql}) ORDER BY c.queued_at LIMIT 500`,
+          [p.id, ...sc.params],
+        )
+      )
+        .map(toQueuedItem)
+        .filter(isPullItem);
+      for (const item of sortByUrgency(items, policy)) {
+        const locked = await one<Conv>(
+          tx,
+          `SELECT c.* FROM conversation c WHERE c.id = $1 AND c.status = 'queued' AND c.assignee_id IS NULL FOR UPDATE SKIP LOCKED`,
+          [item.id],
+        );
+        if (!locked) continue;
+        await this.assignToMe(tx, p, locked);
+        return locked.id;
+      }
+      return null;
+    });
+    return id ? this.get(p, id) : { id: null };
   }
 
   /** Оператор принимает предложенное router обращение (M-RT-05). */
@@ -657,7 +730,15 @@ export class ConversationsController {
         `SELECT status FROM agent_status WHERE user_id = $1 FOR UPDATE`,
         [p.id],
       );
-      if (seconds > 0 && c.assignee_id === p.id && (cur?.status === 'ready' || cur?.status === 'wrap_up')) {
+      // «По загрузке» (Д-017): постобработка звонка начинается с завершением разговора, при закрытии карточки
+      // не повторяется.
+      const voiceLoad = c.channel_kind === 'voice' && (await loadRoutingPolicy(tx)).mode === 'load';
+      if (
+        seconds > 0 &&
+        !voiceLoad &&
+        c.assignee_id === p.id &&
+        (cur?.status === 'ready' || cur?.status === 'wrap_up')
+      ) {
         await setAgentStatus(tx, p.id, 'wrap_up', {
           wrapUpUntil: new Date(Date.now() + seconds * 1000),
         });

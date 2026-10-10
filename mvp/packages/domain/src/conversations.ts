@@ -16,6 +16,7 @@ import {
 import { enqueueCommand, enqueueEvent } from '@cc/service-kit';
 import type { PoolClient } from 'pg';
 import { attachReview, refreshReview, reviewKnown, reviewOf } from './reviews';
+import { dueAtFor, loadRoutingPolicy, type RoutingPolicy } from './routing-policy';
 
 interface ConvRow {
   id: string;
@@ -307,10 +308,14 @@ export async function ingestInbound(
     conversationId = open.rows[0]?.id;
   }
   let created = false;
+  let policy: RoutingPolicy | null = null;
   if (!conversationId) {
     conversationId = newId();
     created = true;
     const routing = await resolveRouting(tx, contactId, m.channelId, m.channelKind, m.body);
+    // Срок ответа неспешных обращений (Д-017, п.8): отзывы — часы по оценке, почта — рабочие дни.
+    policy = await loadRoutingPolicy(tx);
+    const dueAt = await dueAtFor(tx, policy, m.channelKind, review ? { urgent: review.urgent } : null);
     // Бот канала (Ф7, M-AUTO-04): новое обращение сначала ведёт опубликованная версия сценария бота —
     // router его не видит (статус «bot»), пока бот не переведёт диалог на оператора.
     const bot = await tx.query<{ version_id: string }>(
@@ -330,8 +335,8 @@ export async function ingestInbound(
           )
         ).rows[0]?.id ?? null);
     await tx.query(
-      `INSERT INTO conversation (id, channel_id, channel_kind, contact_id, status, queue_id, priority, is_urgent, queued_at, bot_flow_version_id, bot_state)
-       VALUES ($1, $2, $3, $4, $8, $5, $6, $7, now(), $9, $10)`,
+      `INSERT INTO conversation (id, channel_id, channel_kind, contact_id, status, queue_id, priority, is_urgent, queued_at, bot_flow_version_id, bot_state, due_at)
+       VALUES ($1, $2, $3, $4, $8, $5, $6, $7, now(), $9, $10, $11)`,
       [
         conversationId,
         m.channelId,
@@ -343,6 +348,7 @@ export async function ingestInbound(
         botVersion || ext ? 'bot' : 'queued',
         botVersion,
         ext ? JSON.stringify({ external: ext }) : null,
+        dueAt,
       ],
     );
     // Отзыв (Ф13): объект и предприятие по точке Rocket Data — до события «создано» (измерения отчётов и прав).
@@ -413,7 +419,49 @@ export async function ingestInbound(
       ],
     );
   }
+  // Отзыв «только оценка без текста» (Д-017, п.8, В-017-4): шаблонный ответ или без ответа — оператору он не нужен,
+  // обращение закрывается сразу (в отчётах по отзывам остаётся).
+  if (created && review && policy && msg && !m.body.trim() && !m.attachments?.length)
+    await closeRatingOnlyReview(tx, conversationId, policy);
   return { conversationId, created, duplicate: msg === null, messageId: msg?.id ?? null };
+}
+
+async function closeRatingOnlyReview(
+  tx: PoolClient,
+  conversationId: string,
+  policy: RoutingPolicy,
+): Promise<void> {
+  const cur = await tx.query<{ status: string }>(`SELECT status FROM conversation WHERE id = $1`, [
+    conversationId,
+  ]);
+  if (cur.rows[0]?.status !== 'queued') return;
+  const template = policy.reviews.ratingOnly === 'template';
+  if (template)
+    await appendMessage(tx, {
+      conversationId,
+      direction: 'out',
+      body: policy.reviews.ratingOnlyText,
+      channelKind: 'review',
+      meta: { auto: 'review' },
+    });
+  await tx.query(
+    `UPDATE conversation SET status = 'closed', closed_at = now(), version = version + 1, updated_at = now()
+      WHERE id = $1 AND status = 'queued'`,
+    [conversationId],
+  );
+  await appendMessage(tx, {
+    conversationId,
+    direction: 'system',
+    body: template
+      ? 'Отзыв без текста: отправлен шаблонный ответ, обращение закрыто автоматически'
+      : 'Отзыв без текста: ответ не требуется, обращение закрыто автоматически',
+    channelKind: 'review',
+  });
+  await emitConversation(tx, CONVERSATION_EVENTS.updated, await loadRef(tx, conversationId), {
+    action: 'closed',
+    auto: true,
+    dispositionKind: 'auto_closed',
+  });
 }
 
 const REPLY_PREFIX = /^\s*(re|ответ|отв)\s*:/i;

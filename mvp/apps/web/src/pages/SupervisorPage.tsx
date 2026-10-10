@@ -29,6 +29,10 @@ interface OperatorRow {
   activeChats: number;
   callId: string | null;
   callNumber: string | null;
+  /** Д-017: занятость за сегодня, %; карточки, не закрытые после звонка; продления постобработки «+2 мин». */
+  occupancyPct: number | null;
+  unclosedCards: number;
+  wrapUpExtends: number;
 }
 interface Thresholds {
   waitWarnS: number;
@@ -43,6 +47,8 @@ interface Overview {
   operators: OperatorRow[];
   active: { status: string; channelKind: string; count: number }[];
   thresholds: Thresholds;
+  /** Д-017: просроченные неспешные обращения в очереди. */
+  overdue: number;
 }
 
 const STATUS_LABEL: Record<string, string> = {
@@ -172,6 +178,12 @@ export function SupervisorPage() {
           value={String([...activeTotals.values()].reduce((a, b) => a + b, 0))}
           testId="supervisor-active"
         />
+        <Tile
+          label={t.supervisor.prosrochenoVOcheredi}
+          value={String(d?.overdue ?? 0)}
+          lvl={d?.overdue ? 1 : 0}
+          testId="supervisor-overdue"
+        />
       </SimpleGrid>
       <Group gap="xs" mb="lg">
         {[...activeTotals.entries()].map(([s, n]) => (
@@ -257,6 +269,8 @@ export function SupervisorPage() {
             <Table.Th>{t.supervisor.status}</Table.Th>
             <Table.Th>{t.supervisor.vStatuse}</Table.Th>
             <Table.Th>{t.supervisor.aktivnykhChatov}</Table.Th>
+            <Table.Th title={t.supervisor.zanyatostHint}>{t.supervisor.zanyatost}</Table.Th>
+            <Table.Th>{t.supervisor.nezakrytyeKartochki}</Table.Th>
             <Table.Th>{t.supervisor.zvonok}</Table.Th>
           </Table.Tr>
         </Table.Thead>
@@ -280,6 +294,25 @@ export function SupervisorPage() {
                 </Table.Td>
                 <Table.Td>{mins(o.sinceS)}</Table.Td>
                 <Table.Td>{o.activeChats}</Table.Td>
+                <Table.Td data-testid="supervisor-occupancy">
+                  {o.occupancyPct === null || o.occupancyPct === undefined ? '—' : `${o.occupancyPct} %`}
+                </Table.Td>
+                <Table.Td data-testid="supervisor-unclosed">
+                  <Group gap={4}>
+                    <Text
+                      size="sm"
+                      c={o.unclosedCards ? 'orange' : undefined}
+                      fw={o.unclosedCards ? 700 : undefined}
+                    >
+                      {o.unclosedCards || '—'}
+                    </Text>
+                    {o.wrapUpExtends > 0 && (
+                      <Badge size="xs" color="yellow" variant="light">
+                        {t.supervisor.prodleniy(o.wrapUpExtends)}
+                      </Badge>
+                    )}
+                  </Group>
+                </Table.Td>
                 <Table.Td>
                   {o.callId && (
                     <Group gap={4}>

@@ -4,16 +4,22 @@ import {
   channelGroup,
   emitConversation,
   idleColumn,
+  isPushItem,
   loadRef,
   loadRoutingPolicy,
   markAssigned,
+  operatorLoad,
+  LOAD_CAPACITY,
+  QUEUED_ITEM_COLS,
   type RoutingPolicy,
+  sortByUrgency,
+  toQueuedItem,
 } from '@cc/domain';
 import type { Logger } from '@cc/service-kit';
 import type { Pool, PoolClient } from 'pg';
 import { declinedUserIds, eligibleCandidates, VOICE_BUSY } from './candidates';
-import { one, withTx } from './db';
-import { pickCandidate } from './strategies';
+import { one, rows, withTx } from './db';
+import { loadChat, loadVoice, pickCandidate } from './strategies';
 
 export interface AssignConfig {
   /** Фолбэк, если настройка `operator.max_chats` не задана. */
@@ -92,13 +98,21 @@ async function assignOne(
     );
     if (!queue?.is_active) return null;
     const excluded = await declinedUserIds(tx, conv.id);
+    const voice = conv.channel_kind === 'voice';
+    const load = policy.mode === 'load';
     const candidates = await eligibleCandidates(tx, {
       queueId: queue.id,
       topicPath: conv.topic_path ?? [],
       maxChats,
       excludeUserIds: excluded,
-      voice: conv.channel_kind === 'voice',
-      idleColumn: idleColumn(policy, channelGroup(conv.channel_kind)),
+      voice,
+      // «По загрузке» (Д-017, п.5): звонок — кто дольше без звонка, чат — кто дольше без текстовых обращений.
+      idleColumn: load
+        ? voice
+          ? 'last_voice_at'
+          : 'last_text_at'
+        : idleColumn(policy, channelGroup(conv.channel_kind)),
+      load: load ? policy : undefined,
     });
     // «К тому же оператору»: вёл клиента раньше, сейчас «Готов» и свободен — ему; иначе — по стратегии очереди.
     // В режиме «кто первый взял» назначается только такому оператору, остальные обращения ждут в «Очереди».
@@ -106,7 +120,10 @@ async function assignOne(
       ? await lastOperator(tx, conv.contact_id, conv.id, policy.stickyDays)
       : null;
     const sticky = stickyId ? candidates.find((c) => c.userId === stickyId) : undefined;
-    const picked = sticky ?? (onlySticky ? undefined : pickCandidate(queue.strategy, candidates));
+    const byRules = load
+      ? (voice ? loadVoice : loadChat)(candidates)
+      : pickCandidate(queue.strategy, candidates);
+    const picked = sticky ?? (onlySticky ? undefined : byRules);
     if (!picked) return null;
 
     // Ёмкость в eligibleCandidates — снимок без блокировки: два конкурентных тика могли выбрать
@@ -132,6 +149,12 @@ async function assignOne(
         [picked.userId],
       );
       if ((stillFree?.n ?? 0) >= maxChats) return null;
+      // «По загрузке»: свободной ёмкости под блокировкой всё ещё хватает на чат с ожиданием ответа.
+      if (
+        load &&
+        LOAD_CAPACITY - (await operatorLoad(tx, picked.userId, policy)) < policy.load.cost.chatWaitingAgent
+      )
+        return null;
     }
 
     const offerId = newId();
@@ -169,6 +192,7 @@ export async function assignQueued(
   // Политика читается на каждом тике — настройка применяется без перезапуска. Группы в режиме «показывать всем»
   // (кто первый взял) автоматически не назначаются: обращения ждут в «Очереди».
   const policy = await loadRoutingPolicy(pool);
+  if (policy.mode === 'load') return assignQueuedByLoad(pool, cfg, policy, onOffer, logger);
   const pull = (['text', 'email'] as const).filter((g) => policy[g] === 'pull');
   const waiting = await one<{ ids: string[] }>(
     pool,
@@ -209,6 +233,59 @@ export async function assignQueued(
       }
     } catch (err) {
       logger?.error({ err: String(err), conversationId: id }, 'ошибка назначения обращения оператору');
+    }
+  }
+  return assigned;
+}
+
+/**
+ * Проход в режиме «по загрузке» (Д-017, п.2–3): система сама назначает только звонки и чаты (ранги 1–3; негативный
+ * отзыв после старения — при `pushUrgent`), в порядке эффективного ранга → приоритета → времени ожидания; отзывы,
+ * почта и согласования ждут кнопки «Взять следующее» (api, `POST /conversations/take-next`). Пакет — до
+ * `batchSize` на очередь, как в обычном режиме.
+ */
+async function assignQueuedByLoad(
+  pool: Pool,
+  cfg: AssignConfig,
+  policy: RoutingPolicy,
+  onOffer: (o: OfferCreated) => Promise<void>,
+  logger?: Logger,
+): Promise<number> {
+  const now = new Date();
+  const items = (
+    await rows<Parameters<typeof toQueuedItem>[0]>(
+      pool,
+      `SELECT ${QUEUED_ITEM_COLS} FROM conversation c WHERE c.status = 'queued' ORDER BY c.queued_at LIMIT 2000`,
+    )
+  ).map(toQueuedItem);
+  const push = sortByUrgency(
+    items.filter((i) => isPushItem(i, policy, now)),
+    policy,
+    now,
+  );
+  const perQueue = new Map<string, number>();
+  const todo: string[] = [];
+  for (const i of push) {
+    const k = i.queueId ?? '';
+    const n = perQueue.get(k) ?? 0;
+    if (n >= cfg.batchSize) continue;
+    perQueue.set(k, n + 1);
+    todo.push(i.id);
+  }
+  const maxChats = await currentMaxChats(pool, cfg.maxChatsFallback);
+  let assigned = 0;
+  for (const id of todo) {
+    try {
+      const offer = await assignOne(pool, id, maxChats, policy);
+      if (offer) {
+        assigned++;
+        await onOffer(offer);
+      }
+    } catch (err) {
+      logger?.error(
+        { err: String(err), conversationId: id },
+        'ошибка назначения обращения оператору (по загрузке)',
+      );
     }
   }
   return assigned;

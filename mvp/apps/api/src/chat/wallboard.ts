@@ -50,6 +50,9 @@ export interface WallboardInput {
     oldestWaitS: number;
     chats: number;
     bot: number;
+    /** Д-017: просроченные неспешные обращения в очереди и карточки, не закрытые после звонка. */
+    overdue?: number;
+    unclosedCards?: number;
   };
   buckets: Omit<Bucket, 'flags'>[];
   today: { received: number; answered: number; abandoned: number; slPct: number | null; asaS: number | null };
@@ -113,6 +116,16 @@ export function evaluateWallboard(i: WallboardInput) {
     i.today.slPct !== null && i.today.slPct < th.slTargetPct ? 'warn' : 'ok',
     `Уровень сервиса сегодня ${Math.round(i.today.slPct ?? 0)}% — ниже цели ${th.slTargetPct}%`,
   );
+  add(
+    'overdue',
+    (i.now.overdue ?? 0) > 0 ? 'warn' : 'ok',
+    `Просрочен срок ответа: ${i.now.overdue ?? 0} (отзывы, почта) ждут в очереди`,
+  );
+  add(
+    'cards',
+    (i.now.unclosedCards ?? 0) > 0 ? 'warn' : 'ok',
+    `Карточек не закрыто после звонка: ${i.now.unclosedCards ?? 0}`,
+  );
   for (const r of i.resources)
     add(`res:${r.label}`, r.level, `Сервер: ${r.label.toLowerCase()} — на пределе`);
   const rank = { ok: 0, warn: 1, crit: 2 } as const;
@@ -144,7 +157,11 @@ export async function wallboard(pool: Pool, p: Principal) {
             count(*) FILTER (WHERE c.status = 'queued' AND c.channel_kind <> 'voice')::int AS q_text,
             COALESCE(extract(epoch FROM now() - min(c.queued_at) FILTER (WHERE c.status = 'queued'))::int, 0) AS oldest,
             count(*) FILTER (WHERE c.status IN ('active', 'offered', 'hold') AND c.channel_kind <> 'voice')::int AS chats,
-            count(*) FILTER (WHERE c.status = 'bot' AND c.channel_kind <> 'voice')::int AS bot
+            count(*) FILTER (WHERE c.status = 'bot' AND c.channel_kind <> 'voice')::int AS bot,
+            count(*) FILTER (WHERE c.status = 'queued' AND c.due_at < now())::int AS overdue,
+            count(*) FILTER (WHERE c.status = 'active' AND c.channel_kind = 'voice' AND c.assignee_id IS NOT NULL
+              AND EXISTS (SELECT 1 FROM call k WHERE k.conversation_id = c.id AND k.connected_at IS NOT NULL)
+              AND NOT EXISTS (SELECT 1 FROM call k WHERE k.conversation_id = c.id AND k.state <> 'ended'))::int AS unclosed_cards
        FROM conversation c WHERE c.status IN ('queued', 'active', 'offered', 'hold', 'bot') AND ${sc.sql}`,
     sc.params,
   ))!;

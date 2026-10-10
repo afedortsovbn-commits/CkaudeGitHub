@@ -58,3 +58,15 @@ describe('экран мониторинга', () => {
     expect(spikeLevel(12, 0, 10)).toBe('crit');
   });
 });
+
+describe('экран мониторинга: режим «по загрузке» (Д-017)', () => {
+  it('просроченные неспешные обращения и незакрытые карточки после звонка — предупреждения', () => {
+    const r = evaluateWallboard({ ...base, now: { ...base.now, overdue: 2, unclosedCards: 1 } });
+    expect(r.level).toBe('warn');
+    expect(r.problems.map((p) => p.key)).toEqual(expect.arrayContaining(['overdue', 'cards']));
+    expect(r.problems.find((p) => p.key === 'overdue')?.text).toContain('2');
+    expect(
+      evaluateWallboard({ ...base, now: { ...base.now, overdue: 0, unclosedCards: 0 } }).problems,
+    ).toEqual([]);
+  });
+});

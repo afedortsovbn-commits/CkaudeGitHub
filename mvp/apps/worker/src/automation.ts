@@ -6,6 +6,7 @@ import {
   sweepBotWaits,
   sweepExternalBots,
   sweepInactivity,
+  sweepSilenceClose,
 } from '@cc/domain';
 import type { Logger } from '@cc/service-kit';
 import type { NatsConnection } from 'nats';
@@ -91,6 +92,8 @@ export class Automation {
     try {
       const n = await this.tx((c) => sweepInactivity(c));
       if (n) this.o.logger.info({ n }, 'автозакрытие: предупреждения и закрытия по молчанию клиента');
+      const silent = await this.tx((c) => sweepSilenceClose(c));
+      if (silent) this.o.logger.info({ n: silent }, 'режим «по загрузке»: чаты закрыты по молчанию клиента');
       const waits = await this.tx((c) => sweepBotWaits(c));
       for (const h of waits) this.runHttp(h);
       const ext = await this.tx((c) => sweepExternalBots(c));

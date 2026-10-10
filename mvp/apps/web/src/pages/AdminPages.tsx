@@ -17,6 +17,32 @@ import { get, patch } from '../lib/api';
 import { type Row, useAction, useList } from '../lib/data';
 import { t } from '../lib/i18n';
 
+/** Настройка `routing.policy` в интерфейсе (все поля, кроме базовых, появились с Д-017 и могут отсутствовать). */
+interface RoutingPolicyUi {
+  mode: string;
+  text: string;
+  voice: string;
+  email: string;
+  idleScope: string;
+  sticky: boolean;
+  stickyDays: number;
+  load?: {
+    cost?: { voice?: number; chatWaitingAgent?: number; chatWaitingClient?: number; wrapUp?: number };
+    pullMinFree?: number;
+    pushUrgent?: boolean;
+    agingThreshold?: number;
+  };
+  wrapUp?: { seconds?: number; extendSeconds?: number; extendRepeat?: boolean };
+  chat?: { silenceCloseMin?: number; silenceCloseText?: string };
+  reviews?: {
+    ratingOnly?: string;
+    ratingOnlyText?: string;
+    positiveDueHours?: number;
+    negativeDueHours?: number;
+  };
+  emailDueBusinessDays?: number;
+}
+
 export function SettingsPage() {
   const s = useQuery({ queryKey: ['/settings'], queryFn: () => get<Record<string, unknown>>('/settings') });
   const [v, setV] = useState<Record<string, unknown>>({});
@@ -89,50 +115,259 @@ export function SettingsPage() {
         {t.settingsPage.routingHint}
       </Text>
       {(() => {
+        const raw = (v['routing.policy'] as Record<string, unknown> | undefined) ?? {};
         const policy = {
+          mode: 'standard',
           text: 'auto',
           voice: 'auto',
           email: 'auto',
           idleScope: 'combined',
           sticky: false,
           stickyDays: 30,
-          ...((v['routing.policy'] as Record<string, unknown> | undefined) ?? {}),
-        } as { text: string; email: string; idleScope: string; sticky: boolean; stickyDays: number };
+          ...raw,
+        } as RoutingPolicyUi;
+        // Параметры режима «по загрузке» (Д-017) с умолчаниями из спецификации; хранятся в той же настройке.
+        const load = {
+          pullMinFree: 40,
+          pushUrgent: false,
+          agingThreshold: 0.8,
+          ...policy.load,
+          cost: {
+            voice: 100,
+            chatWaitingAgent: 40,
+            chatWaitingClient: 10,
+            wrapUp: 100,
+            ...policy.load?.cost,
+          },
+        };
+        const wrapUp = { seconds: 60, extendSeconds: 120, extendRepeat: true, ...policy.wrapUp };
+        const chat = { silenceCloseMin: 15, silenceCloseText: '', ...policy.chat };
+        const reviews = {
+          ratingOnly: 'template',
+          ratingOnlyText: '',
+          positiveDueHours: 24,
+          negativeDueHours: 8,
+          ...policy.reviews,
+        };
         const setPolicy = (patch: Record<string, unknown>) =>
           setV({ ...v, 'routing.policy': { ...policy, ...patch } });
+        const setLoad = (patch: Record<string, unknown>) => setPolicy({ load: { ...load, ...patch } });
+        const setCost = (patch: Record<string, unknown>) => setLoad({ cost: { ...load.cost, ...patch } });
+        const setWrapUp = (patch: Record<string, unknown>) => setPolicy({ wrapUp: { ...wrapUp, ...patch } });
+        const setChat = (patch: Record<string, unknown>) => setPolicy({ chat: { ...chat, ...patch } });
+        const setReviews = (patch: Record<string, unknown>) =>
+          setPolicy({ reviews: { ...reviews, ...patch } });
+        const num = (x: string | number, def: number) => (Number(x) || Number(x) === 0 ? Number(x) : def);
         const modes = [
           { value: 'auto', label: t.settingsPage.routingAuto },
           { value: 'pull', label: t.settingsPage.routingPull },
         ];
+        const isLoad = policy.mode === 'load';
         return (
           <>
             <Select
-              label={t.settingsPage.routingText}
-              data={modes}
-              value={policy.text}
-              onChange={(x) => x && setPolicy({ text: x })}
-              data-testid="routing-text"
-            />
-            <Select
-              label={t.settingsPage.routingEmail}
-              data={modes}
-              value={policy.email}
-              onChange={(x) => x && setPolicy({ email: x })}
-              data-testid="routing-email"
-            />
-            <Text size="sm" c="dimmed">
-              {t.settingsPage.routingVoice}
-            </Text>
-            <Select
-              label={t.settingsPage.routingIdle}
+              label={t.settingsPage.routingMode}
               data={[
-                { value: 'combined', label: t.settingsPage.routingIdleCombined },
-                { value: 'split', label: t.settingsPage.routingIdleSplit },
+                { value: 'standard', label: t.settingsPage.routingModeStandard },
+                { value: 'load', label: t.settingsPage.routingModeLoad },
               ]}
-              value={policy.idleScope}
-              onChange={(x) => x && setPolicy({ idleScope: x })}
-              data-testid="routing-idle"
+              value={policy.mode}
+              onChange={(x) => x && setPolicy({ mode: x })}
+              data-testid="routing-mode"
             />
+            {isLoad && (
+              <>
+                <Text size="xs" c="dimmed">
+                  {t.settingsPage.routingLoadHint}
+                </Text>
+                <Text size="sm" fw={600}>
+                  {t.settingsPage.routingCostTitle}
+                </Text>
+                <Group grow>
+                  <NumberInput
+                    label={t.settingsPage.routingCostVoice}
+                    min={0}
+                    max={100}
+                    value={load.cost.voice}
+                    onChange={(x) => setCost({ voice: num(x, 100) })}
+                    data-testid="routing-cost-voice"
+                  />
+                  <NumberInput
+                    label={t.settingsPage.routingCostChatWait}
+                    min={1}
+                    max={100}
+                    value={load.cost.chatWaitingAgent}
+                    onChange={(x) => setCost({ chatWaitingAgent: num(x, 40) })}
+                    data-testid="routing-cost-chat-wait"
+                  />
+                  <NumberInput
+                    label={t.settingsPage.routingCostChatIdle}
+                    min={0}
+                    max={100}
+                    value={load.cost.chatWaitingClient}
+                    onChange={(x) => setCost({ chatWaitingClient: num(x, 10) })}
+                    data-testid="routing-cost-chat-idle"
+                  />
+                  <NumberInput
+                    label={t.settingsPage.routingCostWrapUp}
+                    min={0}
+                    max={100}
+                    value={load.cost.wrapUp}
+                    onChange={(x) => setCost({ wrapUp: num(x, 100) })}
+                    data-testid="routing-cost-wrapup"
+                  />
+                </Group>
+                <Group grow>
+                  <NumberInput
+                    label={t.settingsPage.routingPullMinFree}
+                    min={0}
+                    max={100}
+                    value={load.pullMinFree}
+                    onChange={(x) => setLoad({ pullMinFree: num(x, 40) })}
+                    data-testid="routing-pull-min-free"
+                  />
+                  <NumberInput
+                    label={t.settingsPage.routingAging}
+                    min={0}
+                    max={100}
+                    value={Math.round(load.agingThreshold * 100)}
+                    onChange={(x) => setLoad({ agingThreshold: num(x, 80) / 100 })}
+                    data-testid="routing-aging"
+                  />
+                </Group>
+                <Switch
+                  label={t.settingsPage.routingPushUrgent}
+                  description={t.settingsPage.routingPushUrgentHint}
+                  checked={load.pushUrgent}
+                  onChange={(e) => setLoad({ pushUrgent: e.currentTarget.checked })}
+                  data-testid="routing-push-urgent"
+                />
+                <Text size="sm" fw={600}>
+                  {t.settingsPage.routingWrapUpTitle}
+                </Text>
+                <Group grow>
+                  <NumberInput
+                    label={t.settingsPage.routingWrapUpSeconds}
+                    min={0}
+                    max={3600}
+                    value={wrapUp.seconds}
+                    onChange={(x) => setWrapUp({ seconds: num(x, 60) })}
+                    data-testid="routing-wrapup-seconds"
+                  />
+                  <NumberInput
+                    label={t.settingsPage.routingWrapUpExtend}
+                    min={10}
+                    max={3600}
+                    value={wrapUp.extendSeconds}
+                    onChange={(x) => setWrapUp({ extendSeconds: num(x, 120) })}
+                    data-testid="routing-wrapup-extend"
+                  />
+                </Group>
+                <Switch
+                  label={t.settingsPage.routingWrapUpRepeat}
+                  checked={wrapUp.extendRepeat}
+                  onChange={(e) => setWrapUp({ extendRepeat: e.currentTarget.checked })}
+                  data-testid="routing-wrapup-repeat"
+                />
+                <Text size="sm" fw={600}>
+                  {t.settingsPage.routingChatTitle}
+                </Text>
+                <NumberInput
+                  label={t.settingsPage.routingSilenceMin}
+                  min={0}
+                  max={1440}
+                  value={chat.silenceCloseMin}
+                  onChange={(x) => setChat({ silenceCloseMin: num(x, 15) })}
+                  data-testid="routing-silence-min"
+                />
+                <TextInput
+                  label={t.settingsPage.routingSilenceText}
+                  placeholder={t.settingsPage.routingSilenceTextDefault}
+                  value={chat.silenceCloseText}
+                  onChange={(e) => setChat({ silenceCloseText: e.currentTarget.value })}
+                  data-testid="routing-silence-text"
+                />
+                <Text size="sm" fw={600}>
+                  {t.settingsPage.routingReviewsTitle}
+                </Text>
+                <Select
+                  label={t.settingsPage.routingRatingOnly}
+                  data={[
+                    { value: 'template', label: t.settingsPage.routingRatingOnlyTemplate },
+                    { value: 'none', label: t.settingsPage.routingRatingOnlyNone },
+                  ]}
+                  value={reviews.ratingOnly}
+                  onChange={(x) => x && setReviews({ ratingOnly: x })}
+                  data-testid="routing-rating-only"
+                />
+                {reviews.ratingOnly === 'template' && (
+                  <TextInput
+                    label={t.settingsPage.routingRatingOnlyText}
+                    placeholder={t.settingsPage.routingRatingOnlyTextDefault}
+                    value={reviews.ratingOnlyText}
+                    onChange={(e) => setReviews({ ratingOnlyText: e.currentTarget.value })}
+                    data-testid="routing-rating-only-text"
+                  />
+                )}
+                <Group grow>
+                  <NumberInput
+                    label={t.settingsPage.routingPositiveDue}
+                    min={1}
+                    max={720}
+                    value={reviews.positiveDueHours}
+                    onChange={(x) => setReviews({ positiveDueHours: num(x, 24) })}
+                    data-testid="routing-positive-due"
+                  />
+                  <NumberInput
+                    label={t.settingsPage.routingNegativeDue}
+                    min={1}
+                    max={720}
+                    value={reviews.negativeDueHours}
+                    onChange={(x) => setReviews({ negativeDueHours: num(x, 8) })}
+                    data-testid="routing-negative-due"
+                  />
+                  <NumberInput
+                    label={t.settingsPage.routingEmailDue}
+                    min={1}
+                    max={30}
+                    value={policy.emailDueBusinessDays ?? 1}
+                    onChange={(x) => setPolicy({ emailDueBusinessDays: num(x, 1) })}
+                    data-testid="routing-email-due"
+                  />
+                </Group>
+              </>
+            )}
+            {!isLoad && (
+              <>
+                <Select
+                  label={t.settingsPage.routingText}
+                  data={modes}
+                  value={policy.text}
+                  onChange={(x) => x && setPolicy({ text: x })}
+                  data-testid="routing-text"
+                />
+                <Select
+                  label={t.settingsPage.routingEmail}
+                  data={modes}
+                  value={policy.email}
+                  onChange={(x) => x && setPolicy({ email: x })}
+                  data-testid="routing-email"
+                />
+                <Text size="sm" c="dimmed">
+                  {t.settingsPage.routingVoice}
+                </Text>
+                <Select
+                  label={t.settingsPage.routingIdle}
+                  data={[
+                    { value: 'combined', label: t.settingsPage.routingIdleCombined },
+                    { value: 'split', label: t.settingsPage.routingIdleSplit },
+                  ]}
+                  value={policy.idleScope}
+                  onChange={(x) => x && setPolicy({ idleScope: x })}
+                  data-testid="routing-idle"
+                />
+              </>
+            )}
             <Switch
               label={t.settingsPage.routingSticky}
               description={t.settingsPage.routingStickyHint}

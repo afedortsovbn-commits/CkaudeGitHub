@@ -73,6 +73,8 @@ const SETTINGS: Record<string, z.ZodTypeAny> = {
   // Распределение: режим по группам каналов и как считать «кто дольше без обращений».
   'routing.policy': z
     .object({
+      // Д-017: `standard` — по группам каналов (ниже), `load` — «по загрузке» (ёмкость оператора, неспешная очередь).
+      mode: z.enum(['standard', 'load']).default('standard'),
       text: z.enum(['auto', 'pull']),
       voice: z.literal('auto'),
       email: z.enum(['auto', 'pull']),
@@ -80,6 +82,47 @@ const SETTINGS: Record<string, z.ZodTypeAny> = {
       // К тому же оператору: вёл клиента последним за stickyDays дней и сейчас свободен.
       sticky: z.boolean().default(false),
       stickyDays: z.number().int().min(1).max(365).default(30),
+      load: z
+        .object({
+          cost: z
+            .object({
+              voice: z.number().int().min(0).max(100),
+              chatWaitingAgent: z.number().int().min(1).max(100),
+              chatWaitingClient: z.number().int().min(0).max(100),
+              wrapUp: z.number().int().min(0).max(100),
+            })
+            .strict(),
+          pullMinFree: z.number().int().min(0).max(100),
+          pushUrgent: z.boolean(),
+          agingThreshold: z.number().min(0).max(1),
+        })
+        .strict()
+        .optional(),
+      wrapUp: z
+        .object({
+          seconds: z.number().int().min(0).max(3600),
+          extendSeconds: z.number().int().min(10).max(3600),
+          extendRepeat: z.boolean(),
+        })
+        .strict()
+        .optional(),
+      chat: z
+        .object({
+          silenceCloseMin: z.number().int().min(0).max(1440),
+          silenceCloseText: z.string().max(2000),
+        })
+        .strict()
+        .optional(),
+      reviews: z
+        .object({
+          ratingOnly: z.enum(['template', 'none']),
+          ratingOnlyText: z.string().max(2000),
+          positiveDueHours: z.number().int().min(1).max(720),
+          negativeDueHours: z.number().int().min(1).max(720),
+        })
+        .strict()
+        .optional(),
+      emailDueBusinessDays: z.number().int().min(1).max(30).optional(),
     })
     .strict(),
   // График работы: перерывы дневной/ночной смены (минуты) и нормы трудового законодательства.

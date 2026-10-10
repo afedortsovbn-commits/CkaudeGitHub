@@ -5,7 +5,7 @@ import { CurrentUser, RequirePerm } from '../auth/guard';
 import { APP_CONTEXT, type AppContext } from '../context';
 import { one, rows, toApi } from '../lib/db';
 import { todayServiceLevel } from '../reports/reports';
-import { RESOURCE_LABEL } from '@cc/domain';
+import { RESOURCE_LABEL, systemTimezone } from '@cc/domain';
 import { evaluateWallboard, type Level, receivedToday, wallboard } from './wallboard';
 
 const CONV_SCOPE = {
@@ -81,6 +81,8 @@ export class SupervisorController {
         oldestWaitS: n.oldest ?? 0,
         chats: n.chats ?? 0,
         bot: n.bot ?? 0,
+        overdue: n.overdue ?? 0,
+        unclosedCards: n.unclosed_cards ?? 0,
       },
       buckets: raw.buckets.map((b) => ({
         at: new Date(b.at).toISOString(),
@@ -126,6 +128,7 @@ export class SupervisorController {
        WHERE q.is_active GROUP BY q.id ORDER BY q.priority DESC, q.name`,
       sc.params,
     );
+    const tz = await systemTimezone(this.ctx.pool);
     const operators = await rows(
       this.ctx.pool,
       `SELECT u.id, u.full_name, COALESCE(ag.status, 'offline') AS status, br.name AS reason_name,
@@ -135,14 +138,51 @@ export class SupervisorController {
          -- Идущий разговор оператора (Ф5): для кнопки «Прослушать» (M-TEL-10).
          (SELECT cl.id FROM call cl WHERE cl.agent_user_id = u.id AND cl.state = 'talking' LIMIT 1) AS call_id,
          (SELECT COALESCE(cl.from_number, cl.to_number) FROM call cl
-           WHERE cl.agent_user_id = u.id AND cl.state = 'talking' LIMIT 1) AS call_number
+           WHERE cl.agent_user_id = u.id AND cl.state = 'talking' LIMIT 1) AS call_number,
+         -- Д-017, п.7: карточки, не закрытые после звонка (разговор завершён, обращение ещё в работе); продления «+2 мин».
+         (SELECT count(*)::int FROM conversation c WHERE c.assignee_id = u.id AND c.status = 'active' AND c.channel_kind = 'voice'
+            AND EXISTS (SELECT 1 FROM call k WHERE k.conversation_id = c.id AND k.connected_at IS NOT NULL)
+            AND NOT EXISTS (SELECT 1 FROM call k WHERE k.conversation_id = c.id AND k.state <> 'ended')) AS unclosed_cards,
+         COALESCE(ag.wrap_up_extends, 0) AS wrap_up_extends,
+         occ.ready_s, occ.busy_s
        FROM app_user u
        LEFT JOIN agent_status ag ON ag.user_id = u.id
        LEFT JOIN break_reason br ON br.id = ag.reason_id
+       LEFT JOIN LATERAL (
+         -- Д-017, п.9: занятость за смену (сегодня) = время со звонком или чатом, в котором клиент ждал ответа, /
+         -- время в статусах «Готов» и «Постобработка». Интервал ожидания ответа в чате — от первого сообщения клиента
+         -- в серии до ответа оператора (не дольше 30 мин).
+         SELECT
+           COALESCE((SELECT sum(extract(epoch FROM LEAST(COALESCE(l.ended_at, now()), now()) - GREATEST(l.started_at, d.t0)))
+              FROM agent_status_log l WHERE l.user_id = u.id AND l.status IN ('ready', 'wrap_up')
+                AND COALESCE(l.ended_at, now()) > d.t0), 0)::float8 AS ready_s,
+           COALESCE((SELECT sum(extract(epoch FROM LEAST(COALESCE(k.ended_at, now()), now()) - GREATEST(k.connected_at, d.t0)))
+              FROM call k WHERE k.agent_user_id = u.id AND k.connected_at IS NOT NULL
+                AND COALESCE(k.ended_at, now()) > d.t0), 0)::float8
+           + COALESCE((SELECT sum(extract(epoch FROM LEAST(
+                 COALESCE((SELECT min(mo.sent_at) FROM message mo WHERE mo.conversation_id = mi.conversation_id
+                             AND mo.direction = 'out' AND mo.sent_at > mi.sent_at), COALESCE(c.closed_at, now())),
+                 mi.sent_at + interval '30 min', now()) - GREATEST(mi.sent_at, d.t0)))
+              FROM message mi JOIN conversation c ON c.id = mi.conversation_id
+              WHERE c.assignee_id = u.id AND c.channel_kind NOT IN ('voice', 'email', 'review') AND mi.direction = 'in'
+                AND mi.sent_at > d.t0 - interval '1 day' AND mi.sent_at + interval '30 min' > d.t0
+                AND NOT EXISTS (SELECT 1 FROM message mp WHERE mp.conversation_id = mi.conversation_id AND mp.direction = 'in'
+                       AND mp.sent_at < mi.sent_at AND mp.sent_at > COALESCE((SELECT max(mo2.sent_at) FROM message mo2
+                           WHERE mo2.conversation_id = mi.conversation_id AND mo2.direction = 'out' AND mo2.sent_at < mi.sent_at),
+                         '-infinity'::timestamptz))), 0)::float8 AS busy_s
+         FROM (SELECT date_trunc('day', now() AT TIME ZONE $1) AT TIME ZONE $1 AS t0) d
+       ) occ ON TRUE
        WHERE u.is_active AND u.can_login AND EXISTS (
          SELECT 1 FROM user_role ur JOIN role r ON r.code = ur.role_code
           WHERE ur.user_id = u.id AND 'conversations.work' = ANY(r.permissions))
        ORDER BY u.full_name`,
+      [tz],
+    );
+    // Просроченные неспешные обращения в очереди (Д-017, п.9) — в области видимости.
+    const overdue = await one<{ n: number }>(
+      this.ctx.pool,
+      `SELECT count(*)::int AS n FROM conversation c WHERE c.status = 'queued' AND c.due_at < now() AND ${sc.sql}`,
+      sc.params,
     );
     // Активные обращения по статусам и каналам (в области видимости).
     const active = await rows<{ status: string; channel_kind: string; n: number }>(
@@ -169,7 +209,16 @@ export class SupervisorController {
           todayAsa: s?.asa ?? null,
         };
       }),
-      operators: operators.map((r) => toApi(r)),
+      operators: operators.map((r) => {
+        const { ready_s, busy_s, ...rest } = r;
+        const ready = Number(ready_s ?? 0);
+        const busy = Number(busy_s ?? 0);
+        return {
+          ...toApi(rest),
+          occupancyPct: ready > 0 ? Math.round((100 * Math.min(busy, ready)) / ready) : null,
+        };
+      }),
+      overdue: overdue?.n ?? 0,
       active: active.map((r) => ({ status: r.status, channelKind: r.channel_kind, count: r.n })),
       thresholds,
       at: new Date().toISOString(),

@@ -1,4 +1,4 @@
-import { Badge, Button, Menu, Text } from '@mantine/core';
+import { Badge, Button, Group, Menu, Text, Tooltip } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { IconCalendarTime, IconChevronDown, IconCoffee, IconHeadset, IconLogout } from '@tabler/icons-react';
 import { useQuery } from '@tanstack/react-query';
@@ -37,6 +37,12 @@ export function AgentStatusMenu() {
     (b: Record<string, unknown>) => post('/agent-status', b),
     t.workspace.statusIzmenen,
   );
+  // Режим «по загрузке» (Д-017): постобработку после звонка можно продлить кнопкой «+2 мин».
+  const extend = useAction(() => post('/agent-status/wrap-up/extend'), t.workspace.wrapUpExtended);
+  const loadMode = status.data?.routingMode === 'load';
+  const extendMin = Math.max(1, Math.round(Number(status.data?.wrapUpExtendSeconds ?? 120) / 60));
+  const canExtend =
+    loadMode && (status.data?.wrapUpExtendRepeat !== false || Number(status.data?.wrapUpExtends ?? 0) < 1);
   const cur = String(status.data?.status ?? 'offline');
   const reason = (reasons.data ?? []).find((r) => r.id === status.data?.reasonId);
   const since = hhmm(status.data?.since);
@@ -70,73 +76,89 @@ export function AgentStatusMenu() {
   return (
     <>
       <MyScheduleModal opened={myOpen} onClose={() => setMyOpen(false)} />
-      <Menu position="bottom-start" shadow="md" withinPortal>
-        <Menu.Target>
-          <Button
-            size="compact-sm"
-            variant="light"
-            color={color}
-            leftSection={<Badge size="xs" circle color={color} variant="filled" />}
-            rightSection={<IconChevronDown size={14} />}
-            data-testid="agent-status"
-            data-status={cur}
-          >
-            {label}
-          </Button>
-        </Menu.Target>
-        <Menu.Dropdown>
-          <Menu.Item
-            leftSection={<IconHeadset size={16} />}
-            color="green"
-            onClick={toReady}
-            disabled={cur === 'ready'}
-            data-testid="agent-status-ready"
-          >
-            {t.workspace.statusWork}
-          </Menu.Item>
-          <Menu.Label>{t.workspace.pereryv}</Menu.Label>
-          {(reasons.data ?? []).map((r, i) => (
-            <Menu.Item
-              key={r.id}
-              leftSection={<IconCoffee size={16} />}
-              color="orange"
-              onClick={() => setStatus.mutate({ status: 'break', reasonId: r.id })}
-              data-testid={`agent-status-break-${i}`}
+      <Group gap={4} wrap="nowrap">
+        <Menu position="bottom-start" shadow="md" withinPortal>
+          <Menu.Target>
+            <Button
+              size="compact-sm"
+              variant="light"
+              color={color}
+              leftSection={<Badge size="xs" circle color={color} variant="filled" />}
+              rightSection={<IconChevronDown size={14} />}
+              data-testid="agent-status"
+              data-status={cur}
             >
-              {String(r.name)}
-            </Menu.Item>
-          ))}
-          {!(reasons.data ?? []).length && (
+              {label}
+            </Button>
+          </Menu.Target>
+          <Menu.Dropdown>
             <Menu.Item
-              leftSection={<IconCoffee size={16} />}
-              color="orange"
-              onClick={() => setStatus.mutate({ status: 'break' })}
-              data-testid="agent-status-break-0"
+              leftSection={<IconHeadset size={16} />}
+              color="green"
+              onClick={toReady}
+              disabled={cur === 'ready'}
+              data-testid="agent-status-ready"
             >
-              {t.workspace.pereryv}
+              {t.workspace.statusWork}
             </Menu.Item>
-          )}
-          <Menu.Divider />
-          <Menu.Item
-            leftSection={<IconCalendarTime size={16} />}
-            onClick={() => setMyOpen(true)}
-            data-testid="my-schedule-open"
-          >
-            {t.schedule.my}
-          </Menu.Item>
-          <Menu.Item
-            leftSection={<IconLogout size={16} />}
-            onClick={() => setStatus.mutate({ status: 'offline' })}
-            disabled={cur === 'offline'}
-            data-testid="agent-status-offline"
-          >
-            <Text size="sm">{t.workspace.statusEndShift}</Text>
-            <Text size="xs" c="dimmed">
-              {t.workspace.statusEndShiftHint}
-            </Text>
-          </Menu.Item>
-        </Menu.Dropdown>
-      </Menu>
+            <Menu.Label>{t.workspace.pereryv}</Menu.Label>
+            {(reasons.data ?? []).map((r, i) => (
+              <Menu.Item
+                key={r.id}
+                leftSection={<IconCoffee size={16} />}
+                color="orange"
+                onClick={() => setStatus.mutate({ status: 'break', reasonId: r.id })}
+                data-testid={`agent-status-break-${i}`}
+              >
+                {String(r.name)}
+              </Menu.Item>
+            ))}
+            {!(reasons.data ?? []).length && (
+              <Menu.Item
+                leftSection={<IconCoffee size={16} />}
+                color="orange"
+                onClick={() => setStatus.mutate({ status: 'break' })}
+                data-testid="agent-status-break-0"
+              >
+                {t.workspace.pereryv}
+              </Menu.Item>
+            )}
+            <Menu.Divider />
+            <Menu.Item
+              leftSection={<IconCalendarTime size={16} />}
+              onClick={() => setMyOpen(true)}
+              data-testid="my-schedule-open"
+            >
+              {t.schedule.my}
+            </Menu.Item>
+            <Menu.Item
+              leftSection={<IconLogout size={16} />}
+              onClick={() => setStatus.mutate({ status: 'offline' })}
+              disabled={cur === 'offline'}
+              data-testid="agent-status-offline"
+            >
+              <Text size="sm">{t.workspace.statusEndShift}</Text>
+              <Text size="xs" c="dimmed">
+                {t.workspace.statusEndShiftHint}
+              </Text>
+            </Menu.Item>
+          </Menu.Dropdown>
+        </Menu>
+        {cur === 'wrap_up' && canExtend && (
+          <Tooltip label={t.workspace.wrapUpExtendHint} withArrow>
+            <Button
+              size="compact-sm"
+              variant="light"
+              color="yellow"
+              loading={extend.isPending}
+              onClick={() => extend.mutate(undefined)}
+              data-testid="wrapup-extend"
+            >
+              {t.workspace.wrapUpExtend(extendMin)}
+            </Button>
+          </Tooltip>
+        )}
+      </Group>
     </>
   );
 }

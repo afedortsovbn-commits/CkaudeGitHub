@@ -653,6 +653,11 @@ async function agentsReport(ctx: ReportCtx, period: Period) {
     handled: o.handled,
     aht: o.handled ? o.handle_s! / o.handled : null,
     handle_s: o.handle_s,
+    // Д-017, п.9: занятость = время обработки / время «Готов» + «Постобработка».
+    occupancy_pct:
+      o.ready_s! + o.wrap_s! > 0
+        ? Math.round((100 * Math.min(o.handle_s!, o.ready_s! + o.wrap_s!)) / (o.ready_s! + o.wrap_s!))
+        : null,
     csat_avg: o.csat_n ? Math.round((o.csat_sum! / o.csat_n) * 100) / 100 : null,
   });
   const labels = await groupLabels(
@@ -675,6 +680,7 @@ async function agentsReport(ctx: ReportCtx, period: Period) {
       col('handled', 'Завершено обработок'),
       col('aht', 'AHT', 'dur'),
       col('handle_s', 'Время обработки', 'dur'),
+      col('occupancy_pct', 'Занятость, %', 'pct'),
       col('csat_avg', 'Средняя оценка', 'num'),
     ],
     rows,

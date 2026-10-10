@@ -1,4 +1,4 @@
-import { VOICE_BUSY } from '@cc/domain';
+import { LOAD_CAPACITY, loadSql, type RoutingPolicy, VOICE_BUSY } from '@cc/domain';
 import type { PoolClient } from 'pg';
 import type { Candidate } from './strategies';
 import { rows } from './db';
@@ -14,6 +14,11 @@ const IDLE_COLUMNS = ['last_assigned_at', 'last_text_at', 'last_voice_at', 'last
  * ещё не отказывались от этого обращения. Навык, привязанный к теме, — только для ранжирования
  * внутри стратегии (мягкий приоритет, не жёсткий фильтр — иначе обращение может зависнуть без
  * подходящего специалиста).
+ *
+ * Режим «по загрузке» (Д-017, `load`): у каждого кандидата считается свободная ёмкость (100 − занятость);
+ * чат предлагается только при свободной ёмкости не меньше стоимости чата с ожиданием ответа, звонок — только
+ * оператору без звонка и не в постобработке. Для чатов кандидатом может быть и оператор в постобработке — её
+ * стоимость входит в занятость (по умолчанию 100, то есть исключает).
  */
 export async function eligibleCandidates(
   tx: PoolClient,
@@ -25,17 +30,27 @@ export async function eligibleCandidates(
     voice?: boolean;
     /** Столбец «последнее назначение» по политике: общий или группы канала (только из белого списка). */
     idleColumn?: string;
+    /** Политика в режиме «по загрузке» — считать свободную ёмкость и фильтровать по ней. */
+    load?: RoutingPolicy;
   },
 ): Promise<Candidate[]> {
+  const idle = IDLE_COLUMNS.includes(opts.idleColumn ?? '') ? opts.idleColumn : 'last_assigned_at';
+  const statuses = opts.load && !opts.voice ? `('ready', 'wrap_up')` : `('ready')`;
+  const free = opts.load ? `(${LOAD_CAPACITY} - ${loadSql(opts.load, 'cand.user_id')})::int` : 'NULL::int';
+  const loadFilter =
+    opts.load && !opts.voice
+      ? ` AND (${LOAD_CAPACITY} - ${loadSql(opts.load, 'cand.user_id')}) >= ${opts.load.load.cost.chatWaitingAgent}`
+      : '';
   return rows<{
     user_id: string;
     active_count: number;
     last_assigned_at: string | null;
     skill_level: number;
+    free_capacity: number | null;
   }>(
     tx,
     `WITH cand AS (
-       SELECT u.id AS user_id, ag.${IDLE_COLUMNS.includes(opts.idleColumn ?? '') ? opts.idleColumn : 'last_assigned_at'} AS last_assigned_at,
+       SELECT u.id AS user_id, ag.${idle} AS last_assigned_at,
          (SELECT count(*)::int FROM conversation c2 WHERE c2.assignee_id = u.id
             AND c2.status IN ('active', 'hold', 'offered') AND c2.channel_kind <> 'voice') AS active_count,
          COALESCE((SELECT max(us.level) FROM user_skill us JOIN skill sk ON sk.id = us.skill_id
@@ -43,10 +58,11 @@ export async function eligibleCandidates(
        FROM app_user u
        JOIN user_queue uq ON uq.user_id = u.id AND uq.queue_id = $1
        LEFT JOIN agent_status ag ON ag.user_id = u.id
-       WHERE u.is_active AND u.can_login AND COALESCE(ag.status, 'offline') = 'ready'
+       WHERE u.is_active AND u.can_login AND COALESCE(ag.status, 'offline') IN ${statuses}
          AND NOT (u.id = ANY($3::uuid[]))
      )
-     SELECT * FROM cand WHERE ${opts.voice ? `$2::int >= 0 AND NOT ${VOICE_BUSY}` : 'active_count < $2'}`,
+     SELECT cand.*, ${free} AS free_capacity FROM cand
+      WHERE ${opts.voice ? `$2::int >= 0 AND NOT ${VOICE_BUSY}` : 'active_count < $2'}${loadFilter}`,
     [opts.queueId, opts.maxChats, opts.excludeUserIds, opts.topicPath],
   ).then((r) =>
     r.map((c) => ({
@@ -54,6 +70,7 @@ export async function eligibleCandidates(
       activeCount: c.active_count,
       lastAssignedAt: c.last_assigned_at,
       skillLevel: c.skill_level,
+      freeCapacity: c.free_capacity,
     })),
   );
 }

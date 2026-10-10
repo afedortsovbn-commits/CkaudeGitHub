@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { type Candidate, leastLoad, leastRecent, pickCandidate } from './strategies';
+import { type Candidate, leastLoad, leastRecent, loadChat, loadVoice, pickCandidate } from './strategies';
 
 const c = (over: Partial<Candidate>): Candidate => ({
   userId: 'u',
@@ -53,5 +53,22 @@ describe('pickCandidate', () => {
     const a = c({ userId: 'a', lastAssignedAt: '2026-01-01T10:00:00Z' });
     const b = c({ userId: 'b', lastAssignedAt: '2026-01-01T09:00:00Z' });
     expect(pickCandidate('unknown', [a, b])?.userId).toBe('b');
+  });
+});
+
+describe('режим «по загрузке» (Д-017, п.5)', () => {
+  it('звонок — тому, у кого меньше чатов; при равенстве — кто дольше без звонка', () => {
+    const a = c({ userId: 'a', activeCount: 2, lastAssignedAt: '2026-01-01T08:00:00Z' });
+    const b = c({ userId: 'b', activeCount: 1, lastAssignedAt: '2026-01-01T11:00:00Z' });
+    const d = c({ userId: 'd', activeCount: 1, lastAssignedAt: '2026-01-01T09:00:00Z' });
+    expect(loadVoice([a, b, d])?.userId).toBe('d');
+  });
+
+  it('чат — тому, у кого больше свободной ёмкости; при равенстве — кто дольше без текстовых', () => {
+    const a = c({ userId: 'a', freeCapacity: 60, lastAssignedAt: '2026-01-01T08:00:00Z' });
+    const b = c({ userId: 'b', freeCapacity: 90, lastAssignedAt: '2026-01-01T11:00:00Z' });
+    const d = c({ userId: 'd', freeCapacity: 90, lastAssignedAt: null });
+    expect(loadChat([a, b, d])?.userId).toBe('d');
+    expect(loadChat([a, b])?.userId).toBe('b');
   });
 });

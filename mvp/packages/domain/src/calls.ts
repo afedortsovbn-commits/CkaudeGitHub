@@ -9,7 +9,8 @@ import {
 } from '@cc/contracts';
 import type { PoolClient } from 'pg';
 import { appendMessage, emitConversation, loadRef, resolveRouting } from './conversations';
-import { markAssigned } from './routing-policy';
+import { setAgentStatus } from './agent-status';
+import { loadRoutingPolicy, markAssigned } from './routing-policy';
 
 /**
  * Голосовые вызовы (Ф5, M-CH-02, M-TEL-*): общая логика call-control и api. Вызов живёт в таблице `call`
@@ -24,6 +25,7 @@ interface CallRow {
   state: CallState;
   on_hold: boolean;
   agent_user_id: string | null;
+  connected_at?: string | Date | null;
   end_reason: string | null;
   consult_channel: string | null;
   consult_state: 'dialing' | 'talking' | null;
@@ -422,6 +424,22 @@ export async function endCall(tx: PoolClient, callId: string, reason: string): P
       body: reason === 'failed' ? 'Звонок не состоялся' : 'Звонок завершён',
       channelKind: 'voice',
     });
+    // Режим «по загрузке» (Д-017, п.7): после разговора — постобработка с таймером политики (новые звонки не
+    // поступают; «+2 мин» — POST /agent-status/wrap-up/extend). Только из «Готов»: оператор на перерыве не должен
+    // через таймер стать «Готов».
+    if (c.agent_user_id && c.connected_at) {
+      const policy = await loadRoutingPolicy(tx);
+      if (policy.mode === 'load' && policy.wrapUp.seconds > 0) {
+        const st = await tx.query<{ status: string }>(
+          `SELECT status FROM agent_status WHERE user_id = $1 FOR UPDATE`,
+          [c.agent_user_id],
+        );
+        if (st.rows[0]?.status === 'ready')
+          await setAgentStatus(tx, c.agent_user_id, 'wrap_up', {
+            wrapUpUntil: new Date(Date.now() + policy.wrapUp.seconds * 1000),
+          });
+      }
+    }
   }
   await emitCallState(tx, callId);
   return true;

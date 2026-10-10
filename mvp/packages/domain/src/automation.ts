@@ -18,6 +18,7 @@ import { appendMessage, emitConversation, loadRef } from './conversations';
 import { DomainError } from './tickets';
 import { freeAgents } from './ivr';
 import { positionSettings, queuePosition } from './queue-position';
+import { CHAT_KINDS_SQL, loadRoutingPolicy } from './routing-policy';
 import { enqueueBotTurn } from './webhooks';
 
 /**
@@ -680,6 +681,35 @@ export async function sweepInactivity(tx: PoolClient, now = new Date()): Promise
     }
   }
   return n;
+}
+
+/**
+ * Молчание клиента в режиме «по загрузке» (Д-017, п.6): последнее сообщение — от оператора, клиент молчит
+ * `chat.silenceCloseMin` минут → чат закрывается с сообщением клиенту `chat.silenceCloseText`. Новое сообщение
+ * клиента после этого — новое обращение (к тому же оператору при включённом «к тому же оператору»).
+ */
+export async function sweepSilenceClose(tx: PoolClient, now = new Date()): Promise<number> {
+  const policy = await loadRoutingPolicy(tx);
+  if (policy.mode !== 'load' || policy.chat.silenceCloseMin <= 0) return 0;
+  const { rows } = await tx.query<{ id: string }>(
+    `SELECT c.id FROM conversation c
+      WHERE c.status = 'active' AND c.assignee_id IS NOT NULL AND c.channel_kind ${CHAT_KINDS_SQL}
+        AND c.last_message_at < $1::timestamptz - make_interval(mins => $2)
+        AND (SELECT m.direction FROM message m WHERE m.conversation_id = c.id AND m.direction IN ('in', 'out')
+              ORDER BY m.sent_at DESC, m.seq DESC LIMIT 1) = 'out'
+      ORDER BY c.last_message_at LIMIT 50 FOR UPDATE OF c SKIP LOCKED`,
+    [now, policy.chat.silenceCloseMin],
+  );
+  for (const r of rows) {
+    const conv = await loadConv(tx, r.id);
+    await autoMessage(tx, conv, policy.chat.silenceCloseText, { auto: 'silence' });
+    await closeAuto(
+      tx,
+      r.id,
+      `Чат закрыт автоматически: клиент не отвечает ${policy.chat.silenceCloseMin} мин`,
+    );
+  }
+  return rows.length;
 }
 
 // ------------------------------------------------------------------ внешний бот (Bot Gateway, Ф9, M-AI-02)

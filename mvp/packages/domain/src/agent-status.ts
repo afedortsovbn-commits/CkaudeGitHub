@@ -41,9 +41,10 @@ export async function setAgentStatus(
     wrap_up_until: string | null;
     since: string;
   }>(
-    `INSERT INTO agent_status (user_id, status, reason_id, wrap_up_until, since, updated_at)
-     VALUES ($1, $2, $3, $4, now(), now())
-     ON CONFLICT (user_id) DO UPDATE SET status = $2, reason_id = $3, wrap_up_until = $4, since = now(), updated_at = now()
+    `INSERT INTO agent_status (user_id, status, reason_id, wrap_up_until, since, updated_at, wrap_up_extends)
+     VALUES ($1, $2, $3, $4, now(), now(), 0)
+     ON CONFLICT (user_id) DO UPDATE SET status = $2, reason_id = $3, wrap_up_until = $4, since = now(), updated_at = now(),
+       wrap_up_extends = 0
      RETURNING user_id, status, reason_id, wrap_up_until, since`,
     [userId, status, opts.reasonId ?? null, opts.wrapUpUntil ?? null],
   );

@@ -152,7 +152,17 @@ export interface MessageDto {
 
 export interface MessageMeta {
   /** Сообщение отправлено автоматически: правило автоответа (вид правила) или бот. */
-  auto?: 'greeting' | 'queued' | 'queued_busy' | 'after_hours' | 'keyword' | 'inactivity' | 'bot' | 'ticket';
+  auto?:
+    | 'greeting'
+    | 'queued'
+    | 'queued_busy'
+    | 'after_hours'
+    | 'keyword'
+    | 'inactivity'
+    | 'bot'
+    | 'ticket'
+    | 'silence'
+    | 'review';
   /** Кнопки бота — клиент нажимает (в виджете) или пишет текст кнопки. */
   buttons?: { id: string; label: string }[];
   /** Запрос оценки обслуживания после закрытия чата (виджет показывает 1–5). */
