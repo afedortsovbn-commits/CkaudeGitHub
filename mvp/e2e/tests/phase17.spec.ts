@@ -31,6 +31,14 @@ test.describe.serial('Ф17: распределение «по загрузке»
   async function setMode(browser: Browser, mode: 'load' | 'standard', silenceMin?: number) {
     const admin = await as(browser, ADMIN.email, ADMIN.password);
     await nav(admin, 'Настройки');
+    // Поля режима «по загрузке» видны только в нём: при возврате к обычному режиму сначала вернуть молчание клиента
+    // к умолчанию (15 мин), затем переключить режим — иначе на стенде останется 1 мин.
+    if (mode === 'standard') {
+      // Настройки подгружаются после открытия страницы — дождаться поля (в обычном режиме его не будет).
+      const silence = admin.getByTestId('routing-silence-min');
+      await silence.waitFor({ state: 'visible', timeout: 10_000 }).catch(() => undefined);
+      if (await silence.isVisible()) await silence.fill('15');
+    }
     await admin.getByTestId('routing-mode').click();
     await admin.getByRole('option', { name: mode === 'load' ? /По загрузке/ : /По группам каналов/ }).click();
     if (mode === 'load' && silenceMin !== undefined)
