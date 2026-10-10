@@ -30,7 +30,7 @@ test.describe.serial('Ф2: чат на сайте → оператор', () => {
     await expect(client.w.getByTestId('cc-msg-in').filter({ hasText: `вопрос ${stamp}` })).toBeVisible();
 
     await login(page, 'operator1@demo.local', DEMO_PASSWORD);
-    await nav(page, 'Рабочее место оператора');
+    await nav(page, '1-я линия (оператор)');
     await expect(page.getByTestId('rt-status')).toHaveText('онлайн');
     await listView(page, 'queue');
     const item = page.getByTestId('conv-item').filter({ hasText: `Клиент ${stamp}` });

@@ -81,7 +81,7 @@ test.describe.serial('Ф8: вторая линия', () => {
 
     // Оператор берёт обращение, классифицирует (срок темы — 10 дней), выбирает «Передать на 2-ю линию» и отмечает «Особо важное».
     const op = await as(browser, 'operator1@demo.local');
-    await nav(op, 'Рабочее место оператора');
+    await nav(op, '1-я линия (оператор)');
     await listView(op, 'queue');
     const item = op.getByTestId('conv-item').filter({ hasText: CLIENT });
     await expect(item).toBeVisible({ timeout: 15_000 });

@@ -1,6 +1,6 @@
 /** Строки интерфейса: раздел «layout» (M-NFR-08). */
 export const layout = {
-  rabocheeMestoOperatora: 'Рабочее место оператора',
+  rabocheeMestoOperatora: '1-я линия (оператор)',
   supervizor: 'Супервизор',
   otchety: 'Отчёты',
   kabinet2YLinii: '2-я линия',
@@ -31,7 +31,7 @@ export const layout = {
   personalnyeDannye: 'Персональные данные',
   zdravstvuyte: 'Здравствуйте, ',
   razdelyVMenyuSleva:
-    'Разделы — в меню слева: рабочее место оператора, панель супервизора, настройка IVR, каналов, оргструктуры, прав и справочников.',
+    'Разделы — в меню слева: 1-я линия (оператор), панель супервизора, настройка IVR, каналов, оргструктуры, прав и справочников.',
   roleName: {
     admin: 'Администратор',
     operator: 'Оператор',

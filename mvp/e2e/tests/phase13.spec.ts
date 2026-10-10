@@ -80,7 +80,7 @@ test.describe.serial('Ф13: отзывы с карт (Rocket Data) и синхр
     });
 
     const op = await as(browser, 'operator1@demo.local');
-    await nav(op, 'Рабочее место оператора');
+    await nav(op, '1-я линия (оператор)');
     await listView(op, 'queue');
     const item = op.getByTestId('conv-item').filter({ hasText: author });
     await expect(item).toBeVisible({ timeout: 30_000 });

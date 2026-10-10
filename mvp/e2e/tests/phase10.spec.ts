@@ -132,7 +132,7 @@ test.describe.serial('Ф10: упрощённая аналитика', () => {
     await openWidget(browser, south, 'Не работает сайт');
     await openWidget(browser, north, 'Нагрубили на АЗС');
     const op = await as(browser, 'operator1@demo.local');
-    await nav(op, 'Рабочее место оператора');
+    await nav(op, '1-я линия (оператор)');
     await handle(op, south, 'Предприятие «Юг»', 'Сайт');
     // Оператор отмечает обращение «Особо важное».
     await handle(op, north, 'Предприятие «Север»', 'Жалобы на персонал АЗС', '12', true);

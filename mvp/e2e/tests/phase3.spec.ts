@@ -34,7 +34,7 @@ test.describe.serial('Ф3: маршрутизация (ACD), статусы оп
     browser,
   }) => {
     await login(page, 'operator1@demo.local', DEMO_PASSWORD);
-    await nav(page, 'Рабочее место оператора');
+    await nav(page, '1-я линия (оператор)');
     await setAgentStatus(page, 'ready');
 
     const client = await openWidget(browser, `Клиент ACD-A ${stamp}`);
@@ -65,7 +65,7 @@ test.describe.serial('Ф3: маршрутизация (ACD), статусы оп
 
   test('отказ от предложения возвращает обращение в очередь', async ({ page, browser }) => {
     await login(page, 'operator2@demo.local', DEMO_PASSWORD);
-    await nav(page, 'Рабочее место оператора');
+    await nav(page, '1-я линия (оператор)');
     await setAgentStatus(page, 'ready');
 
     const client = await openWidget(browser, `Клиент ACD-B ${stamp}`);

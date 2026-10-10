@@ -26,7 +26,7 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
     permissions: [
       {
         code: 'conversations.work',
-        title: 'Рабочее место оператора',
+        title: '1-я линия (оператор)',
         description: 'Чаты и звонки, карточка обращения и клиента, шаблоны и база знаний (чтение), софтфон',
       },
       {

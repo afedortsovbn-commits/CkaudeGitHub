@@ -85,7 +85,7 @@ test.describe.serial('Ф9: публичный API, webhooks, Bot Gateway, экс
     const client = await openWidget(browser, name, 'demo-webchat');
     await say(client.w, 'Я недоволен обслуживанием на АЗС, кассир нагрубил');
     await login(page, 'operator1@demo.local', DEMO_PASSWORD);
-    await nav(page, 'Рабочее место оператора');
+    await nav(page, '1-я линия (оператор)');
     await takeFromQueue(page, name);
     await page.getByTestId('reply').fill('Приносим извинения, разберёмся.');
     await page.getByTestId('send').click();
@@ -126,7 +126,7 @@ test.describe.serial('Ф9: публичный API, webhooks, Bot Gateway, экс
     const client = await openWidget(browser, name, 'demo-webchat');
     await say(client.w, 'Спасибо за быструю помощь вчера, всё отлично');
     await login(page, 'operator1@demo.local', DEMO_PASSWORD);
-    await nav(page, 'Рабочее место оператора');
+    await nav(page, '1-я линия (оператор)');
     await takeFromQueue(page, name);
     await page.getByTestId('reply').fill('Рады помочь!');
     await page.getByTestId('send').click();
@@ -165,7 +165,7 @@ test.describe.serial('Ф9: публичный API, webhooks, Bot Gateway, экс
     await expect(client.w.getByText('Соединяю с оператором')).toBeVisible({ timeout: 15000 });
 
     await login(page, 'operator2@demo.local', DEMO_PASSWORD);
-    await nav(page, 'Рабочее место оператора');
+    await nav(page, '1-я линия (оператор)');
     await takeFromQueue(page, name);
     const msgs = page.getByTestId('messages');
     await expect(msgs).toContainText('Эхо-бот получил');
@@ -198,7 +198,7 @@ test.describe.serial('Ф9: публичный API, webhooks, Bot Gateway, экс
     await api.dispose();
 
     await login(page, 'operator1@demo.local', DEMO_PASSWORD);
-    await nav(page, 'Рабочее место оператора');
+    await nav(page, '1-я линия (оператор)');
     await takeFromQueue(page, name);
     await expect(page.getByTestId('messages')).toContainText('Заявка с сайта');
     await expect(page.getByTestId('extra-field-Заказ')).toContainText(`A-${stamp}`);

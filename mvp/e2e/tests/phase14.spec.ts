@@ -85,7 +85,7 @@ async function newPage(browser: Browser): Promise<Page> {
 async function staff(browser: Browser, email: string, password = DEMO_PASSWORD): Promise<Page> {
   const page = await newPage(browser);
   await login(page, email, password);
-  await nav(page, 'Рабочее место оператора');
+  await nav(page, '1-я линия (оператор)');
   await expect(page.getByTestId('softphone-status')).toHaveText('Телефон готов', { timeout: 20_000 });
   return page;
 }
@@ -231,7 +231,7 @@ test.describe.serial('Ф14: бот, очередь, супервизор', () =>
 
     const op = await newPage(browser);
     await login(op, 'operator1@demo.local', DEMO_PASSWORD);
-    await nav(op, 'Рабочее место оператора');
+    await nav(op, '1-я линия (оператор)');
     await listView(op, 'queue');
     const item = op.getByTestId('conv-item').filter({ hasText: name });
     await expect(item).toBeVisible({ timeout: 15_000 });
@@ -417,7 +417,7 @@ test.describe.serial('Ф14: бот, очередь, супервизор', () =>
     await say(client.w, 'не проходит оплата картой');
     const op = await newPage(browser);
     await login(op, 'operator2@demo.local', DEMO_PASSWORD);
-    await nav(op, 'Рабочее место оператора');
+    await nav(op, '1-я линия (оператор)');
     await listView(op, 'queue');
     const item = op.getByTestId('conv-item').filter({ hasText: name });
     await expect(item).toBeVisible({ timeout: 15_000 });
@@ -426,7 +426,7 @@ test.describe.serial('Ф14: бот, очередь, супервизор', () =>
 
     const sup = await newPage(browser);
     await login(sup, ADMIN.email, ADMIN.password);
-    await nav(sup, 'Рабочее место оператора');
+    await nav(sup, '1-я линия (оператор)');
     await listView(sup, 'active');
     await sup.getByTestId('conv-item').filter({ hasText: name }).click();
     await sup.getByTestId('hint-mode').click();

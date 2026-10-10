@@ -55,7 +55,7 @@ test.describe.serial('Ф7: автоответы, бот, подсказки, ш�
     await expect(client.w.getByText('Вы в очереди')).toBeVisible();
 
     await login(page, 'operator1@demo.local', DEMO_PASSWORD);
-    await nav(page, 'Рабочее место оператора');
+    await nav(page, '1-я линия (оператор)');
     await takeFromQueue(page, name);
     // История с ботом и собранные данные видны оператору.
     const msgs = page.getByTestId('messages');
@@ -113,7 +113,7 @@ test.describe.serial('Ф7: автоответы, бот, подсказки, ш�
     const client = await openWidget(browser, name, 'demo-webchat');
     await say(client.w, 'Сколько бонусов у меня на карте?');
     await login(page, 'operator2@demo.local', DEMO_PASSWORD);
-    await nav(page, 'Рабочее место оператора');
+    await nav(page, '1-я линия (оператор)');
     await takeFromQueue(page, name);
     await expect(page.getByTestId('assist').getByTestId('suggestion-draft')).toBeVisible({ timeout: 15000 });
     await page.getByTestId('assist-draft').click();
@@ -180,7 +180,7 @@ test.describe.serial('Ф7: автоответы, бот, подсказки, ш�
       timeout: 15000,
     });
 
-    await nav(page, 'Рабочее место оператора');
+    await nav(page, '1-я линия (оператор)');
     await takeFromQueue(page, name);
     await page.getByTestId('reply').fill(`/e2e${stamp}`);
     await expect(page.getByTestId('slash-item').first()).toContainText(`Мой шаблон ${stamp}`);

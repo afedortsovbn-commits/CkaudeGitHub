@@ -103,7 +103,7 @@ async function operator(browser: Browser, email: string, password = DEMO_PASSWOR
   });
   const page = await ctx.newPage();
   await login(page, email, password);
-  await nav(page, 'Рабочее место оператора');
+  await nav(page, '1-я линия (оператор)');
   return page;
 }
 
