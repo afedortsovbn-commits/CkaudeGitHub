@@ -70,7 +70,7 @@ export const DEFAULT_ROUTING_POLICY: RoutingPolicy = {
   load: {
     cost: { voice: 100, chatWaitingAgent: 40, chatWaitingClient: 10, wrapUp: 100 },
     pullMinFree: 40,
-    pushUrgent: false,
+    pushUrgent: true,
     agingThreshold: 0.8,
   },
   wrapUp: { seconds: 60, extendSeconds: 120, extendRepeat: true },
@@ -132,7 +132,7 @@ export function parseRoutingPolicy(raw: unknown): RoutingPolicy {
         wrapUp: int(cost.wrapUp, D.load.cost.wrapUp, 0, LOAD_CAPACITY),
       },
       pullMinFree: int(load.pullMinFree, D.load.pullMinFree, 0, LOAD_CAPACITY),
-      pushUrgent: load.pushUrgent === true,
+      pushUrgent: load.pushUrgent !== false, // решение владельца 11.10.2026: негативный отзыв после старения — назначать
       agingThreshold:
         Number.isFinite(aging) && aging >= 0 && aging <= 1
           ? Math.round(aging * 100) / 100

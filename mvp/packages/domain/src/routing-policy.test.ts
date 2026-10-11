@@ -66,14 +66,14 @@ describe('ранги и старение (Д-017, п.2–3)', () => {
     expect(effectiveRank(item({ baseRank: 5, dueAt: '2026-10-10T11:00:00Z' }), load, now)).toBe(4);
   });
 
-  it('система назначает звонки и чаты; негативный отзыв после старения — только при pushUrgent', () => {
+  it('система назначает звонки и чаты; негативный отзыв после старения — при pushUrgent (включён по умолчанию)', () => {
     const aged = item({ baseRank: 4, dueAt: '2026-10-10T12:30:00Z' });
     expect(isPushItem(item({ baseRank: 1 }), load, now)).toBe(true);
     expect(isPushItem(item({ baseRank: 3 }), load, now)).toBe(true);
     expect(isPushItem(item({ baseRank: 5 }), load, now)).toBe(false);
-    expect(isPushItem(aged, load, now)).toBe(false);
-    expect(isPushItem(aged, parseRoutingPolicy({ mode: 'load', load: { pushUrgent: true } }), now)).toBe(
-      true,
+    expect(isPushItem(aged, load, now)).toBe(true);
+    expect(isPushItem(aged, parseRoutingPolicy({ mode: 'load', load: { pushUrgent: false } }), now)).toBe(
+      false,
     );
     expect(isPullItem(item({ baseRank: 4 }))).toBe(true);
     expect(isPullItem(item({ baseRank: 3 }))).toBe(false);

@@ -129,7 +129,7 @@ export function SettingsPage() {
         // Параметры режима «по загрузке» (Д-017) с умолчаниями из спецификации; хранятся в той же настройке.
         const load = {
           pullMinFree: 40,
-          pushUrgent: false,
+          pushUrgent: true,
           agingThreshold: 0.8,
           ...policy.load,
           cost: {
