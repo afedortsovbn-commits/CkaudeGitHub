@@ -10,6 +10,7 @@ import {
   systemTimezone,
   type TestOption,
 } from '@cc/domain';
+import { isLessonTest } from './courses.controller';
 import type { PoolClient } from 'pg';
 import { z } from 'zod';
 import { CurrentUser, hasPerm, RequirePerm } from '../auth/guard';
@@ -570,7 +571,8 @@ export class TestsController {
           ORDER BY (passed_at IS NULL) DESC, created_at DESC LIMIT 1`,
         [testId, p.id],
       );
-      if (!assignment && !hasPerm(p, 'tests.manage'))
+      // Тест урока курса (Д-014) доступен любому сотруднику без назначения теста.
+      if (!assignment && !hasPerm(p, 'tests.manage') && !(await isLessonTest(tx, testId)))
         throw new ApiError(403, 'forbidden', 'Этот тест вам не назначен');
       const qs = await rows<QuestionRow>(
         tx,

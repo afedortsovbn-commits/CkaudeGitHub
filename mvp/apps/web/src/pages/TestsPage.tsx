@@ -420,7 +420,7 @@ interface People {
 const ROLE = 'role:';
 
 /** Дерево «роль → сотрудники» для выбора из справочника сотрудников. */
-function usePeopleTree(): { tree: TreeNode[]; expand(v: string[]): string[] } {
+export function usePeopleTree(): { tree: TreeNode[]; expand(v: string[]): string[] } {
   const q = useQuery({ queryKey: ['/tests-people'], queryFn: () => get<People>('/tests-people') });
   return useMemo(() => {
     const d = q.data;

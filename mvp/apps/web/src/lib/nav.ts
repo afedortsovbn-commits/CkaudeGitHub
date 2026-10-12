@@ -9,7 +9,9 @@ import {
   IconCalendarTime,
   IconCertificate,
   IconBellRinging,
+  IconBook2,
   IconChartBar,
+  IconSchool,
   IconClipboardCheck,
   IconDeviceDesktopAnalytics,
   IconDeviceTv,
@@ -106,6 +108,13 @@ export const MENU: MenuItem[] = [
     group: 'work',
     icon: IconCertificate,
   },
+  {
+    to: '/my-courses',
+    label: t.courses.navMy,
+    perms: ['conversations.work', 'tickets.work'],
+    group: 'work',
+    icon: IconBook2,
+  },
   // Контроль и отчёты
   {
     to: '/supervisor',
@@ -141,6 +150,13 @@ export const MENU: MenuItem[] = [
     perms: ['tests.manage'],
     group: 'control',
     icon: IconClipboardCheck,
+  },
+  {
+    to: '/courses',
+    label: t.courses.navManage,
+    perms: ['tests.manage'],
+    group: 'control',
+    icon: IconSchool,
   },
   { to: '/reports', label: t.layout.otchety, perms: ['reports.view'], group: 'control', icon: IconChartBar },
   {
