@@ -16,6 +16,7 @@ import { layout } from './i18n/layout';
 import { matrix } from './i18n/matrix';
 import { mergeContactModalUi } from './i18n/mergeContactModalUi';
 import { notificationBellUi } from './i18n/notificationBellUi';
+import { notify } from './i18n/notify';
 import { org } from './i18n/org';
 import { privacy } from './i18n/privacy';
 import { callContext } from './i18n/callContext';
@@ -158,6 +159,7 @@ const ru = {
   extApps,
   mergeContactModalUi,
   notificationBellUi,
+  notify,
   org,
   privacy,
   profilePage,

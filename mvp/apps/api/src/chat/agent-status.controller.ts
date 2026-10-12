@@ -1,6 +1,6 @@
 import { Body, Controller, Get, HttpCode, Inject, Post } from '@nestjs/common';
 import type { Principal } from '@cc/auth';
-import { loadRoutingPolicy, setAgentStatus } from '@cc/domain';
+import { emitNotice, loadRoutingPolicy, setAgentStatus, staffingAfterLeave } from '@cc/domain';
 import { z } from 'zod';
 import { CurrentUser, RequirePerm } from '../auth/guard';
 import { APP_CONTEXT, type AppContext } from '../context';
@@ -82,8 +82,34 @@ export class AgentStatusController {
   async set(@CurrentUser() p: Principal, @Body() body: unknown) {
     const b = parse(SetStatusBody, body);
     if (b.status === 'break' && !b.reasonId) throw badRequest('Укажите причину перерыва');
-    return withTx(this.ctx.pool, (tx) =>
-      setAgentStatus(tx, p.id, b.status, { reasonId: b.reasonId ?? null }),
-    );
+    return withTx(this.ctx.pool, async (tx) => {
+      // Д-011: уйти с линии (перерыв, завершить смену) нельзя, если на линии станет меньше минимума по часам;
+      // руководитель и супервизор получают уведомление по правилам «Уведомлений».
+      if (b.status !== 'ready') {
+        const cur = await one<{ status: string }>(tx, `SELECT status FROM agent_status WHERE user_id = $1`, [
+          p.id,
+        ]);
+        if (cur?.status === 'ready' || cur?.status === 'wrap_up') {
+          const s = await staffingAfterLeave(tx, p.id);
+          if (!s.allowed) {
+            // Вне транзакции запроса: сам запрос завершается ошибкой 409, а уведомление должно остаться.
+            await emitNotice(this.ctx.pool, {
+              event: 'operators.below_min',
+              subject: `Важно! ${p.fullName} хочет уйти с линии: останется ${s.after} при минимуме ${s.required}`,
+              body: `Сейчас на линии ${s.online}. Минимум задан в «Уведомлениях → Минимум операторов».`,
+              data: { path: '/supervisor', userId: p.id, required: s.required, after: s.after },
+              dedupe: `below_min_attempt:${p.id}:${new Date().toISOString().slice(0, 16)}`,
+              high: true,
+            });
+            throw new ApiError(
+              409,
+              'below_min',
+              `Невозможно: на линии останется ${s.after} операторов при минимуме ${s.required}. Руководитель и супервизор уведомлены.`,
+            );
+          }
+        }
+      }
+      return setAgentStatus(tx, p.id, b.status, { reasonId: b.reasonId ?? null });
+    });
   }
 }

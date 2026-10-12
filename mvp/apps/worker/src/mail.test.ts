@@ -42,3 +42,35 @@ describe('письма тикетов', () => {
     expect(msg).not.toMatch(/^X-Priority:/m);
   });
 });
+
+describe('письма: копии и отписка (Д-013)', () => {
+  const mail = {
+    id: '0190a000-0000-7000-8000-000000000002',
+    ticketId: null,
+    to: 'resp@example.by',
+    subject: 'Уведомление',
+    body: 'Первый абзац.\n\nВторой абзац.',
+    high: false,
+    unsubscribeToken: 'tok-abc',
+  };
+
+  it('в каждом письме — фраза про отписку, красная кнопка и заголовки List-Unsubscribe; копия — на адреса владельца', () => {
+    const built = buildMessage(mail, settings, { copyTo: ['A.Fedortsov@beloil.by', 'resp@example.by'] });
+    expect(built.bcc).toEqual(['A.Fedortsov@beloil.by']); // сам получатель в копию не дублируется
+    const headers = built.headers as Record<string, string>;
+    expect(headers['List-Unsubscribe']).toBe('<https://cc.example.by/api/v1/unsubscribe?token=tok-abc>');
+    expect(headers['List-Unsubscribe-Post']).toBe('List-Unsubscribe=One-Click');
+    expect(String(built.html)).toContain('background:#d32f2f');
+    expect(String(built.html)).toContain('Отписаться от рассылки');
+    expect(String(built.html)).toContain('не подписывались на данные сообщения');
+    expect(String(built.html)).toContain('<p style="margin:0 0 12px">Первый абзац.</p>');
+    expect(String(built.text)).toContain(
+      'Отписаться от рассылки: https://cc.example.by/api/v1/unsubscribe?token=tok-abc',
+    );
+    expect(String(built.text)).toContain('не подписывались на данные сообщения');
+  });
+
+  it('без адресов копии — без bcc', () => {
+    expect(buildMessage(mail, settings).bcc).toBeUndefined();
+  });
+});

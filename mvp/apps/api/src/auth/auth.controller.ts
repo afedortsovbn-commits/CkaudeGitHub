@@ -13,7 +13,8 @@ import { hashPassword, PASSWORD_MIN_LENGTH, verifyPassword } from './passwords';
 import type { Principal } from '@cc/auth';
 import { hashToken, newRefreshToken, newTotpSecret, otpauthUrl, verifyTotp } from '@cc/auth';
 import { openSecret, sealSecret } from '@cc/service-kit';
-import { createHash } from 'node:crypto';
+import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
+import { loadStaffTelegram } from '@cc/domain';
 import type { Pool, PoolClient } from 'pg';
 
 const COOKIE = 'cc_rt';
@@ -156,6 +157,55 @@ export class AuthController {
     if (!password)
       throw new ApiError(403, 'demo_login_forbidden', 'Быстрый вход — только для демо-учёток стенда');
     return this.login({ email, password }, req, res);
+  }
+
+  /**
+   * Вход из мини-приложения Telegram (Д-010): подпись `initData` проверяется ключом бота для сотрудников
+   * (HMAC-SHA256, как описано в Bot API), сотрудник — по привязанному чату; сессия обычная.
+   */
+  @Public()
+  @Post('telegram')
+  @HttpCode(200)
+  async telegramLogin(
+    @Body() body: unknown,
+    @Req() req: FastifyRequest,
+    @Res({ passthrough: true }) res: CookieReply,
+  ) {
+    const { initData } = parse(z.object({ initData: z.string().min(1).max(8000) }).strict(), body);
+    const tg = await loadStaffTelegram(this.ctx.pool);
+    const denied = new ApiError(
+      401,
+      'telegram_denied',
+      'Telegram не привязан к сотруднику или подпись неверна',
+    );
+    if (!tg.botToken) throw denied;
+    const params = new URLSearchParams(initData);
+    const hash = params.get('hash') ?? '';
+    params.delete('hash');
+    const check = [...params.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([k, v]) => `${k}=${v}`)
+      .join('\n');
+    const secret = createHmac('sha256', 'WebAppData').update(tg.botToken).digest();
+    const expected = createHmac('sha256', secret).update(check).digest('hex');
+    if (hash.length !== expected.length || !timingSafeEqual(Buffer.from(hash), Buffer.from(expected)))
+      throw denied;
+    const authDate = Number(params.get('auth_date') ?? 0);
+    if (!authDate || Date.now() / 1000 - authDate > 86_400) throw denied;
+    let chatId = '';
+    try {
+      chatId = String((JSON.parse(params.get('user') ?? '{}') as { id?: number | string }).id ?? '');
+    } catch {
+      throw denied;
+    }
+    const user = await one<LoginUser>(
+      this.ctx.pool,
+      `SELECT * FROM app_user WHERE telegram_chat_id = $1 AND is_active AND can_login`,
+      [chatId],
+    );
+    if (!user) throw denied;
+    this.ensureNotLocked(user);
+    return this.startSession(user.id, req, res, 'login.telegram');
   }
 
   /** Вход, шаг 2: код из приложения-аутентификатора (или первый код при обязательной настройке 2FA). */

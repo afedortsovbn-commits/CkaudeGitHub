@@ -33,6 +33,8 @@ export const ApiConfigSchema = BaseConfigSchema.extend({
   MAX_UPLOAD_MB: z.coerce.number().int().min(1).max(100).default(10),
   /** Ключ шифрования секретов интеграций в БД (токены ботов, пароли почты); тот же — у коннекторов. */
   SECRETS_KEY: z.string().min(16, 'SECRETS_KEY должен быть не короче 16 символов').optional(),
+  /** Д-013: секрет вебхука отписки от почтового relay (POST /api/v1/inbound/unsubscribe). */
+  INBOUND_SECRET: z.preprocess((v) => (v === '' ? undefined : v), z.string().min(8).optional()),
   // ---- Телефония (Ф5) ----
   /** Общий с Kamailio секрет короткоживущих SIP-паролей (auth_ephemeral); не задан — софтфон выключен. */
   SIP_SECRET: z.string().min(8).optional(),

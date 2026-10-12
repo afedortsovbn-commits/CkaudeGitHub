@@ -1,5 +1,5 @@
 import { ensureJobQueue, type JobQueue, type Logger } from '@cc/service-kit';
-import { processEmailQueue, runDailyDigest } from '@cc/domain';
+import { loadMailPolicy, processEmailQueue, runDailyDigest } from '@cc/domain';
 import nodemailer, { type Transporter } from 'nodemailer';
 import type { Pool } from 'pg';
 import { buildMessage, type MailSettings } from './mail';
@@ -74,10 +74,11 @@ export class TicketMailer {
     const { pool, logger, pollMs, smtp } = this.o;
     while (this.running) {
       try {
+        const policy = await loadMailPolicy(pool);
         const n = await processEmailQueue(pool, {
           shouldStop: () => !this.running,
           send: async (mail) => {
-            await this.transport!.sendMail(buildMessage(mail, smtp.mail));
+            await this.transport!.sendMail(buildMessage(mail, smtp.mail, policy));
           },
         });
         if (n) logger.info({ sent: n }, 'письма по тикетам отправлены');

@@ -17,6 +17,7 @@ import { enqueueCommand, enqueueEvent } from '@cc/service-kit';
 import type { PoolClient } from 'pg';
 import { attachReview, refreshReview, reviewKnown, reviewOf } from './reviews';
 import { dueAtFor, loadRoutingPolicy, type RoutingPolicy } from './routing-policy';
+import { emitNotice } from './notify';
 
 interface ConvRow {
   id: string;
@@ -376,6 +377,17 @@ export async function ingestInbound(
           direction: 'system',
           body: warn,
           channelKind: m.channelKind,
+        });
+      // Д-012: негативный отзыв — по правилам уведомлений.
+      if (review.urgent)
+        await emitNotice(tx, {
+          event: 'review.negative',
+          subject:
+            `Негативный отзыв${review.rating !== null ? ` (${review.rating}★)` : ''}: ${review.platform ?? ''}`.trim(),
+          body: m.body.slice(0, 500),
+          data: { path: '/workspace', conversationId },
+          dedupe: `review_negative:${conversationId}`,
+          high: true,
         });
     }
     // У клиента есть обращение на 2-й линии — пометка для оператора (само обращение 2-й линии не меняется).

@@ -24,6 +24,7 @@ import {
   type NotificationKind,
 } from './ticket-notify';
 import { localDate } from './ticket-time';
+import { emitNotice } from './notify';
 
 type Db = Pool | PoolClient;
 
@@ -557,6 +558,15 @@ export async function createTicket(tx: PoolClient, i: CreateTicketInput): Promis
   await emitTicket(tx, TICKET_EVENTS.assigned, t, i.actorId, all, { added: all, removed: [] });
   await notifyAssigned(tx, t, all, 'assigned', `assigned:${id}:created`, {
     actorName: await actorName(tx, i.actorId),
+  });
+  // Д-012: событие «обращение передано на 2-ю линию» — по правилам уведомлений (особо важные — с пометкой).
+  await emitNotice(tx, {
+    event: 'ticket.created',
+    subject: `${t.is_important ? 'Важно! ' : ''}Передано на 2-ю линию: обращение №${t.number}`,
+    body: t.summary,
+    data: { path: `/tickets/${id}`, ticketId: id },
+    dedupe: `ticket_created:${id}`,
+    high: t.is_important,
   });
   return t;
 }

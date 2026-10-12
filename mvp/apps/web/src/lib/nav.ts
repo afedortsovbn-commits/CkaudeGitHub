@@ -8,6 +8,7 @@ import {
   IconBulb,
   IconCalendarTime,
   IconCertificate,
+  IconBellRinging,
   IconChartBar,
   IconClipboardCheck,
   IconDeviceDesktopAnalytics,
@@ -142,6 +143,13 @@ export const MENU: MenuItem[] = [
     icon: IconClipboardCheck,
   },
   { to: '/reports', label: t.layout.otchety, perms: ['reports.view'], group: 'control', icon: IconChartBar },
+  {
+    to: '/notify',
+    label: t.notify.navTitle,
+    perms: ['settings.manage', 'supervisor.monitor'],
+    group: 'control',
+    icon: IconBellRinging,
+  },
   {
     to: '/schedule',
     label: t.schedule.title,

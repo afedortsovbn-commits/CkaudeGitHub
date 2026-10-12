@@ -1,6 +1,7 @@
 import { Badge, Button, Group, Paper, PasswordInput, Stack, Text, TextInput, Title } from '@mantine/core';
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
+import { MyNotifications } from '../components/MyNotifications';
 import { TotpSetup } from '../components/TotpSetup';
 import { get, post } from '../lib/api';
 import { useAuth } from '../lib/auth';
@@ -83,6 +84,7 @@ export function ProfilePage() {
           </Group>
         </Stack>
       </Paper>
+      <MyNotifications />
       <Paper withBorder p="md">
         <Stack>
           <Title order={5}>{t.profile.changePassword}</Title>

@@ -2,6 +2,7 @@ import { Body, Controller, Get, HttpCode, Inject, Param, Post } from '@nestjs/co
 import { APP_EVENTS, makeEvent, newId } from '@cc/contracts';
 import type { Principal } from '@cc/auth';
 import { enqueueEvent } from '@cc/service-kit';
+import { emitNotice } from '@cc/domain';
 import type { PoolClient } from 'pg';
 import { z } from 'zod';
 import { CurrentUser, RequirePerm } from '../auth/guard';
@@ -155,6 +156,16 @@ export class StaffMessagesController {
         id,
         users.map((u) => u.id),
       );
+      // Д-012: по желанию сотрудника — ещё и письмом или в Telegram.
+      await emitNotice(tx, {
+        event: 'my.message',
+        subject: b.subject,
+        body: b.body,
+        data: { path: '/' },
+        dedupe: `staff:${id}`,
+        targetUserIds: users.map((u) => u.id),
+        high: b.importance !== 'normal',
+      });
       await audit(tx, p, 'create', 'staff_message', id, null, { ...b, recipients: users.length });
       return { id, recipients: users.length };
     });

@@ -19,3 +19,8 @@ export * from './work-calendar';
 export * from './break-watch';
 export * from './operator-tests';
 export * from './duplicates';
+export * from './notify';
+export * from './telegram-client';
+export * from './staffing';
+export * from './alerts';
+export * from './mail-policy';

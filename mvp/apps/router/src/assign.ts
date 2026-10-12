@@ -3,6 +3,7 @@ import {
   appendMessage,
   channelGroup,
   emitConversation,
+  emitNotice,
   idleColumn,
   isPushItem,
   loadRef,
@@ -169,6 +170,14 @@ async function assignOne(
       [offerId, conv.id, picked.userId, queue.id, queue.offer_timeout_s],
     );
     await markAssigned(tx, picked.userId, conv.channel_kind);
+    // Д-012: «мне предложено обращение» — по желанию сотрудника (почта, Telegram).
+    await emitNotice(tx, {
+      event: 'my.conversation',
+      subject: `Вам предложено обращение (${conv.channel_kind})`,
+      data: { path: '/workspace', conversationId: conv.id },
+      dedupe: `offer:${offerId}`,
+      targetUserIds: [picked.userId],
+    });
     await emitConversation(tx, CONVERSATION_EVENTS.updated, await loadRef(tx, conv.id), {
       action: 'offered',
       offerId,

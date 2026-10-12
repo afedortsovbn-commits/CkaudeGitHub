@@ -1,6 +1,7 @@
 import { newId } from '@cc/contracts';
 import type { Pool } from 'pg';
 import { daysBetween, localDate, localTime } from './ticket-time';
+import { emitNotice } from './notify';
 
 /** Вариант ответа на вопрос теста. */
 export interface TestOption {
@@ -111,6 +112,15 @@ export async function remindTestDeadlines(
       operators += await note(a.user_id, `test:${a.id}:${today}`, subject, '', {
         priority: left < 0 ? 'high' : 'normal',
         path: '/my-tests',
+      });
+      // Д-012: по желанию сотрудника — ещё и письмом или в Telegram.
+      await emitNotice(client, {
+        event: 'my.test',
+        subject,
+        data: { path: '/my-tests' },
+        dedupe: `test:${a.id}:${today}:pref`,
+        targetUserIds: [a.user_id],
+        high: left < 0,
       });
       lines.push(
         `${a.full_name} — «${a.title}»: ${left < 0 ? `просрочен на ${-left} дн.` : `срок ${ddmm(a.due)}`}`,

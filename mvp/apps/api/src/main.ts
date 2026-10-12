@@ -23,6 +23,7 @@ import { originsCache } from './chat/origins';
 import { createS3Storage } from './lib/storage';
 import { serveIntegrations } from './ivr/responder';
 import { runRecordingRetention } from './privacy/privacy';
+import { StaffBot } from './notify/staff-bot';
 
 /** Очистка записей разговоров по сроку хранения (M-NFR-07, В-11): раз в час, один экземпляр api (pg-boss). */
 const RETENTION_QUEUE = 'recording-retention';
@@ -113,6 +114,10 @@ async function bootstrap(): Promise<void> {
     await boss.schedule(RETENTION_QUEUE, '17 * * * *');
     lifecycle.onShutdown('pg-boss', 24, () => boss.stop({ graceful: true, timeout: 10_000 }));
   }
+  // Бот Telegram для сотрудников (Д-010): опрос ведёт один экземпляр api, настройки — без перезапуска.
+  const staffBot = new StaffBot({ ctx, logger });
+  if (full) staffBot.start();
+  lifecycle.onShutdown('staff-bot', 19, () => staffBot.stop());
   lifecycle.onShutdown('outbox-relay', 20, () => relay.stop());
   lifecycle.onShutdown('integrations', 25, () => integrations.stop());
   lifecycle.onShutdown('nats', 30, () => nc.drain());

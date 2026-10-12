@@ -22,6 +22,8 @@ import { ReportsPage } from './pages/ReportsPage';
 import { TopicsPage } from './pages/TopicsPage';
 import { SecondLinePage, TicketPage } from './pages/TicketPages';
 import { DemoLoginPage } from './pages/DemoLoginPage';
+import { NotifyPage } from './pages/NotifyPage';
+import { TgPage } from './pages/TgPage';
 import { AppFramePage, ExternalAppsPage } from './pages/ExternalAppsPages';
 import { RolesPage } from './pages/RolesPage';
 import { UsersPage } from './pages/UsersPage';
@@ -56,6 +58,8 @@ function App() {
   if (loc.pathname.startsWith('/demo-call')) return <DemoCallPage />;
   // Демо-стенд: вход в один клик со страницы ссылок стенда (/demo-login?as=<email>).
   if (loc.pathname.startsWith('/demo-login')) return <DemoLoginPage />;
+  // Мини-приложение Telegram (Д-010): вход по подписи initData, затем экран мониторинга.
+  if (loc.pathname.startsWith('/tg') && !me) return <TgPage />;
   if (loading)
     return (
       <Center h="100vh">
@@ -67,6 +71,7 @@ function App() {
     <Routes>
       {/* Экран мониторинга — на весь монитор, без меню и шапки. */}
       <Route path="wallboard" element={<WallboardPage />} />
+      <Route path="tg" element={<WallboardPage />} />
       <Route element={<Layout />}>
         <Route index element={<HomePage />} />
         <Route path="workspace" element={<WorkspacePage />} />
@@ -111,6 +116,7 @@ function App() {
         <Route path="matrix" element={<MatrixPage />} />
         <Route path="dictionaries" element={<DictionariesPage />} />
         <Route path="settings" element={<SettingsPage />} />
+        <Route path="notify" element={<NotifyPage />} />
         <Route path="audit" element={<AuditPage />} />
         <Route path="profile" element={<ProfilePage />} />
         <Route path="privacy" element={<PrivacyPage />} />

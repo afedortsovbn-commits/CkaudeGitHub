@@ -2,6 +2,8 @@ import { newId } from '@cc/contracts';
 import { inScope, type ScopeRule, type ScopeSubject } from '@cc/auth';
 import type { Pool, PoolClient } from 'pg';
 import { deadlinePhrase, daysBetween, formatDate, localDate, localTime } from './ticket-time';
+import { ensureUnsubscribeTokens } from './mail-policy';
+import { emitNotice } from './notify';
 
 type Db = Pool | PoolClient;
 
@@ -234,6 +236,17 @@ export async function queueNotifications(tx: PoolClient, n: NotifyInput): Promis
       created += r.rowCount ?? 0;
     }
   }
+  // Д-012: сотрудник может дополнительно получать свои уведомления по тикетам в Telegram (настройка в профиле).
+  if (n.ui !== false)
+    created += await emitNotice(tx, {
+      event: 'my.ticket',
+      subject: mail.subject,
+      body: mail.body.split(LINK_PLACEHOLDER).join('').trim(),
+      data: { path: `/tickets/${n.ticketId}`, ticketId: n.ticketId },
+      dedupe: `${n.dedupe}:pref`,
+      targetUserIds: ids,
+      high: mail.high,
+    });
   return created;
 }
 
@@ -484,6 +497,8 @@ export interface OutgoingMail {
   subject: string;
   body: string;
   high: boolean;
+  /** Д-013: токен ссылки «Отписаться от рассылки» получателя. */
+  unsubscribeToken?: string | null;
 }
 
 export interface EmailQueueOptions {
@@ -518,6 +533,12 @@ export async function processEmailQueue(pool: Pool, o: EmailQueueOptions): Promi
       WHERE channel = 'email' AND status = 'pending' AND kind IN ('daily', 'approval_reminder')
         AND created_at < now() - interval '20 hours'`,
   );
+  // Д-013: отписавшимся письма не уходят; у остальных должен быть токен для ссылки «Отписаться».
+  await pool.query(
+    `UPDATE notification n SET status = 'skipped', last_error = 'сотрудник отписался от писем'
+       FROM app_user u WHERE u.id = n.user_id AND n.channel = 'email' AND n.status = 'pending' AND u.email_unsubscribed_at IS NOT NULL`,
+  );
+  await ensureUnsubscribeTokens(pool);
   for (;;) {
     if (o.shouldStop?.()) break;
     const claimed = await pool.query<{
@@ -528,6 +549,7 @@ export async function processEmailQueue(pool: Pool, o: EmailQueueOptions): Promi
       attempts: number;
       email: string;
       ticket_id: string | null;
+      unsubscribe_token: string | null;
     }>(
       `UPDATE notification n SET attempts = n.attempts + 1,
               next_attempt_at = now() + make_interval(secs => $2)
@@ -536,7 +558,7 @@ export async function processEmailQueue(pool: Pool, o: EmailQueueOptions): Promi
                        WHERE channel = 'email' AND status = 'pending' AND next_attempt_at <= now()
                        ORDER BY created_at LIMIT $1 FOR UPDATE SKIP LOCKED)
          AND u.id = n.user_id
-       RETURNING n.id, n.ticket_id, n.subject, n.body, n.data, n.attempts, u.email`,
+       RETURNING n.id, n.ticket_id, n.subject, n.body, n.data, n.attempts, u.email, u.unsubscribe_token`,
       [o.batch ?? 20, o.leaseSeconds ?? 120],
     );
     if (!claimed.rows.length) break;
@@ -558,6 +580,7 @@ export async function processEmailQueue(pool: Pool, o: EmailQueueOptions): Promi
           subject: m.subject,
           body: m.body,
           high: m.data.priority === 'high',
+          unsubscribeToken: m.unsubscribe_token,
         });
         await pool.query(
           `UPDATE notification SET status = 'sent', sent_at = now(), last_error = NULL WHERE id = $1`,

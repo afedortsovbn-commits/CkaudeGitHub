@@ -3,6 +3,7 @@ import type { Principal } from '@cc/auth';
 import { newId } from '@cc/contracts';
 import {
   assignmentState,
+  emitNotice,
   gradeAttempt,
   isAnswerCorrect,
   localDate,
@@ -323,6 +324,15 @@ export class TestsController {
             JSON.stringify({ path: '/my-tests' }),
           ],
         );
+        // Д-012: по желанию сотрудника — ещё и письмом или в Telegram.
+        await emitNotice(tx, {
+          event: 'my.test',
+          subject: `Вам назначен тест «${t.title}» — пройти до ${ddmmyyyy}`,
+          body: b.comment,
+          data: { path: '/my-tests' },
+          dedupe: `test-assigned:${aid}:${b.dueDate}:pref`,
+          targetUserIds: [u.id],
+        });
       }
       await audit(tx, p, 'create', 'test_assignment', b.testId, null, { ...b, created, updated });
       return { created, updated };

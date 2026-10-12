@@ -1,6 +1,6 @@
-import { newId } from '@cc/contracts';
 import type { Pool } from 'pg';
 import { LINK_PLACEHOLDER } from './ticket-notify';
+import { emitNotice } from './notify';
 
 /**
  * Контроль ресурсов сервера: диск (и прогноз, когда он закончится), оперативная память, подкачка, процессор,
@@ -287,41 +287,18 @@ export async function runResourceCheck(
     );
     const { alerts, state } = resourceAlerts(samples, prevRow.rows[0]?.value ?? {}, now);
     if (alerts.length) {
-      const users = await client.query<{ id: string }>(
-        `SELECT u.id FROM app_user u
-          WHERE u.is_active AND u.can_login AND EXISTS (
-            SELECT 1 FROM user_role ur JOIN role r ON r.code = ur.role_code
-             WHERE ur.user_id = u.id AND r.permissions && $1::text[])`,
-        [RESOURCE_RECIPIENT_PERMS],
-      );
+      // Получатели и каналы — по правилам «Уведомлений» (Д-012); без правил — администраторам и супервизорам.
       for (const a of alerts) {
         const { subject, body, high } = resourceMessage(a.sample, a.kind, th);
-        const base = `resource:${a.sample.key}:${a.sample.level}:${a.kind}:${now.toISOString()}`;
-        const data = JSON.stringify({
-          priority: high ? 'high' : 'normal',
-          path: '/resources',
-          resource: a.sample.key,
-          level: a.sample.level,
+        notified += await emitNotice(client, {
+          event: 'resource.alert',
+          subject,
+          body,
+          data: { path: '/resources', resource: a.sample.key, level: a.sample.level },
+          dedupe: `resource:${a.sample.key}:${a.sample.level}:${a.kind}:${now.toISOString()}`,
+          fallbackPerms: RESOURCE_RECIPIENT_PERMS,
+          high,
         });
-        for (const u of users.rows)
-          for (const channel of ['ui', 'email'] as const) {
-            const ins = await client.query(
-              `INSERT INTO notification (id, user_id, kind, channel, dedupe_key, subject, body, data, status, sent_at)
-               VALUES ($1, $2, 'resource', $3, $4, $5, $6, $7, $8, $9) ON CONFLICT (dedupe_key) DO NOTHING`,
-              [
-                newId(),
-                u.id,
-                channel,
-                `${base}:${channel}:${u.id}`,
-                channel === 'ui' ? subject.replace(/^Важно! /, '') : subject,
-                body,
-                data,
-                channel === 'ui' ? 'sent' : 'pending',
-                channel === 'ui' ? now : null,
-              ],
-            );
-            notified += ins.rowCount ?? 0;
-          }
       }
     }
     await client.query(

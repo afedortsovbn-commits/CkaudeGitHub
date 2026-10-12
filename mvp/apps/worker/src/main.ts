@@ -21,6 +21,7 @@ import { DeliveryProcessor } from './delivery';
 import { InboundProcessor } from './inbound';
 import { ObjectSyncJob } from './objects-sync';
 import { ResourceMonitor } from './resources';
+import { StaffNotifier } from './notify';
 import { TicketMailer } from './tickets';
 import { WebhookProcessor } from './webhooks';
 
@@ -138,6 +139,10 @@ async function main(): Promise<void> {
   await objectSync.start();
   // Контроль ресурсов сервера с уведомлениями администраторам и супервизорам, ночная чистка outbox.
   await new ResourceMonitor({ pool, boss, logger, diskPath: config.RESOURCE_DISK_PATH }).start();
+  // Д-012: уведомления сотрудникам в Telegram и ежеминутные проверки событий (минимум на линии, ожидание, сроки).
+  const notifier = new StaffNotifier({ pool, boss, logger, pollMs: 5000 });
+  await notifier.start();
+  lifecycle.onShutdown('staff-notifier', 21, () => notifier.stop());
 
   lifecycle.onShutdown('inbound', 20, () => inbound.stop());
   lifecycle.onShutdown('delivery', 20, () => delivery.stop());

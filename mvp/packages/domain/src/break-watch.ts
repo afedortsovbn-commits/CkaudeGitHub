@@ -1,5 +1,5 @@
-import { newId } from '@cc/contracts';
 import type { Pool } from 'pg';
+import { emitNotice } from './notify';
 
 /** Кто получает уведомления о нарушении перерывов. */
 export const BREAK_RECIPIENT_PERMS = ['supervisor.monitor'];
@@ -63,13 +63,6 @@ export async function checkBreaks(
     for (const b of ends.rows)
       if (b.status === 'break' && b.since && b.since < b.end_at) alerts.push({ row: b, kind: 'end' });
     if (alerts.length) {
-      const users = await client.query<{ id: string }>(
-        `SELECT u.id FROM app_user u
-          WHERE u.is_active AND u.can_login AND EXISTS (
-            SELECT 1 FROM user_role ur JOIN role r ON r.code = ur.role_code
-             WHERE ur.user_id = u.id AND r.permissions && $1::text[])`,
-        [BREAK_RECIPIENT_PERMS],
-      );
       for (const a of alerts) {
         const b = a.row;
         const period = `${hhmm(b.start_at)}–${hhmm(b.end_at)}`;
@@ -81,20 +74,16 @@ export async function checkBreaks(
             : `Перерыв по графику ${period} закончился, оператор всё ещё на перерыве.`;
         if (a.kind === 'start') lateStart++;
         else lateEnd++;
-        for (const u of users.rows)
-          await client.query(
-            `INSERT INTO notification (id, user_id, kind, channel, dedupe_key, subject, body, data, status, sent_at)
-             VALUES ($1, $2, 'break', 'ui', $3, $4, $5, $6, 'sent', $7) ON CONFLICT (dedupe_key) DO NOTHING`,
-            [
-              newId(),
-              u.id,
-              `break:${b.id}:${a.kind}:${u.id}`,
-              subject,
-              body,
-              JSON.stringify({ priority: 'high', path: '/supervisor', userId: b.user_id }),
-              now,
-            ],
-          );
+        // Получатели и каналы — по правилам «Уведомлений» (Д-012); без правил — супервизорам в интерфейс.
+        await emitNotice(client, {
+          event: 'break.violation',
+          subject,
+          body,
+          data: { path: '/supervisor', userId: b.user_id },
+          dedupe: `break:${b.id}:${a.kind}`,
+          fallbackPerms: BREAK_RECIPIENT_PERMS,
+          high: true,
+        });
       }
     }
     await client.query('COMMIT');
