@@ -5,6 +5,7 @@ import { get, post } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { useAction } from '../lib/data';
 import { t } from '../lib/i18n';
+import { ChannelDueEditor } from '../components/ChannelDueEditor';
 
 interface QueueRow {
   id: string;
@@ -369,6 +370,10 @@ export function SupervisorPage() {
           })}
         </Table.Tbody>
       </Table>
+      <Title order={5} mt="xl" mb="xs">
+        {t.supervisor.dueSection}
+      </Title>
+      <ChannelDueEditor />
       {th && (
         <Text size="xs" c="dimmed" mt="md">
           {t.supervisor.podsvetkaOzhidanieOt}

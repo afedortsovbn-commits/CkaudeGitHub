@@ -53,4 +53,5 @@ export const supervisor = {
   nezakrytyeKartochki: 'Не закрыто после звонка',
   prodleniy: (n: number) => `+2 мин ×${n}`,
   prosrochenoVOcheredi: 'Просрочен срок ответа',
+  dueSection: 'Сроки ответа по каналам поступления',
 };

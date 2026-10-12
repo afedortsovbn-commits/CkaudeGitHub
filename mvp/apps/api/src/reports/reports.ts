@@ -164,6 +164,9 @@ export async function buildReport(kind: ReportKind, ctx: ReportCtx): Promise<Rep
     case 'reviews':
       r = await reviewsReport(ctx, period, group!);
       break;
+    case 'gas-promo':
+      r = await gasPromoReport(ctx, period);
+      break;
   }
   return { ...base, ...r, columns: [...labelCol, ...r.columns] };
 }
@@ -690,6 +693,65 @@ async function agentsReport(ctx: ReportCtx, period: Period) {
         'предприятию, теме и т. п. влияют на счётчики обращений, но не на время в статусах.',
       'Длительности в CSV — в секундах.',
     ],
+  };
+}
+
+// ------------------------------------------------------------------ Акция по газу (Д-019)
+
+/** Реестр заявлений на скидку по газу за период — по полям темы «Акция по газу» (как таблица владельца). */
+async function gasPromoReport(ctx: ReportCtx, period: Period) {
+  const q = new Params();
+  const t0 = q.p(period.t0);
+  const t1 = q.p(period.t1);
+  const where = dimWhere(
+    q,
+    {
+      channel: 'c.channel_kind',
+      enterprise: 'c.enterprise_id',
+      department: 'c.department_id',
+      topicPath: 'c.topic_path',
+      object: 'c.object_id',
+      important: 'c.is_important',
+      operator: 'c.assignee_id',
+      conversationId: 'c.id::text',
+    },
+    ctx.filter,
+    ctx.principal,
+  );
+  const { rows } = await ctx.db.query(
+    `SELECT c.id::text AS key, c.created_at, c.closed_at,
+            c.fields ->> 'card_number' AS card_number, c.fields ->> 'full_name' AS full_name,
+            c.fields ->> 'sto_name' AS sto_name, c.fields ->> 'sto_region' AS sto_region,
+            c.fields ->> 'plate' AS plate, c.fields ->> 'install_date' AS install_date,
+            c.fields ->> 'discount' AS discount, c.fields ->> 'comment' AS comment,
+            u.full_name AS responsible,
+            CASE c.status WHEN 'closed' THEN 'закрыто' WHEN 'queued' THEN 'в очереди' WHEN 'offered' THEN 'предложено'
+                 WHEN 'waiting_2nd_line' THEN 'на 2-й линии' ELSE 'в работе' END AS status
+       FROM conversation c
+       JOIN topic t ON t.id = c.topic_path[1] AND t.code = 'gas_promo'
+       LEFT JOIN app_user u ON u.id = c.assignee_id
+      WHERE c.created_at >= ${t0} AND c.created_at < ${t1} AND ${where.join(' AND ')}
+      ORDER BY c.created_at`,
+    q.list,
+  );
+  return {
+    columns: [
+      col('created_at', 'Дата поступления', 'datetime'),
+      col('closed_at', 'Дата закрытия', 'datetime'),
+      col('card_number', 'Номер карты', 'text'),
+      col('full_name', 'ФИО', 'text'),
+      col('sto_name', 'Наименование СТО', 'text'),
+      col('sto_region', 'Область СТО', 'text'),
+      col('plate', 'Регистрационный знак', 'text'),
+      col('install_date', 'Дата установки', 'date'),
+      col('discount', 'Скидка', 'text'),
+      col('comment', 'Текст комментария', 'text'),
+      col('responsible', 'Ответственный', 'text'),
+      col('status', 'Состояние', 'text'),
+    ],
+    rows,
+    totals: null,
+    notes: ['Заявления темы «Акция по газу», поступившие за период; поля — из карточки обращения.'],
   };
 }
 

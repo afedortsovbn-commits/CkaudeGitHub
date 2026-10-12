@@ -18,3 +18,4 @@ export * from './schedule';
 export * from './work-calendar';
 export * from './break-watch';
 export * from './operator-tests';
+export * from './duplicates';

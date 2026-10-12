@@ -5,6 +5,7 @@ import {
   addHint,
   appendMessage,
   emitConversation,
+  findDuplicates,
   isPullItem,
   LOAD_CAPACITY,
   loadRef,
@@ -89,7 +90,7 @@ interface Conv {
 const LIST_SQL = `SELECT c.id, c.status, c.channel_kind, c.queue_id, c.assignee_id, c.topic_id, c.enterprise_id,
     c.is_important, c.is_urgent, c.callback_requested, c.last_message_at, c.created_at, c.assigned_at, c.closed_at, c.seq, c.contact_id, c.due_at,
     COALESCE(ct.display_name, ct.phone, ct.email, 'Клиент') AS contact_name, q.name AS queue_name, q.require_tag AS queue_require_tag, u.full_name AS assignee_name,
-    t.name AS topic_name, (c.channel_meta #>> '{review,rating}')::int AS review_rating,
+    t.name AS topic_name, t.code AS topic_code, (c.channel_meta #>> '{review,rating}')::int AS review_rating,
     (SELECT left(m.body, 140) FROM message m WHERE m.conversation_id = c.id AND m.direction IN ('in','out')
       ORDER BY m.sent_at DESC, m.seq DESC LIMIT 1) AS last_message,
     (SELECT m.direction FROM message m WHERE m.conversation_id = c.id AND m.direction IN ('in','out')
@@ -275,6 +276,16 @@ export class ConversationsController {
       tagIds: tags.map((t) => t.tag_id),
       ticket: ticket ? toApi(ticket) : null,
     };
+  }
+
+  /**
+   * Похожие обращения (Д-019): совпадение полей темы с отметкой «проверять на повтор» (номер карты, ФИО, регзнак)
+   * с прежними обращениями той же темы — предупреждение оператору при проверке заявления.
+   */
+  @Get('conversations/:id/duplicates')
+  async duplicates(@CurrentUser() p: Principal, @Param('id') id: string) {
+    await this.visible(p, id);
+    return findDuplicates(this.ctx.pool, id);
   }
 
   @Get('conversations/:id/messages')

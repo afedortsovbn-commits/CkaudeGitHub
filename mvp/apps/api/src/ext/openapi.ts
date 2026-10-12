@@ -471,6 +471,20 @@ export function buildOpenApi(serverUrl: string): Obj {
               additionalProperties: { type: ['string', 'number', 'boolean'] },
               description: 'Данные формы — в поля обращения',
             },
+            attachments: {
+              type: 'array',
+              maxItems: 10,
+              description: 'Документы клиента (например, к заявлению на скидку по газу): содержимое в base64',
+              items: {
+                type: 'object',
+                required: ['filename', 'base64'],
+                properties: {
+                  filename: { type: 'string', maxLength: 200 },
+                  contentType: { type: 'string', example: 'application/pdf' },
+                  base64: { type: 'string' },
+                },
+              },
+            },
           },
         },
         WebhookEvent: {

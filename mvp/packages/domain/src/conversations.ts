@@ -315,7 +315,21 @@ export async function ingestInbound(
     const routing = await resolveRouting(tx, contactId, m.channelId, m.channelKind, m.body);
     // Срок ответа неспешных обращений (Д-017, п.8): отзывы — часы по оценке, почта — рабочие дни.
     policy = await loadRoutingPolicy(tx);
-    const dueAt = await dueAtFor(tx, policy, m.channelKind, review ? { urgent: review.urgent } : null);
+    const dueAt = await dueAtFor(
+      tx,
+      policy,
+      m.channelKind,
+      review ? { urgent: review.urgent } : null,
+      undefined,
+      m.channelId,
+    );
+    // Тема канала по умолчанию (`channel.config.topic_id`, Д-019: заявления на скидку по газу) — тема и путь сразу.
+    const chTopic = await tx.query<{ id: string; path: string[] }>(
+      `SELECT t.id, t.path FROM channel ch JOIN topic t ON t.id = (ch.config ->> 'topic_id')::uuid
+        WHERE ch.id = $1 AND ch.config ->> 'topic_id' ~ '^[0-9a-fA-F-]{36}$' AND t.is_active`,
+      [m.channelId],
+    );
+    const defaultTopic = chTopic.rows[0] ?? null;
     // Бот канала (Ф7, M-AUTO-04): новое обращение сначала ведёт опубликованная версия сценария бота —
     // router его не видит (статус «bot»), пока бот не переведёт диалог на оператора.
     const bot = await tx.query<{ version_id: string }>(
@@ -335,8 +349,8 @@ export async function ingestInbound(
           )
         ).rows[0]?.id ?? null);
     await tx.query(
-      `INSERT INTO conversation (id, channel_id, channel_kind, contact_id, status, queue_id, priority, is_urgent, queued_at, bot_flow_version_id, bot_state, due_at)
-       VALUES ($1, $2, $3, $4, $8, $5, $6, $7, now(), $9, $10, $11)`,
+      `INSERT INTO conversation (id, channel_id, channel_kind, contact_id, status, queue_id, priority, is_urgent, queued_at, bot_flow_version_id, bot_state, due_at, topic_id, topic_path)
+       VALUES ($1, $2, $3, $4, $8, $5, $6, $7, now(), $9, $10, $11, $12, COALESCE($13::uuid[], '{}'))`,
       [
         conversationId,
         m.channelId,
@@ -349,6 +363,8 @@ export async function ingestInbound(
         botVersion,
         ext ? JSON.stringify({ external: ext }) : null,
         dueAt,
+        defaultTopic?.id ?? null,
+        defaultTopic?.path ?? null,
       ],
     );
     // Отзыв (Ф13): объект и предприятие по точке Rocket Data — до события «создано» (измерения отчётов и прав).

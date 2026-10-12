@@ -320,7 +320,7 @@ export class ExtController {
     );
     if (!ch?.is_active || ch.kind !== 'api')
       throw new ApiError(409, 'channel_inactive', 'Внешний канал отключён');
-    const msg = inboundOf(ch.id, b);
+    const msg = inboundOf(ch.id, b, await this.saveAttachments(b.attachments ?? []));
     if (!this.ctx.js) {
       // Без NATS (интеграционные тесты api) — обработка сразу, как это сделал бы worker.
       const r = await withTx(this.ctx.pool, async (tx) => {
@@ -340,10 +340,37 @@ export class ExtController {
     });
     return { accepted: true, id: msg.id };
   }
+
+  /** Документы из заявления (Д-019): base64 → хранилище вложений, запись `attachment` привяжется к обращению. */
+  private async saveAttachments(list: NonNullable<ExtInbound['attachments']>) {
+    const out: InboundMessage['attachments'] = [];
+    const maxMb = this.ctx.config.MAX_UPLOAD_MB;
+    for (const a of list) {
+      if (/\.(exe|bat|cmd|com|scr|js|vbs|msi|ps1|sh)$/i.test(a.filename))
+        throw badRequest(`Такой тип файла не допускается: ${a.filename}`);
+      const body = Buffer.from(a.base64, 'base64');
+      if (!body.length) throw badRequest(`Пустое вложение: ${a.filename}`);
+      if (body.length > maxMb * 1024 * 1024)
+        throw new ApiError(413, 'too_large', `Вложение ${a.filename} больше ${maxMb} МБ`);
+      const id = newId();
+      const key = `attachments/${new Date().toISOString().slice(0, 7)}/${id}`;
+      await this.ctx.storage.put(key, body, a.contentType);
+      await this.ctx.pool.query(
+        `INSERT INTO attachment (id, filename, content_type, size_bytes, storage_key) VALUES ($1, $2, $3, $4, $5)`,
+        [id, a.filename.replace(/[\\/]/g, '_'), a.contentType, body.length, key],
+      );
+      out.push({ id, filename: a.filename, contentType: a.contentType, size: body.length });
+    }
+    return out;
+  }
 }
 
 /** Входящее внешнего канала: идентификатор сообщения и клиента — в пространстве канала. */
-export function inboundOf(channelId: string, b: ExtInbound): InboundMessage {
+export function inboundOf(
+  channelId: string,
+  b: ExtInbound,
+  attachments: InboundMessage['attachments'] = [],
+): InboundMessage {
   const phone = b.contact.phone ? normalizePhone(b.contact.phone) : null;
   if (b.contact.phone && !phone) throw badRequest('Не удалось распознать номер телефона');
   const identity = phone
@@ -363,7 +390,7 @@ export function inboundOf(channelId: string, b: ExtInbound): InboundMessage {
       ...(b.contact.email ? { email: b.contact.email } : {}),
     },
     body: b.text,
-    attachments: [],
+    attachments,
     receivedAt: Date.now(),
     ...(b.fields ? { meta: { fields: b.fields } } : {}),
   };

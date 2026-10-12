@@ -16,6 +16,7 @@ import { useEffect, useState } from 'react';
 import { get, patch } from '../lib/api';
 import { type Row, useAction, useList } from '../lib/data';
 import { t } from '../lib/i18n';
+import { ChannelDueEditor } from '../components/ChannelDueEditor';
 
 /** Настройка `routing.policy` в интерфейсе (все поля, кроме базовых, появились с Д-017 и могут отсутствовать). */
 interface RoutingPolicyUi {
@@ -388,6 +389,10 @@ export function SettingsPage() {
           </>
         );
       })()}
+      <Title order={5} mt="md">
+        {t.settingsPage.dueTitle}
+      </Title>
+      <ChannelDueEditor />
       <Title order={5} mt="md">
         {t.settingsPage.bezopasnostIPersonalnyeDannye}
       </Title>

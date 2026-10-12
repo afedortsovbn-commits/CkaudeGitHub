@@ -16,6 +16,7 @@ import { seedBotDemo } from './bot-demo-seed';
 import { seedIvrDemo, seedPositionDemo } from './ivr-demo-seed';
 import { seedIntegrationsDemo } from './integrations-demo-seed';
 import { seedReviewsDemo } from './reviews-demo-seed';
+import { seedGasDemo } from './gas-demo-seed';
 
 const log = (msg: string, extra: Record<string, unknown> = {}) =>
   console.log(JSON.stringify({ level: 'info', service: 'bootstrap', msg, ...extra }));
@@ -113,6 +114,11 @@ async function main(): Promise<void> {
         }),
       );
       log(reviews ? 'демо отзывов с карт загружено' : 'демо отзывов уже есть — пропуск');
+      // Демо Д-019: канал заявлений на скидку по газу (личный кабинет сайта) с ключом API и сроком 2 рабочих дня.
+      const gas = await withTx(pool, (tx) =>
+        seedGasDemo(tx, { ...(process.env.DEMO_GAS_API_KEY ? { key: process.env.DEMO_GAS_API_KEY } : {}) }),
+      );
+      log(gas ? 'демо-канал «Акция по газу» загружен' : 'демо-канал «Акция по газу» уже есть — пропуск');
     }
   } finally {
     await pool.end();

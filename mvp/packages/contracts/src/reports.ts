@@ -27,6 +27,7 @@ export const REPORT_KINDS = [
   'second-line',
   'overdue',
   'reviews',
+  'gas-promo',
 ] as const;
 export type ReportKind = (typeof REPORT_KINDS)[number];
 
@@ -77,6 +78,8 @@ export const REPORT_CATALOG: Record<ReportKind, { title: string; groups: ReportG
     title: 'Отзывы с карт: оценки и доля отвеченных',
     groups: ['object', 'enterprise', 'rating', 'platform', 'day'],
   },
+  // Д-019: реестр заявлений на скидку по газу (как таблица владельца).
+  'gas-promo': { title: 'Акция по газу: заявления на скидку', groups: [] },
 };
 
 const uuid = z.string().uuid();

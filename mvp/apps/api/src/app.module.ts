@@ -5,6 +5,7 @@ import { AuthGuard } from './auth/guard';
 import { AutomationController } from './automation/automation.controller';
 import { APP_CONTEXT, type AppContext } from './context';
 import { AgentStatusController } from './chat/agent-status.controller';
+import { RoutingDueController } from './chat/routing-due.controller';
 import { ClientChatController } from './chat/client.controller';
 import { ConversationsController } from './chat/conversations.controller';
 import { ContactsController } from './chat/contacts.controller';
@@ -54,6 +55,7 @@ export class AppModule {
         ConversationsController,
         ContactsController,
         AgentStatusController,
+        RoutingDueController,
         SupervisorController,
         TelephonyController,
         IvrController,

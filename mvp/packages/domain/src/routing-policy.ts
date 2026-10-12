@@ -57,6 +57,13 @@ export interface RoutingPolicy {
   };
   /** Срок ответа на письмо, рабочих дней (по производственному календарю). */
   emailDueBusinessDays: number;
+  /** Д-020: срок ответа по каналу поступления (id канала → рабочих дней или часов); важнее сроков по виду канала. */
+  dueByChannel: Record<string, ChannelDue>;
+}
+
+export interface ChannelDue {
+  businessDays?: number;
+  hours?: number;
 }
 
 export const DEFAULT_ROUTING_POLICY: RoutingPolicy = {
@@ -87,6 +94,7 @@ export const DEFAULT_ROUTING_POLICY: RoutingPolicy = {
     negativeDueHours: 8,
   },
   emailDueBusinessDays: 1,
+  dueByChannel: {},
 };
 
 /** Ёмкость оператора в режиме «по загрузке». */
@@ -154,7 +162,24 @@ export function parseRoutingPolicy(raw: unknown): RoutingPolicy {
       negativeDueHours: int(reviews.negativeDueHours, D.reviews.negativeDueHours, 1, 720),
     },
     emailDueBusinessDays: int(v.emailDueBusinessDays, D.emailDueBusinessDays, 1, 30),
+    dueByChannel: parseDueByChannel(v.dueByChannel),
   };
+}
+
+function parseDueByChannel(raw: unknown): Record<string, ChannelDue> {
+  const out: Record<string, ChannelDue> = {};
+  if (!raw || typeof raw !== 'object') return out;
+  for (const [id, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (!/^[0-9a-f-]{36}$/i.test(id) || !v || typeof v !== 'object') continue;
+    const o = v as Record<string, unknown>;
+    const e: ChannelDue = {};
+    const days = Number(o.businessDays);
+    const hours = Number(o.hours);
+    if (Number.isFinite(days) && days >= 1) e.businessDays = Math.min(30, Math.round(days));
+    if (Number.isFinite(hours) && hours >= 1) e.hours = Math.min(720, Math.round(hours));
+    if (e.businessDays || e.hours) out[id] = e;
+  }
+  return out;
 }
 
 export async function loadRoutingPolicy(db: Pool | PoolClient): Promise<RoutingPolicy> {
@@ -288,22 +313,32 @@ export async function dueAtFor(
   channelKind: string,
   review: { urgent?: boolean } | null,
   now = new Date(),
+  channelId?: string | null,
 ): Promise<Date | null> {
+  // Срок по каналу поступления (Д-020) — важнее срока по виду канала.
+  const byChannel = channelId ? p.dueByChannel[channelId] : undefined;
+  if (byChannel?.businessDays) return addBusinessDays(db, now, byChannel.businessDays);
+  if (byChannel?.hours) return new Date(now.getTime() + byChannel.hours * 3600_000);
   if (channelKind === 'review')
     return new Date(
       now.getTime() + (review?.urgent ? p.reviews.negativeDueHours : p.reviews.positiveDueHours) * 3600_000,
     );
   if (channelKind !== 'email') return null;
-  const from = now.toISOString().slice(0, 10);
-  const horizon = new Date(now.getTime() + 60 * 86_400_000).toISOString().slice(0, 10);
+  return addBusinessDays(db, now, p.emailDueBusinessDays);
+}
+
+/** Момент через `n` рабочих дней по производственному календарю (корректировки — `work_calendar_day`). */
+export async function addBusinessDays(db: Pool | PoolClient, from: Date, n: number): Promise<Date> {
+  const start = from.toISOString().slice(0, 10);
+  const horizon = new Date(from.getTime() + 90 * 86_400_000).toISOString().slice(0, 10);
   const ov = await db.query<CalendarOverride>(
     `SELECT to_char(on_date, 'YYYY-MM-DD') AS date, kind, note FROM work_calendar_day WHERE on_date BETWEEN $1 AND $2`,
-    [from, horizon],
+    [start, horizon],
   );
   const kinds = new Map(ov.rows.map((o) => [o.date, o.kind]));
-  const due = new Date(now);
-  let left = p.emailDueBusinessDays;
-  for (let i = 0; i < 60 && left > 0; i++) {
+  const due = new Date(from);
+  let left = n;
+  for (let i = 0; i < 90 && left > 0; i++) {
     due.setUTCDate(due.getUTCDate() + 1);
     const date = due.toISOString().slice(0, 10);
     const kind = kinds.get(date) ?? defaultDayKind(date);

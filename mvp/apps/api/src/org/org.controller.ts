@@ -52,6 +52,8 @@ const FieldCreate = z
     options: z.array(z.string().min(1)).nullable().optional(),
     requiredOnClose: z.boolean().default(false),
     requiredOnEscalate: z.boolean().default(false),
+    /** Д-019: совпадение значения с прежними обращениями темы — предупреждение о повторе. */
+    checkDuplicates: z.boolean().default(false),
     sortOrder: z.number().int().default(0),
   })
   .strict();
@@ -123,6 +125,18 @@ const SETTINGS: Record<string, z.ZodTypeAny> = {
         .strict()
         .optional(),
       emailDueBusinessDays: z.number().int().min(1).max(30).optional(),
+      // Д-020: срок ответа по каналу поступления (id канала → рабочих дней или часов).
+      dueByChannel: z
+        .record(
+          z.string().uuid(),
+          z
+            .object({
+              businessDays: z.number().int().min(0).max(30).optional(),
+              hours: z.number().int().min(1).max(720).optional(),
+            })
+            .strict(),
+        )
+        .optional(),
     })
     .strict(),
   // График работы: перерывы дневной/ночной смены (минуты) и нормы трудового законодательства.
@@ -417,8 +431,8 @@ export class OrgController {
     return withTx(this.ctx.pool, async (tx) => {
       const row = await one(
         tx,
-        `INSERT INTO field_def (id, topic_id, key, label, type, mask, options, required_on_close, required_on_escalate, sort_order)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
+        `INSERT INTO field_def (id, topic_id, key, label, type, mask, options, required_on_close, required_on_escalate, sort_order, check_duplicates)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
         [
           id,
           topicId,
@@ -430,6 +444,7 @@ export class OrgController {
           b.requiredOnClose,
           b.requiredOnEscalate,
           b.sortOrder,
+          b.checkDuplicates,
         ],
       );
       await audit(tx, p, 'create', 'field_def', id, null, row);

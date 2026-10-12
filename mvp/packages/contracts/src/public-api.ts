@@ -138,9 +138,25 @@ export const ExtInboundSchema = z
     text: z.string().max(20000).default(''),
     /** Произвольные данные формы — сохраняются в поля обращения (fields). */
     fields: z.record(z.union([z.string().max(2000), z.number(), z.boolean()])).optional(),
+    /** Документы клиента (например, к заявлению на скидку): файл в base64, не больше лимита вложений системы. */
+    attachments: z
+      .array(
+        z
+          .object({
+            filename: z.string().trim().min(1).max(200),
+            contentType: z.string().max(100).default('application/octet-stream'),
+            base64: z.string().min(1).max(30_000_000),
+          })
+          .strict(),
+      )
+      .max(10)
+      .optional(),
   })
   .strict()
-  .refine((m) => m.text.trim() || (m.fields && Object.keys(m.fields).length), 'Пустое сообщение');
+  .refine(
+    (m) => m.text.trim() || (m.fields && Object.keys(m.fields).length) || m.attachments?.length,
+    'Пустое сообщение',
+  );
 export type ExtInbound = z.infer<typeof ExtInboundSchema>;
 
 export const ExtConversationPatchSchema = z

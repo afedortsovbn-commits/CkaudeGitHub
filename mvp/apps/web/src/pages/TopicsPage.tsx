@@ -88,6 +88,11 @@ function Fields({ topic }: { topic: Row }) {
                   <Badge size="xs" color="orange">
                     {t.topics.obyazPriPeredache}
                   </Badge>
+                ) : null}{' '}
+                {f.checkDuplicates ? (
+                  <Badge size="xs" color="grape">
+                    {t.topics.povtor}
+                  </Badge>
                 ) : null}
               </Table.Td>
               <Table.Td>
@@ -126,6 +131,7 @@ function Fields({ topic }: { topic: Row }) {
           { key: 'options', label: t.topics.variantyDlyaSpiskaCherez },
           { key: 'requiredOnClose', label: t.topics.obyazatelnoPriZakrytii, type: 'switch' },
           { key: 'requiredOnEscalate', label: t.topics.obyazatelnoPriPeredacheNa, type: 'switch' },
+          { key: 'checkDuplicates', label: t.topics.proveryatNaPovtor, type: 'switch' },
           { key: 'sortOrder', label: t.topics.poryadok, type: 'number' },
         ]}
         loading={save.isPending}

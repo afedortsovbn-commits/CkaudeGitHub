@@ -144,6 +144,16 @@ const STATUS: Record<string, string> = {
 };
 const time = (s: unknown) =>
   s ? new Date(String(s)).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }) : '';
+const dateTime = (s: unknown) =>
+  s
+    ? new Date(String(s)).toLocaleString('ru-RU', {
+        timeZone: 'Europe/Minsk',
+        day: '2-digit',
+        month: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+      })
+    : '';
 const since = (s: unknown) => {
   if (!s) return '';
   const min = Math.floor((Date.now() - new Date(String(s)).getTime()) / 60000);
@@ -308,6 +318,18 @@ function List({
               {c.topicName ? (
                 <Badge size="xs" variant="outline">
                   {String(c.topicName)}
+                </Badge>
+              ) : null}
+              {c.dueAt && c.status !== 'closed' ? (
+                <Badge
+                  size="xs"
+                  variant="outline"
+                  color={new Date(String(c.dueAt)).getTime() < Date.now() ? 'red' : 'gray'}
+                  data-testid="badge-due"
+                >
+                  {new Date(String(c.dueAt)).getTime() < Date.now()
+                    ? t.workspace.dueOverdue
+                    : t.workspace.dueBadge(dateTime(c.dueAt))}
                 </Badge>
               ) : null}
               {c.status === 'offered' ? (
@@ -1304,6 +1326,20 @@ function ConversationCard({ conv }: { conv: Row }) {
   const [escalating, setEscalating] = useState(false);
   const req = useRequired();
   useEffect(() => req.reset(), [conv.id]);
+  // Похожие обращения (Д-019): совпадение полей темы с отметкой «проверять на повтор» — предупреждение оператору.
+  const dups = useQuery({
+    queryKey: [`/conversations/${String(conv.id)}/duplicates`],
+    queryFn: () => get<{ keys: Row[]; matches: Row[] }>(`/conversations/${String(conv.id)}/duplicates`),
+    enabled: !!conv.topicId && conv.status !== 'closed',
+  });
+  const dupLabel = (k: string) => String((dups.data?.keys ?? []).find((x) => x.key === k)?.label ?? k);
+  // Акция по газу: «Скидка присвоена — закрыть» ставит поле «Скидка: Да» и закрывает как решённое на 1-й линии.
+  const gasGrant = useAction(async () => {
+    const resolved = dispositions.data?.find((d) => d.code === 'resolved');
+    if (!resolved) throw new Error(t.workspace.gasNoDisposition);
+    await patch(`/conversations/${conv.id}`, { fields: { ...vals, discount: t.workspace.gasYes } });
+    await post(`/conversations/${conv.id}/close`, { dispositionId: resolved.id });
+  }, t.workspace.gasGranted);
   const empty = (k: string) => vals[k] === undefined || vals[k] === null || String(vals[k]).trim() === '';
   const requiredNow = (f: Row) => !!f.requiredOnClose || (isEscalate && !!f.requiredOnEscalate);
   // Что клиент сообщил сам (номер звонка, имя из чата) — подставляется в поля темы, оператор может изменить.
@@ -1635,6 +1671,42 @@ function ConversationCard({ conv }: { conv: Row }) {
             </Text>
           </Group>
         </Paper>
+      ) : null}
+      {!closed && (dups.data?.matches.length ?? 0) > 0 ? (
+        <Paper p="xs" bg="orange.0" c="orange.9" data-testid="duplicates-banner">
+          <Group gap={6} wrap="nowrap">
+            <IconAlertTriangle size={18} />
+            <Text size="sm" fw={700}>
+              {t.workspace.duplicatesTitle(dups.data!.matches.length)}
+            </Text>
+          </Group>
+          <Text size="xs">{t.workspace.duplicatesHint}</Text>
+          <Stack gap={2} mt={4}>
+            {dups.data!.matches.slice(0, 5).map((m) => (
+              <Text size="xs" key={String(m.id)} data-testid="duplicate-row">
+                {dateTime(m.createdAt)} · {STATUS[String(m.status)] ?? String(m.status)}
+                {m.assigneeName ? ` · ${String(m.assigneeName)}` : ''} · {t.workspace.duplicatesMatched}
+                {((m.matched as string[]) ?? []).map(dupLabel).join(', ')}
+              </Text>
+            ))}
+          </Stack>
+        </Paper>
+      ) : null}
+      {conv.topicCode === 'gas_promo' && !closed && conv.status !== 'waiting_2nd_line' ? (
+        <Group>
+          <Tooltip label={t.workspace.gasGrantHint} withArrow>
+            <Button
+              size="xs"
+              color="green"
+              variant="light"
+              loading={gasGrant.isPending}
+              onClick={() => gasGrant.mutate(undefined)}
+              data-testid="gas-grant"
+            >
+              {t.workspace.gasGrant}
+            </Button>
+          </Tooltip>
+        </Group>
       ) : null}
       {(!!ticket || !!conv.chatCsat) && (
         <Group gap={6}>
