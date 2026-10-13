@@ -156,6 +156,20 @@ function Chat() {
   useEffect(() => {
     bodyRef.current?.scrollTo(0, bodyRef.current.scrollHeight);
   }, [msgs, typing]);
+  // Окно чата открыли снова (Д-024) — сразу последние сообщения, без прокрутки от начала переписки.
+  useEffect(() => {
+    if (!open) return;
+    const toEnd = () => {
+      const b = bodyRef.current;
+      if (!b) return;
+      b.style.scrollBehavior = 'auto';
+      b.scrollTop = b.scrollHeight;
+      b.style.scrollBehavior = '';
+    };
+    toEnd();
+    const r = requestAnimationFrame(() => requestAnimationFrame(toEnd));
+    return () => cancelAnimationFrame(r);
+  }, [open, token]);
 
   const start = async () => {
     setError(null);
