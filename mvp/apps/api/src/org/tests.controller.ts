@@ -523,12 +523,21 @@ export class TestsController {
   // ---------------------------------------------------------------- сотрудник: свои тесты
 
   @Get('my-tests')
-  async myTests(@CurrentUser() p: Principal) {
+  async myTests(@CurrentUser() p: Principal, @Query('userId') userId?: string) {
+    const uid = this.ratingUser(p, userId);
     return {
-      assignments: (await this.assignmentRows({ userId: p.id })).filter((a) => a.status !== 'cancelled'),
-      attempts: await this.attemptRows(p.id),
-      topics: await this.topicStats(p.id),
+      assignments: (await this.assignmentRows({ userId: uid })).filter((a) => a.status !== 'cancelled'),
+      attempts: await this.attemptRows(uid),
+      topics: await this.topicStats(uid),
     };
+  }
+
+  /** Чей рейтинг и тесты смотреть (Д-023): свои — всем; другого оператора — с правом рейтинга или тестирования. */
+  private ratingUser(p: Principal, userId?: string): string {
+    if (!userId || userId === p.id) return p.id;
+    parse(uuid, userId);
+    if (!hasPerm(p, 'rating.view') && !hasPerm(p, 'tests.manage')) throw forbidden();
+    return userId;
   }
 
   /** Для значка в шапке: просроченные и с близким сроком (≤ 3 дней) назначения. */
@@ -730,23 +739,24 @@ export class TestsController {
 
   /** Мой рейтинг по оценкам клиентов: за 30 дней и всё время, распределение оценок, место среди операторов. */
   @Get('my-rating')
-  async myRating(@CurrentUser() p: Principal) {
+  async myRating(@CurrentUser() p: Principal, @Query('userId') userId?: string) {
+    const uid = this.ratingUser(p, userId);
     const stats = async (days: number | null) =>
       one<{ avg: string | null; n: number }>(
         this.ctx.pool,
         `SELECT round(avg(score), 2) AS avg, count(*)::int AS n FROM csat_rating
           WHERE agent_user_id = $1 AND ($2::int IS NULL OR created_at >= now() - make_interval(days => $2))`,
-        [p.id, days],
+        [uid, days],
       );
     const dist = await rows<{ score: number; n: number }>(
       this.ctx.pool,
       `SELECT score, count(*)::int AS n FROM csat_rating WHERE agent_user_id = $1 GROUP BY score`,
-      [p.id],
+      [uid],
     );
     const month = await stats(30);
     const all = await stats(null);
     const rating = await this.operatorRating(p, 30);
-    const mine = rating.items.find((r) => r.me);
+    const mine = rating.items.find((r) => (r as Record<string, unknown>).id === uid);
     return {
       month: { avg: month?.avg ? Number(month.avg) : null, count: month?.n ?? 0 },
       all: { avg: all?.avg ? Number(all.avg) : null, count: all?.n ?? 0 },

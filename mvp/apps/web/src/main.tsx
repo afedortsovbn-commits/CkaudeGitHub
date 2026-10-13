@@ -44,7 +44,6 @@ import { ObjectSyncPage } from './pages/ObjectSyncPage';
 import { WallboardPage } from './pages/WallboardPage';
 import { StaffMessagesPage } from './pages/StaffMessagesPage';
 import { TestsPage } from './pages/TestsPage';
-import { MyTestsPage } from './pages/MyTestsPage';
 import { CoursesPage } from './pages/CoursesPage';
 import { CourseLessonPage, MyCoursesPage } from './pages/MyCoursesPage';
 import { RatingsPage } from './pages/RatingsPage';
@@ -83,7 +82,7 @@ function App() {
         <Route path="schedule" element={<SchedulePage />} />
         <Route path="staff-messages" element={<StaffMessagesPage />} />
         <Route path="tests" element={<TestsPage />} />
-        <Route path="my-tests" element={<MyTestsPage />} />
+        <Route path="my-tests" element={<RatingsPage />} />
         <Route path="courses" element={<CoursesPage />} />
         <Route path="my-courses" element={<MyCoursesPage />} />
         <Route path="my-courses/:id" element={<CourseLessonPage />} />

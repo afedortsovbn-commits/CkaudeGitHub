@@ -1,11 +1,25 @@
-import { Badge, Box, Group, Paper, SegmentedControl, Table, Text, Tooltip } from '@mantine/core';
+import {
+  Badge,
+  Box,
+  Group,
+  Paper,
+  SegmentedControl,
+  Select,
+  Stack,
+  Table,
+  Text,
+  Title,
+  Tooltip,
+} from '@mantine/core';
 import { IconPhoneCall, IconStarFilled } from '@tabler/icons-react';
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { scoreColor } from '../components/TestAttempt';
 import { get } from '../lib/api';
+import { useAuth } from '../lib/auth';
 import type { Row } from '../lib/data';
 import { t } from '../lib/i18n';
+import { MyTestsPage } from './MyTestsPage';
 
 const STATUS: Record<string, { label: string; color: string }> = {
   ready: { label: t.tests.statusReady, color: 'green' },
@@ -23,10 +37,61 @@ const mins = (s: unknown) => {
 };
 
 /**
+ * «Рейтинг» (Д-023): сначала один оператор — свои оценки, место и тесты (у руководителя — выбранный оператор,
+ * выбор в списке или щелчком по строке), затем — рейтинг всех операторов (с правом «Рейтинг операторов»).
+ */
+export function RatingsPage() {
+  const { me, can } = useAuth();
+  const all = can('rating.view');
+  const own = can('conversations.work', 'tickets.work');
+  const [who, setWho] = useState<string | null>(null);
+  const ops = useQuery({
+    queryKey: ['/ratings/operators?days=30'],
+    queryFn: () => get<{ items: Row[]; rated: number }>('/ratings/operators?days=30'),
+    enabled: all,
+  });
+  const options = (ops.data?.items ?? []).map((r) => ({ value: String(r.id), label: String(r.fullName) }));
+  const picked = who && who !== me?.id ? who : null;
+  const pickedName = options.find((o) => o.value === picked)?.label ?? '';
+  return (
+    <Stack>
+      {all && (
+        <Group gap="xs">
+          <Select
+            w={320}
+            placeholder={own ? t.tests.pickOperatorSelf : t.tests.pickOperator}
+            data={options}
+            value={picked}
+            onChange={setWho}
+            searchable
+            clearable
+            data-testid="rating-operator"
+          />
+        </Group>
+      )}
+      {picked ? <MyTestsPage key={picked} userId={picked} name={pickedName} /> : own ? <MyTestsPage /> : null}
+      {all && (
+        <>
+          <Title order={4} mt="sm">
+            {t.tests.allOperators}
+          </Title>
+          <RatingsTable
+            onPick={(id) => {
+              setWho(id);
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+            }}
+          />
+        </>
+      )}
+    </Stack>
+  );
+}
+
+/**
  * Рейтинг операторов: места по средней оценке клиентов за период, статус цветом (в работе, перерыв, не на
  * смене), работа с обращением сейчас, обработано за период и с начала смены, баллы тестов. Обновляется сам.
  */
-export function RatingsPage() {
+function RatingsTable({ onPick }: { onPick(id: string): void }) {
   const [days, setDays] = useState('30');
   const q = useQuery({
     queryKey: [`/ratings/operators?days=${days}`],
@@ -80,6 +145,8 @@ export function RatingsPage() {
                 bg={r.me ? 'var(--mantine-color-blue-0)' : undefined}
                 data-testid="rating-row"
                 data-me={r.me || undefined}
+                style={{ cursor: 'pointer' }}
+                onClick={() => onPick(String(r.id))}
               >
                 <Table.Td>
                   {place ? (

@@ -163,11 +163,17 @@ export function AttemptsTable({ rows, onOpen }: { rows: Row[]; onOpen(id: string
  * «Мои тесты и рейтинг»: рейтинг по оценкам клиентов (за 30 дней и всё время, место среди операторов),
  * назначенные тесты со сроками (пройти / пройти ещё раз), мои попытки и компетентность по темам.
  */
-export function MyTestsPage() {
-  const rating = useQuery({ queryKey: ['/my-rating'], queryFn: () => get<MyRating>('/my-rating') });
+/**
+ * Рейтинг и тесты сотрудника (Д-023: часть страницы «Рейтинг»). Без userId — свои (с кнопками прохождения тестов);
+ * с userId — выбранного оператора (для руководителя, только просмотр).
+ */
+export function MyTestsPage({ userId, name }: { userId?: string | null; name?: string } = {}) {
+  const q = userId ? `?userId=${userId}` : '';
+  const self = !userId;
+  const rating = useQuery({ queryKey: ['/my-rating', q], queryFn: () => get<MyRating>(`/my-rating${q}`) });
   const my = useQuery({
-    queryKey: ['/my-tests'],
-    queryFn: () => get<{ assignments: Row[]; attempts: Row[]; topics: Row[] }>('/my-tests'),
+    queryKey: ['/my-tests', q],
+    queryFn: () => get<{ assignments: Row[]; attempts: Row[]; topics: Row[] }>(`/my-tests${q}`),
   });
   const [take, setTake] = useState<string | null>(null);
   const [view, setView] = useState<string | null>(null);
@@ -180,7 +186,7 @@ export function MyTestsPage() {
       <Paper withBorder p="md" radius="md" data-testid="my-rating">
         <Group gap={8} mb="sm">
           <IconStarFilled size={20} color="var(--mantine-color-yellow-6)" />
-          <Title order={4}>{t.tests.myRating}</Title>
+          <Title order={4}>{self ? t.tests.myRating : t.tests.ratingOf(name ?? '')}</Title>
         </Group>
         <Grid>
           <Grid.Col span={{ base: 12, md: 7 }}>
@@ -244,7 +250,7 @@ export function MyTestsPage() {
 
       <Paper withBorder p="md" radius="md">
         <Title order={4} mb="sm">
-          {t.tests.myTests}
+          {self ? t.tests.myTests : t.tests.testsOf}
         </Title>
         {(my.data?.assignments ?? []).length === 0 ? (
           <Text size="sm" c="dimmed">
@@ -288,6 +294,7 @@ export function MyTestsPage() {
                     )}
                   </Stack>
                   <Button
+                    display={self ? undefined : 'none'}
                     variant={a.status === 'passed' ? 'light' : 'filled'}
                     color={a.status === 'overdue' ? 'red' : 'blue'}
                     onClick={() => setTake(String(a.testId))}

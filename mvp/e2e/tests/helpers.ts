@@ -129,3 +129,16 @@ export async function listView(page: Page, view: string) {
   }
   throw new Error(`Не удалось открыть вид списка «${view}»`);
 }
+
+/**
+ * «Настройки» со всеми раскрытыми блоками (Д-039: длинные блоки свёрнуты по умолчанию; раскрытые запоминаются в
+ * браузере, поэтому после reload остаются открытыми).
+ */
+export async function openSettings(page: Page): Promise<void> {
+  await nav(page, 'Настройки');
+  const secs = page.locator('[data-testid^="settings-sec-"]:not([data-testid$="-toggle"])');
+  await expect(secs.first()).toBeVisible();
+  for (const sec of await secs.all())
+    if ((await sec.getAttribute('data-open')) === null)
+      await sec.locator('[data-testid$="-toggle"]').first().click();
+}

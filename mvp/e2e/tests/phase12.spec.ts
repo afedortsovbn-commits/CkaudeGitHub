@@ -3,7 +3,16 @@ import { writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { type APIRequestContext, type Browser, expect, type Page, test } from '@playwright/test';
-import { ADMIN, DEMO_PASSWORD, login, nav, totpCode, setAgentStatus, listView } from './helpers';
+import {
+  ADMIN,
+  DEMO_PASSWORD,
+  login,
+  nav,
+  totpCode,
+  setAgentStatus,
+  listView,
+  openSettings,
+} from './helpers';
 import { sendMail } from './mail';
 
 /**
@@ -349,7 +358,7 @@ test.describe.serial('Ф12: доводка и приёмка', () => {
   }) => {
     const a = await api(request);
     await login(page, ADMIN.email, ADMIN.password);
-    await nav(page, 'Настройки');
+    await openSettings(page);
     const sw = page.getByTestId('setting-report.sl_count_short_abandons');
     await expect(sw).not.toBeChecked();
     try {

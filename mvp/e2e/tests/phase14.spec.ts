@@ -255,7 +255,7 @@ test.describe.serial('Ф14: бот, очередь, супервизор', () =>
   }) => {
     const page = await newPage(browser);
     await login(page, ADMIN.email, ADMIN.password);
-    await nav(page, 'Боты');
+    await nav(page, 'Сценарии текстовых');
     await page.getByRole('link', { name: `Бот с ожиданием ${stamp}` }).click();
     await expect(page.getByTestId('node-buttons')).toBeVisible({ timeout: 15_000 });
     await expect(page.getByTestId('exit-noanswer')).toBeVisible();

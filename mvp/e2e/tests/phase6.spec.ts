@@ -190,7 +190,7 @@ test.describe.serial('Ф6: IVR', () => {
     // Откат из интерфейса (M-IVR-06): версия, бывшая опубликованной, снова опубликована.
     const admin = await browser.newPage();
     await login(admin, ADMIN.email, ADMIN.password);
-    await nav(admin, 'Сценарии IVR');
+    await nav(admin, 'Сценарии голосовых');
     await admin.getByRole('link', { name: FLOW }).click();
     await expect(admin.getByTestId('flow-published')).toHaveText(`опубликована версия ${pub.version}`);
     await admin.getByRole('button', { name: 'Версии' }).click();
@@ -204,7 +204,7 @@ test.describe.serial('Ф6: IVR', () => {
     page,
   }) => {
     await login(page, ADMIN.email, ADMIN.password);
-    await nav(page, 'Сценарии IVR');
+    await nav(page, 'Сценарии голосовых');
     await page.getByRole('link', { name: FLOW }).click();
     await expect(page.getByTestId('node-menu')).toHaveCount(4);
     await expect(page.getByTestId('flow-valid')).toBeVisible();
@@ -223,7 +223,7 @@ test.describe.serial('Ф6: IVR', () => {
     await page.keyboard.press('Escape');
 
     // Новый сценарий: «Начало» → «Проиграть сообщение» → «Завершить».
-    await nav(page, 'Сценарии IVR');
+    await nav(page, 'Сценарии голосовых');
     await page.getByTestId('flow-new').click();
     await page.getByTestId('flow-name').fill(`Тест ${stamp}`);
     await page.getByTestId('flow-create').click();

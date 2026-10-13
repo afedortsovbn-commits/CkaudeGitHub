@@ -52,6 +52,8 @@ test.describe.serial('Ф20: обучение сотрудников', () => {
     await expect(page.getByTestId('lesson-view')).toContainText('Урок 1 из');
     // Ситуация: верный вариант содержит «одна сеть».
     const situation = page.getByTestId('situation').first();
+    // Д-040: урок по слайдам — листать до слайда с ситуацией.
+    for (let i = 0; i < 20 && !(await situation.isVisible()); i++) await page.getByTestId('slide-next').click();
     await situation.getByTestId('situation-option').filter({ hasText: 'одна сеть' }).click();
     await expect(situation.getByTestId('situation-result')).toContainText('Верно');
     await expect(page.getByTestId('situations-score')).toContainText('1 из 1 верно');

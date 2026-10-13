@@ -199,7 +199,7 @@ test.describe.serial('Ф7: автоответы, бот, подсказки, ш�
 
   test('конструктор бота: тестовый прогон в виде чата', async ({ page }) => {
     await login(page, ADMIN.email, ADMIN.password);
-    await nav(page, 'Боты');
+    await nav(page, 'Сценарии текстовых');
     await page.getByRole('link', { name: 'Демо: бот сайта сети АЗС' }).click();
     await expect(page.getByTestId('node-buttons')).toBeVisible();
     await page.getByTestId('flow-test').click();

@@ -15,9 +15,9 @@ export const layout = {
   connPhoneHint:
     'Софтфон не зарегистрирован на сервере телефонии. Обновите страницу; если не помогло — сообщите администратору.',
   kanaly: 'Каналы',
-  stsenariiIvr: 'Сценарии IVR',
+  stsenariiIvr: 'Сценарии голосовых',
   audiobiblioteka: 'Аудиобиблиотека',
-  boty: 'Боты',
+  boty: 'Сценарии текстовых',
   shablonyOtvetov: 'Шаблоны ответов',
   bazaZnaniy: 'База знаний',
   avtootvety: 'Автоответы',

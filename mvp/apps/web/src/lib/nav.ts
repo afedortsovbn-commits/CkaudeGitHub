@@ -7,7 +7,6 @@ import {
   IconBuildingSkyscraper,
   IconBulb,
   IconCalendarTime,
-  IconCertificate,
   IconBellRinging,
   IconBook2,
   IconChartBar,
@@ -39,6 +38,7 @@ import {
   IconTransfer,
   IconTrophy,
   IconUsers,
+  IconUsersGroup,
   IconVolume,
   IconWebhook,
 } from '@tabler/icons-react';
@@ -53,17 +53,25 @@ export interface MenuItem {
   icon?: Icon;
   /** Внешнее приложение, открываемое в новой вкладке (не в окне системы). */
   external?: boolean;
+  /** Раздел открывается отдельным экраном без меню (панель мониторинга) — в меню свой значок и цвет (Д-037). */
+  screen?: boolean;
 }
 
-/** Группы меню — в порядке показа: сначала ежедневная работа, затем контроль, настройка и администрирование. */
+/**
+ * Группы меню — в порядке показа (Д-023, таблица владельца «Корректировка структуры меню»): работа, контроль и
+ * аналитика, персонал, сценарии, справочники, интеграции, администрирование, система, внешние приложения.
+ */
 export const MENU_GROUPS: { id: string; label: string; icon: Icon }[] = [
   { id: 'work', label: t.nav.groupWork, icon: IconHeadset },
-  { id: 'apps', label: t.nav.groupApps, icon: IconApps },
   { id: 'control', label: t.nav.groupControl, icon: IconChartBar },
+  { id: 'staff', label: t.nav.groupStaff, icon: IconUsersGroup },
   { id: 'channels', label: t.nav.groupChannels, icon: IconSitemap },
   { id: 'org', label: t.nav.groupOrg, icon: IconBuildingSkyscraper },
   { id: 'integrations', label: t.nav.groupIntegrations, icon: IconPlug },
   { id: 'admin', label: t.nav.groupAdmin, icon: IconSettings },
+  { id: 'system', label: t.nav.groupSystem, icon: IconServer },
+  // Внешние приложения — в конце (Д-023, таблица владельца).
+  { id: 'apps', label: t.nav.groupApps, icon: IconApps },
 ];
 
 /**
@@ -101,12 +109,14 @@ export const MENU: MenuItem[] = [
     group: 'work',
     icon: IconTemplate,
   },
+
+  // «Рейтинг» (Д-023): свои оценки и тесты, у руководителя — выбранный оператор, затем все операторы.
   {
-    to: '/my-tests',
-    label: t.tests.navMy,
-    perms: ['conversations.work', 'tickets.work'],
+    to: '/ratings',
+    label: t.tests.navRating,
+    perms: ['conversations.work', 'tickets.work', 'rating.view'],
     group: 'work',
-    icon: IconCertificate,
+    icon: IconTrophy,
   },
   {
     to: '/my-courses',
@@ -115,7 +125,7 @@ export const MENU: MenuItem[] = [
     group: 'work',
     icon: IconBook2,
   },
-  // Контроль и отчёты
+  // Контроль и аналитика
   {
     to: '/supervisor',
     label: t.layout.supervizor,
@@ -123,41 +133,7 @@ export const MENU: MenuItem[] = [
     group: 'control',
     icon: IconDeviceDesktopAnalytics,
   },
-  {
-    to: '/staff-messages',
-    label: t.staffMessages.title,
-    perms: ['staff.broadcast'],
-    group: 'control',
-    icon: IconSpeakerphone,
-  },
-  {
-    to: '/wallboard',
-    label: t.wallboard.menu,
-    perms: ['supervisor.monitor'],
-    group: 'control',
-    icon: IconDeviceTv,
-  },
-  {
-    to: '/ratings',
-    label: t.tests.navRating,
-    perms: ['rating.view'],
-    group: 'control',
-    icon: IconTrophy,
-  },
-  {
-    to: '/tests',
-    label: t.tests.navManage,
-    perms: ['tests.manage'],
-    group: 'control',
-    icon: IconClipboardCheck,
-  },
-  {
-    to: '/courses',
-    label: t.courses.navManage,
-    perms: ['tests.manage'],
-    group: 'control',
-    icon: IconSchool,
-  },
+
   { to: '/reports', label: t.layout.otchety, perms: ['reports.view'], group: 'control', icon: IconChartBar },
   {
     to: '/notify',
@@ -166,20 +142,45 @@ export const MENU: MenuItem[] = [
     group: 'control',
     icon: IconBellRinging,
   },
+
+  // Панель мониторинга — последней в группе: открывается отдельным экраном.
+  {
+    to: '/wallboard',
+    label: t.wallboard.menu,
+    perms: ['supervisor.monitor'],
+    group: 'control',
+    icon: IconDeviceTv,
+    screen: true,
+  }, // Персонал
+  {
+    to: '/staff-messages',
+    label: t.staffMessages.title,
+    perms: ['staff.broadcast'],
+    group: 'staff',
+    icon: IconSpeakerphone,
+  },
+  {
+    to: '/tests',
+    label: t.tests.navManage,
+    perms: ['tests.manage'],
+    group: 'staff',
+    icon: IconClipboardCheck,
+  },
+  {
+    to: '/courses',
+    label: t.courses.navManage,
+    perms: ['tests.manage'],
+    group: 'staff',
+    icon: IconSchool,
+  },
   {
     to: '/schedule',
     label: t.schedule.title,
     perms: ['schedule.manage'],
-    group: 'control',
+    group: 'staff',
     icon: IconCalendarTime,
   },
-  {
-    to: '/resources',
-    label: t.resources.title,
-    perms: ['settings.manage', 'supervisor.monitor', 'admin.users'],
-    group: 'control',
-    icon: IconServer,
-  },
+  { to: '/users', label: t.nav.users, perms: ['admin.users'], group: 'staff', icon: IconUsers },
   // Каналы и сценарии
   {
     to: '/channels',
@@ -312,17 +313,9 @@ export const MENU: MenuItem[] = [
     icon: IconTransfer,
   },
   // Администрирование
-  { to: '/users', label: t.nav.users, perms: ['admin.users'], group: 'admin', icon: IconUsers },
   { to: '/roles', label: t.roles.navTitle, perms: ['admin.users'], group: 'admin', icon: IconShieldLock },
-  {
-    to: '/external-apps',
-    label: t.extApps.navTitle,
-    perms: ['settings.manage'],
-    group: 'admin',
-    icon: IconApps,
-  },
+
   { to: '/settings', label: t.nav.settings, perms: ['settings.manage'], group: 'admin', icon: IconSettings },
-  { to: '/audit', label: t.nav.audit, perms: ['admin.audit'], group: 'admin', icon: IconHistory },
   {
     to: '/privacy',
     label: t.layout.personalnyeDannye,
@@ -330,6 +323,22 @@ export const MENU: MenuItem[] = [
     group: 'admin',
     icon: IconLock,
   },
+  // Система
+  {
+    to: '/resources',
+    label: t.resources.title,
+    perms: ['settings.manage', 'supervisor.monitor', 'admin.users'],
+    group: 'system',
+    icon: IconServer,
+  },
+  {
+    to: '/external-apps',
+    label: t.extApps.navTitle,
+    perms: ['settings.manage'],
+    group: 'system',
+    icon: IconApps,
+  },
+  { to: '/audit', label: t.nav.audit, perms: ['admin.audit'], group: 'system', icon: IconHistory },
 ];
 
 /** Интерфейс по умолчанию для роли (хранится в роли, приходит в /auth/me). */

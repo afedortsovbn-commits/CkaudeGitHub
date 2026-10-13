@@ -1,5 +1,5 @@
 import { expect, request, test } from '@playwright/test';
-import { ADMIN, DEMO_PASSWORD, listView, login, nav, setAgentStatus } from './helpers';
+import { ADMIN, DEMO_PASSWORD, listView, login, nav, setAgentStatus, openSettings } from './helpers';
 
 const GAS_KEY = process.env.E2E_DEMO_GAS_API_KEY ?? 'cck_demo_gas_key_change_me_0123456789abcdef';
 
@@ -70,7 +70,7 @@ test.describe.serial('Ф18: акция по газу и сроки по кана
   test('администратор задаёт срок по каналу; супервизор видит таблицу сроков', async ({ browser }) => {
     const admin = await (await browser.newContext({ ignoreHTTPSErrors: true })).newPage();
     await login(admin, ADMIN.email, ADMIN.password);
-    await nav(admin, 'Настройки');
+    await openSettings(admin);
     const row = admin.getByTestId('due-row').filter({ hasText: 'Акция по газу' });
     await expect(row).toBeVisible();
     await row.getByTestId('due-days-api').fill('3');

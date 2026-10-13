@@ -1,5 +1,5 @@
 import { type Browser, expect, type Page, test } from '@playwright/test';
-import { ADMIN, DEMO_PASSWORD, login, nav, setAgentStatus } from './helpers';
+import { ADMIN, DEMO_PASSWORD, login, nav, setAgentStatus, openSettings } from './helpers';
 
 /**
  * Ф17 (Д-017, 10.10.2026): распределение «по загрузке». Администратор включает режим; у оператора появляется
@@ -30,7 +30,7 @@ test.describe.serial('Ф17: распределение «по загрузке»
   }
   async function setMode(browser: Browser, mode: 'load' | 'standard', silenceMin?: number) {
     const admin = await as(browser, ADMIN.email, ADMIN.password);
-    await nav(admin, 'Настройки');
+    await openSettings(admin);
     // Поля режима «по загрузке» видны только в нём: при возврате к обычному режиму сначала вернуть молчание клиента
     // к умолчанию (15 мин), затем переключить режим — иначе на стенде останется 1 мин.
     if (mode === 'standard') {

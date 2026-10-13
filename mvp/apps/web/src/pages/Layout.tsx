@@ -15,6 +15,7 @@ import {
 import { useDisclosure } from '@mantine/hooks';
 import {
   IconChevronRight,
+  IconArrowsMaximize,
   IconExternalLink,
   IconChevronsLeft,
   IconChevronsRight,
@@ -32,6 +33,7 @@ import { StaffMessageInbox } from '../components/StaffMessageInbox';
 import { SoftphoneCall, SoftphoneStatus } from '../components/Softphone';
 import { useRealtime } from '../lib/realtime';
 import { useFocusMode } from '../lib/focus';
+import { pref } from '../lib/pref';
 import { ConnectionAlert } from '../components/ConnectionAlert';
 import { TestDueBadge } from '../components/TestAttempt';
 import { softphone } from '../lib/softphone';
@@ -42,25 +44,6 @@ import { buildMenu, groupMenu, MENU, MENU_GROUPS, type MenuItem } from '../lib/n
 
 /** Меню из небольшого числа пунктов — без групп (оператору группы только мешают). */
 const FLAT_MAX = 8;
-
-/** Настройки меню этого браузера (свёрнуто ли, закрытые группы) — удобство, не данные: ошибки хранилища не мешают. */
-const pref = {
-  get<T>(k: string, def: T): T {
-    try {
-      const v = localStorage.getItem(k);
-      return v === null ? def : (JSON.parse(v) as T);
-    } catch {
-      return def;
-    }
-  },
-  set(k: string, v: unknown): void {
-    try {
-      localStorage.setItem(k, JSON.stringify(v));
-    } catch {
-      /* приватный режим и т.п. */
-    }
-  },
-};
 
 /** Пункты меню сотрудника: разделы по правам и интерфейсу роли + внешние приложения. */
 export function useMenu(me: Me | null): MenuItem[] {
@@ -101,6 +84,15 @@ function Item({ m, path, compact }: { m: MenuItem; path: string; compact: boolea
       aria-label={m.label}
       leftSection={icon}
       active={isActive(m, path)}
+      // Отдельный экран (панель мониторинга): значок «развернуть» и свой цвет — видно, что это другое представление.
+      {...(m.screen
+        ? {
+            c: 'teal.8',
+            rightSection: compact ? undefined : <IconArrowsMaximize size={14} />,
+            title: t.nav.screenHint,
+            'data-screen': true,
+          }
+        : {})}
     />
   );
   return compact ? (

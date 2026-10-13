@@ -61,7 +61,9 @@ test.describe.serial('Ф16: тестирование сотрудников и �
     await sup.getByTestId('assign-people-search').fill('оператор');
     await sup.locator('.mantine-Popover-dropdown').getByText('Иванов Пётр (оператор)').first().click();
     await sup.getByTestId('assign-form').getByText('Назначить тест').click();
-    const due = new Date(Date.now() + 2 * 86_400_000).toLocaleDateString('en-CA', { timeZone: 'Europe/Minsk' });
+    const due = new Date(Date.now() + 2 * 86_400_000).toLocaleDateString('en-CA', {
+      timeZone: 'Europe/Minsk',
+    });
     await sup.getByTestId('assign-due').fill(due);
     await sup.getByTestId('assign-submit').click();
     const a = sup.getByTestId('assignment-row').filter({ hasText: title });
@@ -69,7 +71,9 @@ test.describe.serial('Ф16: тестирование сотрудников и �
     await expect(a.getByTestId('assignment-status')).toHaveAttribute('data-status', 'open');
   });
 
-  test('оператор: значок срока, прохождение с разбором, повторная попытка — «Пройден»', async ({ browser }) => {
+  test('оператор: значок срока, прохождение с разбором, повторная попытка — «Пройден»', async ({
+    browser,
+  }) => {
     const op = await as(browser, 'operator1@demo.local');
     await expect(op.getByTestId('test-due')).toBeVisible({ timeout: 15_000 });
     await op.getByTestId('test-due').click();
@@ -128,7 +132,7 @@ test.describe.serial('Ф16: тестирование сотрудников и �
     await expect(sup.getByTestId('question-detail')).toContainText('Иванов Пётр');
     await sup.keyboard.press('Escape');
 
-    await nav(sup, 'Рейтинг операторов');
+    await nav(sup, 'Рейтинг');
     const me = sup.getByTestId('rating-row').filter({ hasText: 'Иванов Пётр' });
     await expect(me).toBeVisible();
     await expect(me).toContainText('100 %');
