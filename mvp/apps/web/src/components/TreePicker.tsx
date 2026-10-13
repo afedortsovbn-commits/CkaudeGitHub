@@ -81,7 +81,10 @@ interface Base {
   size?: 'xs' | 'sm' | 'md';
   /** Выбирать можно только последний уровень (например, подразделение, а не предприятие). */
   leafOnly?: boolean;
-  /** Кнопка-значок вместо поля (фильтры списка): `opened` — окно этого фильтра открыто (кнопку выделить). */
+  /**
+   * Кнопка-значок вместо поля (фильтры списка): `open` открывает окно или закрывает уже открытое; `opened` — окно
+   * этого фильтра открыто (кнопку выделить).
+   */
   target?: (open: () => void, opened: boolean) => ReactNode;
   testId?: string;
 }
@@ -282,7 +285,10 @@ export function TreePicker(props: Single | Multi) {
     >
       <Popover.Target>
         {props.target ? (
-          <Box display="inline-block">{props.target(open, opened)}</Box>
+          <Box display="inline-block">
+            {/* Повторный щелчок по кнопке открытого фильтра закрывает окно (Д-036). */}
+            {props.target(() => (opened ? setOpened(false) : open()), opened)}
+          </Box>
         ) : (
           <InputBase
             component="button"
