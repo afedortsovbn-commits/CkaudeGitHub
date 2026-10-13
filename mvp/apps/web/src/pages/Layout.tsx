@@ -31,6 +31,7 @@ import { SupervisorNotices } from '../components/SupervisorNotices';
 import { UpdateBanner } from '../components/UpdateBanner';
 import { StaffMessageInbox } from '../components/StaffMessageInbox';
 import { SoftphoneCall, SoftphoneStatus } from '../components/Softphone';
+import { AiAssistant } from '../components/AiAssistant';
 import { useRealtime } from '../lib/realtime';
 import { useFocusMode } from '../lib/focus';
 import { pref } from '../lib/pref';
@@ -265,6 +266,7 @@ export function Layout() {
           </Group>
           <Group gap="xs" wrap="nowrap">
             <TestDueBadge />
+            {can('settings.manage', 'supervisor.monitor') && <AiAssistant />}
             {phone && <SoftphoneStatus />}
             <NotificationBell />
             {can('conversations.work') && <BreakReminder />}

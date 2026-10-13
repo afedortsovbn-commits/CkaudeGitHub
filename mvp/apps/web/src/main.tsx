@@ -47,6 +47,7 @@ import { TestsPage } from './pages/TestsPage';
 import { CoursesPage } from './pages/CoursesPage';
 import { CourseLessonPage, MyCoursesPage } from './pages/MyCoursesPage';
 import { RatingsPage } from './pages/RatingsPage';
+import { AiJournalPage } from './pages/AiJournalPage';
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } },
@@ -87,6 +88,7 @@ function App() {
         <Route path="my-courses" element={<MyCoursesPage />} />
         <Route path="my-courses/:id" element={<CourseLessonPage />} />
         <Route path="ratings" element={<RatingsPage />} />
+        <Route path="ai-journal" element={<AiJournalPage />} />
         <Route path="tickets" element={<SecondLinePage />} />
         <Route path="tickets/:id" element={<TicketPage />} />
         {/* Бывший раздел «Контроль 2-й линии» — теперь вкладки раздела «2-я линия» (старые ссылки работают). */}
@@ -133,7 +135,8 @@ function App() {
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <MantineProvider>
-      <Notifications position="bottom-right" />
+      {/* Сверху справа: внизу справа тосты закрывали кнопки итога обращения (Д-033). */}
+      <Notifications position="top-right" />
       <QueryClientProvider client={queryClient}>
         <AuthProvider>
           <BrowserRouter>

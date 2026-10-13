@@ -419,3 +419,42 @@ export async function checkProvider(
   );
   return res;
 }
+
+/**
+ * Д-030, Д-031: запрос к OpenAI-совместимой модели первого активного провайдера с функцией fn (fill, assistant).
+ * Нет такого провайдера — null (вызывающий работает заглушкой по правилам).
+ */
+export async function llmChat(
+  d: { pool: Pool; secretsKey: string | undefined },
+  fn: 'fill' | 'assistant',
+  messages: { role: 'system' | 'user' | 'assistant'; content: string }[],
+  opts: { json?: boolean; maxTokens?: number } = {},
+): Promise<{ provider: string; text: string } | null> {
+  const { rows } = await d.pool.query<ProviderRow>(
+    `SELECT id, name, kind, config, functions, timeout_ms, is_active FROM assist_provider
+      WHERE is_active AND kind = 'openai' AND $1 = ANY (functions) ORDER BY sort_order, name LIMIT 1`,
+    [fn],
+  );
+  const p = rows[0];
+  if (!p) return null;
+  const cfg = p.config;
+  const key = secret(cfg.apiKey, d.secretsKey);
+  const r = await fetch(`${String(cfg.baseUrl).replace(/\/$/, '')}/chat/completions`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', ...(key ? { authorization: `Bearer ${key}` } : {}) },
+    body: JSON.stringify({
+      model: cfg.model,
+      messages,
+      temperature: 0.1,
+      max_tokens: opts.maxTokens ?? 800,
+      ...(opts.json ? { response_format: { type: 'json_object' } } : {}),
+    }),
+    signal: AbortSignal.timeout(Math.max(p.timeout_ms, 15000)),
+    redirect: 'error',
+  });
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  const j = (await r.json()) as { choices?: { message?: { content?: string } }[] };
+  const text = j.choices?.[0]?.message?.content?.trim();
+  if (!text) throw new Error('пустой ответ модели');
+  return { provider: p.name, text };
+}

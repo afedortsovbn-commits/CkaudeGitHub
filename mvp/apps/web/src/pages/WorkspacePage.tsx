@@ -38,6 +38,7 @@ import {
   IconMap2,
   IconPaperclip,
   IconSend,
+  IconSparkles,
   IconStairsUp,
   IconX,
 } from '@tabler/icons-react';
@@ -1331,6 +1332,7 @@ function ConversationCard({ conv }: { conv: Row }) {
   const [to, setTo] = useState<string | null>(null);
   useEffect(() => setVals((conv.fields as Record<string, unknown>) ?? {}), [conv.id, conv.fields]);
   const upd = useAction((b: Record<string, unknown>) => patch(`/conversations/${conv.id}`, b));
+  const qc = useQueryClient();
   // Тема, выбранная только что: проверки «Завершить»/«Передать» видят её сразу, до ответа сервера.
   const [topicPick, setTopicPick] = useState<string | null | undefined>(undefined);
   useEffect(() => setTopicPick(undefined), [conv.id, conv.topicId]);
@@ -1376,6 +1378,37 @@ function ConversationCard({ conv }: { conv: Row }) {
     enabled: !!conv.contactId,
   });
   const [prefilled, setPrefilled] = useState<string[]>([]);
+  // Д-030: что заполнила нейросеть — подсвечено, оператор проверяет; исправления сервер запишет в журнал.
+  const [aiKeys, setAiKeys] = useState<string[]>([]);
+  useEffect(() => setAiKeys([]), [conv.id]);
+  const aiFill = useMutation({
+    mutationFn: () =>
+      post<{ topicId: string | null; fields: Record<string, string>; stub: boolean }>(
+        `/conversations/${conv.id}/ai-fill`,
+      ),
+    onSuccess: async (r) => {
+      const next = { ...vals, ...r.fields };
+      const keys = Object.keys(r.fields);
+      if (r.topicId) setTopicPick(r.topicId);
+      if (keys.length || r.topicId) {
+        await patch(`/conversations/${String(conv.id)}`, {
+          fields: next,
+          ...(r.topicId ? { topicId: r.topicId } : {}),
+        });
+        setVals(next);
+        setAiKeys([...keys, ...(r.topicId ? ['topic'] : [])]);
+        void qc.invalidateQueries({ predicate: (q) => String(q.queryKey[0]).startsWith('/conversations') });
+      }
+      notifications.show({
+        color: keys.length || r.topicId ? 'violet' : 'gray',
+        title: r.stub ? t.ai.fillStub : undefined,
+        message:
+          keys.length || r.topicId ? t.ai.fillDone(keys.length + (r.topicId ? 1 : 0)) : t.ai.fillNothing,
+      });
+    },
+    onError: (e) =>
+      notifications.show({ color: 'red', title: t.error, message: errorText(e), autoClose: 8000 }),
+  });
   const prefillFor = useRef('');
   useEffect(() => {
     const defs = fields.data;
@@ -1555,7 +1588,11 @@ function ConversationCard({ conv }: { conv: Row }) {
     const k = i.key;
     const must = !!i.def && requiredNow(i.def);
     const error = req.error(must && empty(k));
-    const description = prefilled.includes(k) ? t.workspace.prefilled : undefined;
+    const description = aiKeys.includes(k)
+      ? t.ai.filledMark
+      : prefilled.includes(k)
+        ? t.workspace.prefilled
+        : undefined;
     const common = {
       size: 'xs' as const,
       label: i.label,
@@ -1563,7 +1600,16 @@ function ConversationCard({ conv }: { conv: Row }) {
       disabled: closed,
       withAsterisk: must,
       error,
-      styles: error ? undefined : look(i),
+      styles: error
+        ? undefined
+        : aiKeys.includes(k)
+          ? {
+              input: {
+                borderColor: 'var(--mantine-color-violet-4)',
+                background: 'var(--mantine-color-violet-0)',
+              },
+            }
+          : look(i),
       'data-testid': i.common ? `common-${k}` : `field-${k}`,
     };
     if (k === 'feedback_channel')
@@ -1748,10 +1794,33 @@ function ConversationCard({ conv }: { conv: Row }) {
         style={!conv.topicId && !closed ? { borderColor: 'var(--mantine-color-blue-4)' } : undefined}
       >
         <Stack gap={6}>
+          {!closed && (
+            <Group justify="flex-end" mb={-28} style={{ position: 'relative', zIndex: 1 }}>
+              <Tooltip label={t.ai.fillHint} withArrow multiline w={260}>
+                <Button
+                  size="compact-xs"
+                  variant="light"
+                  color="violet"
+                  leftSection={<IconSparkles size={14} />}
+                  loading={aiFill.isPending}
+                  onClick={() => aiFill.mutate()}
+                  data-testid="ai-fill"
+                >
+                  {t.ai.fillBtn}
+                </Button>
+              </Tooltip>
+            </Group>
+          )}
           <TopicPicker
             size="sm"
             label={t.workspace.stepTopic}
-            description={!conv.topicId && !closed ? t.workspace.stepTopicHint : undefined}
+            description={
+              aiKeys.includes('topic')
+                ? t.ai.filledMark
+                : !conv.topicId && !closed
+                  ? t.workspace.stepTopicHint
+                  : undefined
+            }
             placeholder={t.workspace.stepTopicPlaceholder}
             value={topicNow}
             onChange={(v) => {
@@ -1777,6 +1846,7 @@ function ConversationCard({ conv }: { conv: Row }) {
             minRows={3}
             maxRows={8}
             value={String(vals[SUMMARY_KEY] ?? '')}
+            description={aiKeys.includes(SUMMARY_KEY) ? t.ai.filledMark : undefined}
             onChange={(e) => setVals({ ...vals, [SUMMARY_KEY]: e.currentTarget.value })}
             onBlur={commit}
             disabled={closed}

@@ -379,7 +379,7 @@ export const DICTIONARIES: Record<string, DictSpec> = {
       f(
         'functions',
         z
-          .array(z.enum(['suggest', 'draft']))
+          .array(z.enum(['suggest', 'draft', 'fill', 'assistant']))
           .min(1)
           .default(['suggest']),
       ),

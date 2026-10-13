@@ -33,6 +33,7 @@ import type { Pool, PoolClient } from 'pg';
 import { z } from 'zod';
 import { CurrentUser, hasPerm, RequirePerm } from '../auth/guard';
 import { ensureRequiredTag } from '../chat/required-tag';
+import { recordAiCorrections } from '../ai/ai.controller';
 import { APP_CONTEXT, type AppContext } from '../context';
 import { audit } from '../lib/audit';
 import { saveUpload, sendAttachment } from '../lib/attachments';
@@ -178,6 +179,7 @@ export class TicketsController {
       }
       await ensureRequiredTag(tx, id);
       const t = await createTicket(tx, { conversationId: id, actorId: p.id, ...b });
+      await recordAiCorrections(tx, id, p.id);
       // Постобработка оператора после передачи — как после закрытия (M-RT-06).
       if (c.assignee_id === p.id) {
         const q = await one<{ wrap_up_s: number }>(tx, 'SELECT wrap_up_s FROM queue WHERE id = $1', [

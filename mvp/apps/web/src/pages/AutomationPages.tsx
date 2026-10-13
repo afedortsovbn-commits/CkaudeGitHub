@@ -686,7 +686,15 @@ export function AssistProvidersPage() {
             label: t.automation.funktsii,
             render: (r) =>
               ((r.functions as string[]) ?? [])
-                .map((f) => (f === 'draft' ? t.automation.chernovik : t.automation.podskazki))
+                .map((f) =>
+                  f === 'draft'
+                    ? t.automation.chernovik
+                    : f === 'fill'
+                      ? t.ai.fnFill
+                      : f === 'assistant'
+                        ? t.ai.fnAssistant
+                        : t.automation.podskazki,
+                )
                 .join(', '),
           },
           { key: 'timeoutMs', label: t.automation.taymautMs },
@@ -752,6 +760,8 @@ export function AssistProvidersPage() {
             options: [
               { value: 'suggest', label: t.automation.podskazkiVPaneliOperatora },
               { value: 'draft', label: t.automation.chernovikOtvetaKnopkaChernovik },
+              { value: 'fill', label: t.ai.fnFill },
+              { value: 'assistant', label: t.ai.fnAssistant },
             ],
           },
           {

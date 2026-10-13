@@ -32,6 +32,7 @@ import {
   IconSettings,
   IconShieldLock,
   IconSitemap,
+  IconSparkles,
   IconSpeakerphone,
   IconTable,
   IconTemplate,
@@ -143,6 +144,13 @@ export const MENU: MenuItem[] = [
     icon: IconBellRinging,
   },
 
+  {
+    to: '/ai-journal',
+    label: t.ai.journalNav,
+    perms: ['supervisor.monitor', 'assist.manage'],
+    group: 'control',
+    icon: IconSparkles,
+  },
   // Панель мониторинга — последней в группе: открывается отдельным экраном.
   {
     to: '/wallboard',

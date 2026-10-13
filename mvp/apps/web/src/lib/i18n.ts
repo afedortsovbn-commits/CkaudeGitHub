@@ -18,6 +18,7 @@ import { mergeContactModalUi } from './i18n/mergeContactModalUi';
 import { notificationBellUi } from './i18n/notificationBellUi';
 import { notify } from './i18n/notify';
 import { courses } from './i18n/courses';
+import { ai } from './i18n/ai';
 import { org } from './i18n/org';
 import { privacy } from './i18n/privacy';
 import { callContext } from './i18n/callContext';
@@ -140,6 +141,7 @@ const ru = {
     status: 'Итог',
   },
   // Разделы страниц и компонентов (Ф12b): lib/i18n/<раздел>.ts.
+  ai,
   apiLib,
   assistPanelUi,
   azsMap,

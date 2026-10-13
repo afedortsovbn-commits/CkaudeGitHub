@@ -1,5 +1,6 @@
 import { type DynamicModule, Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
+import { AiController } from './ai/ai.controller';
 import { AuthController } from './auth/auth.controller';
 import { AuthGuard } from './auth/guard';
 import { AutomationController } from './automation/automation.controller';
@@ -58,6 +59,7 @@ export class AppModule {
         ContactsController,
         AgentStatusController,
         RoutingDueController,
+        AiController,
         NotifyController,
         CoursesController,
         SupervisorController,

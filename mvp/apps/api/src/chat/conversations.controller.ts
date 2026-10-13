@@ -22,6 +22,7 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { PoolClient } from 'pg';
 import { z } from 'zod';
 import { CurrentUser, hasPerm, RequirePerm } from '../auth/guard';
+import { recordAiCorrections } from '../ai/ai.controller';
 import { APP_CONTEXT, type AppContext } from '../context';
 import { ownAttachments, saveUpload, sendAttachment } from '../lib/attachments';
 import { one, rows, toApi, withTx } from '../lib/db';
@@ -701,6 +702,8 @@ export class ConversationsController {
           throw badRequest(`Заполните обязательные поля: ${missing.map((f) => f.label).join(', ')}`);
       }
       await ensureRequiredTag(tx, id);
+      // Д-030: расхождения с предложением нейросети — в журнал исправлений.
+      await recordAiCorrections(tx, id, p.id);
       await tx.query(
         `UPDATE conversation SET status = 'closed', disposition_id = $2, closed_at = now(), closed_by = $3,
            callback_at = $4, version = version + 1, updated_at = now() WHERE id = $1`,
