@@ -763,7 +763,11 @@ export class ConversationsController {
   async operators() {
     const list = await rows(
       this.ctx.pool,
-      `SELECT u.id, u.full_name FROM app_user u
+      // Д-034: статус на линии и число обращений в работе — в списке переадресации видно, кто свободен.
+      `SELECT u.id, u.full_name, COALESCE(ag.status, 'offline') AS status,
+              (SELECT count(*)::int FROM conversation c WHERE c.assignee_id = u.id AND c.status IN ('active', 'hold')) AS active_now,
+              EXISTS (SELECT 1 FROM call cl WHERE cl.agent_user_id = u.id AND cl.state = 'talking') AS on_call
+         FROM app_user u LEFT JOIN agent_status ag ON ag.user_id = u.id
         WHERE u.is_active AND u.can_login AND EXISTS (
           SELECT 1 FROM user_role ur JOIN role r ON r.code = ur.role_code
            WHERE ur.user_id = u.id AND 'conversations.work' = ANY(r.permissions))

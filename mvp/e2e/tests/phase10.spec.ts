@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { type Browser, type BrowserContext, expect, type Page, test } from '@playwright/test';
-import { ADMIN, DEMO_PASSWORD, login, nav, listView } from './helpers';
+import { ADMIN, DEMO_PASSWORD, login, nav, listView, openSettings } from './helpers';
 
 const stamp = Date.now().toString().slice(-6);
 
@@ -63,10 +63,11 @@ async function handle(
   }
   // «Особо важное» отмечает оператор (переключатель — в блоке передачи на 2-ю линию).
   if (important) {
-    await choose(op, 'disposition', 'Передать на 2-ю линию');
+    await op.getByTestId('mode-escalate').click();
     await expect(op.getByTestId('escalate-toggle-box').getByText('Особо важное')).toBeVisible();
     await op.getByTestId('esc-important').click({ force: true });
     await expect(op.getByTestId('esc-important')).toBeChecked();
+    await op.getByTestId('mode-close').click();
   }
   await op.getByTestId('reply').fill('Здравствуйте! Вопрос решён.');
   await op.getByTestId('send').click();
@@ -87,7 +88,7 @@ test.describe.serial('Ф10: упрощённая аналитика', () => {
     test.setTimeout(120_000);
     const admin = await as(browser, ADMIN.email, ADMIN.password);
     // Порог «ожидающих в очереди — внимание» = 1: любая ожидающая очередь подсвечивается (без перезапуска).
-    await nav(admin, 'Настройки');
+    await openSettings(admin);
     await admin.getByTestId('setting-queueWarn').fill('1');
     await admin.getByRole('button', { name: 'Сохранить', exact: true }).click();
     await expect(admin.getByText('Сохранено')).toBeVisible();
@@ -117,7 +118,7 @@ test.describe.serial('Ф10: упрощённая аналитика', () => {
     expect(text).toContain('Итого;');
 
     // Порог — обратно по умолчанию.
-    await nav(admin, 'Настройки');
+    await openSettings(admin);
     await admin.getByTestId('setting-queueWarn').fill('5');
     await admin.getByRole('button', { name: 'Сохранить', exact: true }).click();
     await expect(admin.getByText('Сохранено').first()).toBeVisible();

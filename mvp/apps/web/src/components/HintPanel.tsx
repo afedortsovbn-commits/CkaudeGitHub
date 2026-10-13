@@ -166,7 +166,8 @@ export function HintPanel({
     <Paper withBorder p={8} data-testid="assist" bg="var(--mantine-color-gray-0)">
       <Group gap={6} wrap="nowrap">
         <UnstyledButton onClick={() => setOpen(!open)} data-testid="assist-toggle">
-          <Text size="sm" fw={700}>
+          {/* Д-027: заголовок подсказок — обычным шрифтом, не отвлекает от ответа. */}
+          <Text size="sm" c="dimmed">
             {open ? '▾ ' : '▸ '}
             {t.hintPanel.title}
             {!open && items.length ? t.hintPanel.count(items.length) : ''}

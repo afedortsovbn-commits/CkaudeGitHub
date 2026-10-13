@@ -9,7 +9,6 @@ import {
   Checkbox,
   Collapse,
   FileButton,
-  Grid,
   Group,
   Indicator,
   Menu,
@@ -30,11 +29,17 @@ import {
 } from '@mantine/core';
 import {
   IconAlertTriangle,
+  IconArrowForwardUp,
+  IconCheck,
   IconChevronDown,
+  IconChevronsLeft,
+  IconChevronsRight,
   IconFilter,
-  IconLayoutSidebarLeftCollapse,
-  IconLayoutSidebarLeftExpand,
   IconMap2,
+  IconPaperclip,
+  IconSend,
+  IconStairsUp,
+  IconX,
 } from '@tabler/icons-react';
 import { notifications } from '@mantine/notifications';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -50,7 +55,8 @@ import { HintPanel } from '../components/HintPanel';
 import { AzsMapModal, type Station, type StationKind, useStations } from '../components/AzsMap';
 import { softphone, useSoftphone } from '../lib/softphone';
 import { setDraft } from '../lib/app-version';
-import { EscalateModal, SubstitutesPanel, TicketList, useTicketCount } from './TicketPages';
+import { EscalateForm, SubstitutesPanel, TicketList, useTicketCount } from './TicketPages';
+import { operatorGroups } from '../lib/operators';
 import { MergeContactModal } from '../components/MergeContactModal';
 import { OrgPicker, TopicPicker } from '../components/DictPickers';
 import { COMMON_FIELD_KEYS, isCommonField } from '../lib/common-fields';
@@ -216,6 +222,7 @@ function List({
   onTaken,
   important,
   callback,
+  wide,
 }: {
   tab: string;
   selected: string | null;
@@ -224,6 +231,8 @@ function List({
   onTaken(id: string): void;
   important: boolean;
   callback: boolean;
+  /** Обращение не выбрано — список во всю ширину: строки в одну линию, больше строк на экране (Д-028). */
+  wide?: boolean;
 }) {
   const { me, can } = useAuth();
   const loadMode = useLoadMode();
@@ -251,7 +260,7 @@ function List({
   );
   return (
     // Отступы — чтобы выбранная карточка (чуть крупнее, с тенью) не обрезалась краями списка.
-    <Stack gap={6} p={6}>
+    <Stack gap={wide ? 4 : 6} p={6}>
       {rows.length === 0 && (
         <Text c="dimmed" size="sm" ta="center" mt="md">
           {t.workspace.netObrashcheniy}
@@ -262,6 +271,66 @@ function List({
         // Особо важное и срочное (отмечаются при передаче на 2-ю линию) — у оператора просто красным.
         const hot = (!!c.isUrgent || !!c.isImportant) && c.status !== 'closed';
         const isSel = selected === c.id;
+        // Значки строки: в широком виде — в той же строке, что имя и сообщение (Д-028).
+        const badges = (
+          <Group
+            gap={4}
+            mt={wide ? 0 : 4}
+            wrap={wide ? 'nowrap' : 'wrap'}
+            style={wide ? { flex: 'none', maxWidth: '45%', overflow: 'hidden' } : undefined}
+          >
+            <Badge size="xs" variant="light">
+              {CHANNEL[String(c.channelKind)] ?? String(c.channelKind)}
+            </Badge>
+            {c.reviewRating ? (
+              <Badge size="xs" variant="outline" color={Number(c.reviewRating) <= 2 ? 'red' : 'yellow'}>
+                {stars(Number(c.reviewRating))}
+              </Badge>
+            ) : null}
+            {c.isImportant ? (
+              <Badge size="xs" color="red">
+                {t.workspace.osoboVazhnoe}
+              </Badge>
+            ) : null}
+            {c.isUrgent ? (
+              <Badge size="xs" color="red" variant="filled" data-testid="badge-urgent">
+                {t.workspace.urgentBadge}
+              </Badge>
+            ) : null}
+            {c.callbackRequested ? (
+              <Badge size="xs" color="grape" data-testid="badge-callback">
+                {t.workspace.perezvonit}
+              </Badge>
+            ) : null}
+            {c.topicName ? (
+              <Badge size="xs" variant="outline">
+                {String(c.topicName)}
+              </Badge>
+            ) : null}
+            {c.dueAt && c.status !== 'closed' ? (
+              <Badge
+                size="xs"
+                variant="outline"
+                color={new Date(String(c.dueAt)).getTime() < Date.now() ? 'red' : 'gray'}
+                data-testid="badge-due"
+              >
+                {new Date(String(c.dueAt)).getTime() < Date.now()
+                  ? t.workspace.dueOverdue
+                  : t.workspace.dueBadge(dateTime(c.dueAt))}
+              </Badge>
+            ) : null}
+            {c.status === 'offered' ? (
+              <Badge size="xs" color="blue">
+                {t.workspace.predlozheno2}
+              </Badge>
+            ) : null}
+            {tab !== 'mine' && c.assigneeName ? (
+              <Badge size="xs" color="gray">
+                {String(c.assigneeName)}
+              </Badge>
+            ) : null}
+          </Group>
+        );
         return (
           <Card
             key={c.id}
@@ -278,71 +347,36 @@ function List({
             onClick={() => onSelect(c.id)}
             data-testid="conv-item"
             data-stage={stageOf(c) ?? undefined}
+            py={wide ? 4 : undefined}
           >
-            <Group justify="space-between" wrap="nowrap">
-              <Text fw={600} size="sm" truncate>
+            <Group justify="space-between" wrap="nowrap" gap="sm">
+              <Text
+                fw={600}
+                size="sm"
+                truncate
+                w={wide ? 220 : undefined}
+                style={{ flex: wide ? 'none' : 1 }}
+              >
                 {String(c.contactName)}
               </Text>
-              <Text size="xs" c="dimmed">
+              {wide && (
+                <Text size="xs" c="dimmed" truncate style={{ flex: 1, minWidth: 0 }}>
+                  {c.lastDirection === 'out' ? t.workspace.vy : ''}
+                  {String(c.lastMessage ?? '')}
+                </Text>
+              )}
+              {wide && badges}
+              <Text size="xs" c="dimmed" style={{ flex: 'none' }}>
                 {tab === 'queue' ? since(c.createdAt) : time(c.lastMessageAt)}
               </Text>
             </Group>
-            <Text size="xs" c="dimmed" lineClamp={2}>
-              {c.lastDirection === 'out' ? t.workspace.vy : ''}
-              {String(c.lastMessage ?? '')}
-            </Text>
-            <Group gap={4} mt={4}>
-              <Badge size="xs" variant="light">
-                {CHANNEL[String(c.channelKind)] ?? String(c.channelKind)}
-              </Badge>
-              {c.reviewRating ? (
-                <Badge size="xs" variant="outline" color={Number(c.reviewRating) <= 2 ? 'red' : 'yellow'}>
-                  {stars(Number(c.reviewRating))}
-                </Badge>
-              ) : null}
-              {c.isImportant ? (
-                <Badge size="xs" color="red">
-                  {t.workspace.osoboVazhnoe}
-                </Badge>
-              ) : null}
-              {c.isUrgent ? (
-                <Badge size="xs" color="red" variant="filled" data-testid="badge-urgent">
-                  {t.workspace.urgentBadge}
-                </Badge>
-              ) : null}
-              {c.callbackRequested ? (
-                <Badge size="xs" color="grape" data-testid="badge-callback">
-                  {t.workspace.perezvonit}
-                </Badge>
-              ) : null}
-              {c.topicName ? (
-                <Badge size="xs" variant="outline">
-                  {String(c.topicName)}
-                </Badge>
-              ) : null}
-              {c.dueAt && c.status !== 'closed' ? (
-                <Badge
-                  size="xs"
-                  variant="outline"
-                  color={new Date(String(c.dueAt)).getTime() < Date.now() ? 'red' : 'gray'}
-                  data-testid="badge-due"
-                >
-                  {new Date(String(c.dueAt)).getTime() < Date.now()
-                    ? t.workspace.dueOverdue
-                    : t.workspace.dueBadge(dateTime(c.dueAt))}
-                </Badge>
-              ) : null}
-              {c.status === 'offered' ? (
-                <Badge size="xs" color="blue">
-                  {t.workspace.predlozheno2}
-                </Badge>
-              ) : null}
-              {tab !== 'mine' && c.assigneeName ? (
-                <Badge size="xs" color="gray">
-                  {String(c.assigneeName)}
-                </Badge>
-              ) : null}
-            </Group>
+            {!wide && (
+              <Text size="xs" c="dimmed" lineClamp={2}>
+                {c.lastDirection === 'out' ? t.workspace.vy : ''}
+                {String(c.lastMessage ?? '')}
+              </Text>
+            )}
+            {!wide && badges}
             {tab === 'queue' && manualTake && (
               <Button
                 size="compact-xs"
@@ -514,7 +548,6 @@ function Messages({ conv, typing, onTyping }: { conv: Row; typing: boolean; onTy
   const { me, can } = useAuth();
   const msgs = useList(`/conversations/${conv.id}/messages`);
   const [text, setText] = useState('');
-  const [noteMode, setNote] = useState(false);
   // Подсказка оператору (Ф14): супервизор пишет скрытое сообщение в чужом обращении — клиенту не уходит.
   const canHint =
     can('conversations.hint') &&
@@ -526,7 +559,8 @@ function Messages({ conv, typing, onTyping }: { conv: Row; typing: boolean; onTy
   const [hintsOpen, setHintsOpen] = useState(false);
   // Звонок: писать клиенту некуда — поле ответа работает как внутренняя заметка, главное место у подсказок.
   const voice = conv.channelKind === 'voice';
-  const note = noteMode || hint || voice;
+  // Внутренняя заметка — в правой колонке (Д-027); здесь — ответ клиенту или подсказка супервизора.
+  const note = hint || voice;
   const [files, setFiles] = useState<Att[]>([]);
   const [busy, setBusy] = useState(false);
   const viewport = useRef<HTMLDivElement>(null);
@@ -598,13 +632,13 @@ function Messages({ conv, typing, onTyping }: { conv: Row; typing: boolean; onTy
             ? { alignSelf: 'flex-end', background: 'var(--mantine-color-blue-1)' }
             : dir === 'note'
               ? { alignSelf: 'flex-end', background: 'var(--mantine-color-yellow-1)' }
-              : { alignSelf: 'center', background: 'transparent' };
+              : { alignSelf: 'stretch', background: 'transparent' };
     return (
       <Paper
         key={m.id}
         p={dir === 'system' ? 0 : 'xs'}
         radius="md"
-        maw="75%"
+        maw={dir === 'system' ? '100%' : '75%'}
         style={style}
         data-testid={`msg-${dir}`}
       >
@@ -624,6 +658,7 @@ function Messages({ conv, typing, onTyping }: { conv: Row; typing: boolean; onTy
         <Text
           size={dir === 'system' ? 'xs' : 'sm'}
           c={dir === 'system' ? 'dimmed' : undefined}
+          ta={dir === 'system' ? 'center' : undefined}
           style={{ whiteSpace: 'pre-wrap' }}
         >
           {String(m.body)}
@@ -704,24 +739,6 @@ function Messages({ conv, typing, onTyping }: { conv: Row; typing: boolean; onTy
           {t.workspace.vozmiteObrashchenieChtobyOtvetit}
         </Text>
       ) : null}
-      {showHints && (
-        <HintPanel
-          conv={conv}
-          lastInSeq={lastInSeq}
-          voice={voice}
-          canInsert={!voice && canWrite}
-          height={voice ? 'calc(100vh - 400px)' : 'calc(30vh)'}
-          opened={hintsOpen}
-          onOpenChange={setHintsOpen}
-          onPickTopic={pickTopic}
-          onInsert={(t, sg) => {
-            setNote(false);
-            setText(t);
-            if (sg?.type === 'template' && sg.refId)
-              void post(`/templates/${sg.refId}/used`).catch(() => undefined);
-          }}
-        />
-      )}
       {!voice && slash.open && <SlashList items={slash.items} onPick={pickTemplate} />}
       {!voice && (
         <>
@@ -743,98 +760,104 @@ function Messages({ conv, typing, onTyping }: { conv: Row; typing: boolean; onTy
               </Badge>
             ))}
           </Group>
-          <Group align="flex-end" gap="xs">
-            <Textarea
-              style={{ flex: 1 }}
-              autosize
-              minRows={2}
-              maxRows={6}
-              placeholder={
-                hint
-                  ? t.workspace.podskazkaOperatoruPlaceholder
-                  : note
-                    ? t.workspace.vnutrennyayaZametkaKlientEe
-                    : conv.channelKind === 'review'
-                      ? t.reviews.replyPlaceholder
-                      : t.workspace.otvetKlientuShablonyEnter
+          <Textarea
+            autosize
+            minRows={2}
+            maxRows={8}
+            placeholder={
+              hint
+                ? t.workspace.podskazkaOperatoruPlaceholder
+                : note
+                  ? t.workspace.vnutrennyayaZametkaKlientEe
+                  : conv.channelKind === 'review'
+                    ? t.reviews.replyPlaceholder
+                    : t.workspace.otvetKlientuShablonyEnter
+            }
+            value={text}
+            data-testid="reply"
+            onChange={(e) => {
+              setText(e.currentTarget.value);
+              if (!note) onTyping();
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                // «/код» + Enter — подставить первый найденный шаблон, а не отправлять.
+                if (slash.open) {
+                  if (slash.items[0]) pickTemplate(slash.items[0]);
+                  return;
+                }
+                if (canWrite) void send();
               }
-              value={text}
-              data-testid="reply"
-              onChange={(e) => {
-                setText(e.currentTarget.value);
-                if (!note) onTyping();
-              }}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault();
-                  // «/код» + Enter — подставить первый найденный шаблон, а не отправлять.
-                  if (slash.open) {
-                    if (slash.items[0]) pickTemplate(slash.items[0]);
-                    return;
-                  }
-                  if (canWrite) void send();
+            }}
+          />
+          {/* Под полем: файл — значком слева, «Отправить» справа (Д-027). */}
+          <Group justify="space-between" gap="xs">
+            <FileButton
+              onChange={async (f) => {
+                if (!f) return;
+                try {
+                  setFiles([...files, await upload<Att>('/attachments', f)]);
+                } catch (e) {
+                  notifications.show({ color: 'red', message: errorText(e) });
                 }
               }}
-            />
-            <Stack gap={4}>
-              <FileButton
-                onChange={async (f) => {
-                  if (!f) return;
-                  try {
-                    setFiles([...files, await upload<Att>('/attachments', f)]);
-                  } catch (e) {
-                    notifications.show({ color: 'red', message: errorText(e) });
-                  }
-                }}
-              >
-                {(props) => (
-                  <Button
+            >
+              {(props) => (
+                <Tooltip label={t.workspace.attachFile} withArrow>
+                  <ActionIcon
                     {...props}
-                    variant="default"
-                    size="xs"
+                    variant="subtle"
+                    color="gray"
+                    size="lg"
+                    aria-label={t.workspace.attachFile}
                     data-testid="attach"
-                    disabled={hint || (!note && conv.channelKind === 'review')}
+                    disabled={hint || conv.channelKind === 'review'}
                   >
-                    {t.workspace.fayl}
-                  </Button>
-                )}
-              </FileButton>
-              <Button
-                size="xs"
-                onClick={() => void send()}
-                loading={busy}
-                disabled={!canWrite}
-                data-testid="send"
-              >
-                {t.workspace.otpravit}
-              </Button>
-            </Stack>
+                    <IconPaperclip size={20} />
+                  </ActionIcon>
+                </Tooltip>
+              )}
+            </FileButton>
+            <Button
+              size="xs"
+              onClick={() => void send()}
+              loading={busy}
+              disabled={!canWrite}
+              rightSection={<IconSend size={14} />}
+              data-testid="send"
+            >
+              {t.workspace.otpravit}
+            </Button>
           </Group>
-          <Group gap="md">
+          {canHint && (
             <Switch
               size="xs"
-              label={t.workspace.vnutrennyayaZametka}
-              checked={noteMode && !hint}
-              onChange={(e) => {
-                setNote(e.currentTarget.checked);
-                if (e.currentTarget.checked) setHint(false);
-              }}
+              color="grape"
+              label={t.workspace.podskazkaOperatoru}
+              checked={hint}
+              onChange={(e) => setHint(e.currentTarget.checked)}
+              data-testid="hint-mode"
             />
-            {canHint && (
-              <Switch
-                size="xs"
-                color="grape"
-                label={t.workspace.podskazkaOperatoru}
-                checked={hint}
-                onChange={(e) => {
-                  setHint(e.currentTarget.checked);
-                  if (e.currentTarget.checked) setNote(false);
-                }}
-                data-testid="hint-mode"
-              />
-            )}
-          </Group>
+          )}
         </>
+      )}
+      {showHints && (
+        <HintPanel
+          conv={conv}
+          lastInSeq={lastInSeq}
+          voice={voice}
+          canInsert={!voice && canWrite}
+          height={voice ? 'calc(100vh - 400px)' : 'calc(30vh)'}
+          opened={hintsOpen}
+          onOpenChange={setHintsOpen}
+          onPickTopic={pickTopic}
+          onInsert={(t, sg) => {
+            setText(t);
+            if (sg?.type === 'template' && sg.refId)
+              void post(`/templates/${sg.refId}/used`).catch(() => undefined);
+          }}
+        />
       )}
     </Stack>
   );
@@ -1021,6 +1044,7 @@ function azsRegion(enterprise: string, address: string): string | null {
 
 /** Заметка к звонку — в правой колонке под сутью (клиент её не видит). */
 function CallNote({ conv }: { conv: Row }) {
+  const label = conv.channelKind === 'voice' ? t.workspace.callNote : t.workspace.noteBox;
   const [text, setText] = useState('');
   // По умолчанию свёрнута — одна строка-ссылка; раскрывается плавно, курсор сразу в поле.
   const [open, setOpen] = useState(false);
@@ -1051,7 +1075,7 @@ function CallNote({ conv }: { conv: Row }) {
         data-testid="call-note-toggle"
         style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}
       >
-        {t.workspace.callNote}
+        {label}
         <IconChevronDown
           size={14}
           style={{ transition: 'transform 200ms ease', transform: shown ? 'rotate(180deg)' : 'none' }}
@@ -1220,8 +1244,9 @@ function StationPicker({
       )}
       <OrgPicker
         enterpriseId={(conv.enterpriseId as string) ?? null}
-        departmentId={(conv.departmentId as string) ?? null}
+        departmentId={null}
         onChange={onOrg}
+        enterpriseOnly
         clearable
         disabled={closed}
         testId="org"
@@ -1323,7 +1348,9 @@ function ConversationCard({ conv }: { conv: Row }) {
     else next.add(b);
     setOpenBlocks(next);
   };
-  const [escalating, setEscalating] = useState(false);
+  // Итог обращения (Д-033): завершить, переадресовать или передать на 2-ю линию — кнопками внизу карточки.
+  const [mode, setMode] = useState<'close' | 'transfer' | 'escalate'>('close');
+  useEffect(() => setMode('close'), [conv.id]);
   const req = useRequired();
   useEffect(() => req.reset(), [conv.id]);
   // Похожие обращения (Д-019): совпадение полей темы с отметкой «проверять на повтор» — предупреждение оператору.
@@ -1475,13 +1502,7 @@ function ConversationCard({ conv }: { conv: Row }) {
   const pickStation = (s: Station) => {
     const next = stationFields(s, vals, false);
     setVals(next);
-    const sameEnt = String(s.obj.enterpriseId) === String(conv.enterpriseId ?? '');
-    upd.mutate({
-      enterpriseId: s.obj.enterpriseId,
-      ...(sameEnt ? {} : { departmentId: null }),
-      objectId: s.obj.id,
-      fields: next,
-    });
+    upd.mutate({ enterpriseId: s.obj.enterpriseId, objectId: s.obj.id, fields: next });
   };
 
   // Поля темы и общие поля обращения — по логическим блокам.
@@ -1587,11 +1608,8 @@ function ConversationCard({ conv }: { conv: Row }) {
     const rest = all.filter((i) => !main(i));
     const azs = b === 'azs';
     // АЗС/ЭЗС видны сразу, только если тема требует их заполнить или они уже выбраны; иначе блок свёрнут целиком.
-    const azsShown =
-      azs &&
-      (all.some((i) => !!i.def?.requiredOnClose || !!i.def?.requiredOnEscalate || !empty(i.key)) ||
-        !!conv.enterpriseId ||
-        !!conv.objectId);
+    // Д-032: блок АЗС раскрыт, только если тема требует АЗС прямо сейчас; выбранная АЗС видна строкой в заголовке.
+    const azsShown = azs && all.some((i) => !!i.def && requiredNow(i.def));
     const hidden = rest.length + (azs && !azsShown ? AZS_PICKER_FIELDS : 0);
     if (!all.length && !azs) return null;
     const picker = azs && (
@@ -1600,10 +1618,9 @@ function ConversationCard({ conv }: { conv: Row }) {
         kinds={kinds}
         closed={closed}
         onPick={pickStation}
-        onOrg={(e, d) =>
+        onOrg={(e) =>
           upd.mutate({
             enterpriseId: e,
-            departmentId: d,
             ...(e !== conv.enterpriseId ? { objectId: null } : {}),
           })
         }
@@ -1658,7 +1675,6 @@ function ConversationCard({ conv }: { conv: Row }) {
 
   return (
     <Stack gap="sm">
-      <EscalateModal conv={conv} opened={escalating} onClose={() => setEscalating(false)} />
       {(conv.isUrgent || conv.isImportant) && !closed ? (
         <Paper p="xs" bg="red.0" c="red.8" className="cc-hot" data-testid="urgent-banner">
           <Group gap={6} wrap="nowrap">
@@ -1773,53 +1789,9 @@ function ConversationCard({ conv }: { conv: Row }) {
             }
             data-testid="issue-summary"
           />
-          {conv.channelKind === 'voice' && <CallNote conv={conv} />}
+          <CallNote conv={conv} />
         </Stack>
       </Paper>
-      {/* Передача на 2-ю линию — заметный переключатель: с ним отмечены поля, обязательные для передачи. */}
-      {!closed && conv.status !== 'waiting_2nd_line' && escalateDisp && (
-        <Paper
-          withBorder
-          p="xs"
-          style={{
-            borderColor: isEscalate ? 'var(--mantine-color-violet-5)' : undefined,
-            borderWidth: isEscalate ? 2 : 1,
-          }}
-          bg={isEscalate ? 'violet.0' : undefined}
-          data-testid="escalate-toggle-box"
-        >
-          <Switch
-            size="md"
-            color="violet"
-            label={<Text fw={600}>{t.workspace.escalateToggle}</Text>}
-            description={isEscalate ? t.workspace.escalateMarked : t.workspace.escalateToggleHint}
-            checked={isEscalate}
-            onChange={(e) => setDisp(e.currentTarget.checked ? String(escalateDisp.id) : null)}
-            data-testid="escalate-toggle"
-          />
-          {/* «Особо важное» и «Срочное» — для 2-й линии: оператор отмечает их при передаче. */}
-          <Collapse in={isEscalate} transitionDuration={220}>
-            <Group mt="xs" gap="lg" className={isEscalate ? 'cc-reveal' : undefined}>
-              <Switch
-                size="sm"
-                color="red"
-                label={t.workspace.osoboVazhnoe2}
-                checked={!!conv.isImportant}
-                onChange={(e) => upd.mutate({ isImportant: e.currentTarget.checked })}
-                data-testid="esc-important"
-              />
-              <Switch
-                size="sm"
-                color="red"
-                label={t.workspace.srochnoe2}
-                checked={!!conv.isUrgent}
-                onChange={(e) => upd.mutate({ isUrgent: e.currentTarget.checked })}
-                data-testid="esc-urgent"
-              />
-            </Group>
-          </Collapse>
-        </Paper>
-      )}
       <Paper withBorder p="xs" data-testid="topic-fields">
         {conv.topicId ? (
           <Stack gap="xs">{BLOCK_ORDER.map(renderBlock)}</Stack>
@@ -1860,96 +1832,156 @@ function ConversationCard({ conv }: { conv: Row }) {
         </Accordion.Item>
       </Accordion>
       {!closed && conv.status !== 'waiting_2nd_line' && (
-        <>
-          <Paper withBorder p="xs" style={{ borderColor: 'var(--mantine-color-green-4)' }}>
-            <Select
-              size="sm"
-              label={t.workspace.stepFinish}
-              description={!conv.topicId ? t.workspace.stepFinishNoTopic : undefined}
-              data={options(dispositions.data)}
-              value={disp}
-              onChange={setDisp}
-              data-testid="disposition"
-            />
-            {isPostponed && (
-              <TextInput
-                size="xs"
-                mt="xs"
-                type="datetime-local"
-                label={t.workspace.dataIVremyaPerezvona}
-                value={callbackAt}
-                onChange={(e) => setCallbackAt(e.currentTarget.value)}
-                withAsterisk
-                error={req.error(!callbackAt)}
-                data-testid="callback-at"
-              />
-            )}
-            {isEscalate ? (
+        <Paper withBorder p="xs" data-testid="finish-box">
+          <Text size="xs" fw={700} c="dimmed" mb={6}>
+            {t.workspace.finishTitle}
+          </Text>
+          <Group grow gap={6} wrap="nowrap">
+            <Button
+              size="xs"
+              px={6}
+              color="green"
+              variant={mode === 'close' ? 'filled' : 'light'}
+              leftSection={<IconCheck size={16} />}
+              onClick={() => {
+                setMode('close');
+                if (isEscalate) setDisp(null);
+              }}
+              data-testid="mode-close"
+            >
+              {t.workspace.modeClose}
+            </Button>
+            <Button
+              size="xs"
+              px={6}
+              color="blue"
+              variant={mode === 'transfer' ? 'filled' : 'light'}
+              leftSection={<IconArrowForwardUp size={16} />}
+              onClick={() => {
+                setMode('transfer');
+                if (isEscalate) setDisp(null);
+              }}
+              data-testid="transfer-open"
+            >
+              {t.workspace.modeTransfer}
+            </Button>
+            {escalateDisp && (
               <Button
-                mt="xs"
-                fullWidth
+                size="xs"
+                px={6}
                 color="violet"
-                disabled={tagMissing}
-                onClick={() => req.check(missingFor(true)) && setEscalating(true)}
-                data-testid="escalate"
+                variant={mode === 'escalate' ? 'filled' : 'light'}
+                leftSection={<IconStairsUp size={16} />}
+                onClick={() => {
+                  setMode('escalate');
+                  setDisp(String(escalateDisp.id));
+                }}
+                data-testid="mode-escalate"
               >
-                {t.workspace.peredatNa2Yu}
+                {t.workspace.modeEscalate}
               </Button>
-            ) : (
+            )}
+          </Group>
+          {mode === 'close' && (
+            <Box mt="xs" className="cc-reveal" key="close">
+              <Select
+                size="sm"
+                label={t.workspace.stepFinish}
+                description={!conv.topicId ? t.workspace.stepFinishNoTopic : undefined}
+                data={options((dispositions.data ?? []).filter((d) => d.behavior !== 'escalate'))}
+                value={isEscalate ? null : disp}
+                onChange={setDisp}
+                data-testid="disposition"
+              />
+              {isPostponed && (
+                <TextInput
+                  size="xs"
+                  mt="xs"
+                  type="datetime-local"
+                  label={t.workspace.dataIVremyaPerezvona}
+                  value={callbackAt}
+                  onChange={(e) => setCallbackAt(e.currentTarget.value)}
+                  withAsterisk
+                  error={req.error(!callbackAt)}
+                  data-testid="callback-at"
+                />
+              )}
               <Button
                 mt="xs"
                 fullWidth
                 color="green"
-                disabled={!disp || tagMissing}
+                disabled={!disp || isEscalate || tagMissing}
                 onClick={() => req.check(missingFor(false)) && close.mutate(undefined)}
                 data-testid="close"
               >
                 {t.workspace.zavershitObrashchenie}
               </Button>
-            )}
-          </Paper>
-          <Accordion variant="contained" chevronPosition="left">
-            <Accordion.Item value="transfer">
-              <Accordion.Control py={4} data-testid="transfer-open">
-                <Text size="sm">{t.workspace.stepTransfer}</Text>
-              </Accordion.Control>
-              <Accordion.Panel>
-                <Select
-                  size="xs"
-                  label={t.workspace.peredat}
-                  data={[
-                    {
-                      group: t.workspace.operatoram,
-                      items: (operators.data ?? []).map((o) => ({
-                        value: `u:${o.id}`,
-                        label: String(o.fullName),
-                      })),
-                    },
-                    {
-                      group: t.workspace.vOchered,
-                      items: (queues.data ?? []).map((q) => ({ value: `q:${q.id}`, label: String(q.name) })),
-                    },
-                  ]}
-                  value={to}
-                  onChange={setTo}
-                  searchable
-                  data-testid="conv-transfer-target"
-                />
-                <Button
-                  size="xs"
-                  mt="xs"
-                  fullWidth
-                  variant="light"
-                  disabled={!to}
-                  onClick={() => transfer.mutate(undefined)}
-                  data-testid="conv-transfer"
-                >
-                  {t.workspace.peredatSKontekstom}
-                </Button>
-              </Accordion.Panel>
-            </Accordion.Item>
-          </Accordion>
-        </>
+            </Box>
+          )}
+          {mode === 'transfer' && (
+            <Box mt="xs" className="cc-reveal" key="transfer">
+              <Select
+                size="xs"
+                label={t.workspace.peredat}
+                data={[
+                  ...operatorGroups(operators.data, 'u:'),
+                  {
+                    group: t.workspace.vOchered,
+                    items: (queues.data ?? []).map((q) => ({ value: `q:${q.id}`, label: String(q.name) })),
+                  },
+                ]}
+                value={to}
+                onChange={setTo}
+                searchable
+                maxDropdownHeight={360}
+                data-testid="conv-transfer-target"
+              />
+              <Button
+                size="xs"
+                mt="xs"
+                fullWidth
+                disabled={!to}
+                onClick={() => transfer.mutate(undefined)}
+                data-testid="conv-transfer"
+              >
+                {t.workspace.peredatSKontekstom}
+              </Button>
+            </Box>
+          )}
+          {mode === 'escalate' && escalateDisp && (
+            <Box mt="xs" className="cc-reveal" key="escalate">
+              {/* «Особо важное» и «Срочное» — для 2-й линии: оператор отмечает их при передаче. */}
+              <Box data-testid="escalate-toggle-box" mb="xs">
+                <Text size="xs" c="dimmed" mb={4}>
+                  {t.workspace.escalateFlags}
+                </Text>
+                <Group gap="lg">
+                  <Switch
+                    size="sm"
+                    color="red"
+                    label={t.workspace.osoboVazhnoe2}
+                    checked={!!conv.isImportant}
+                    onChange={(e) => upd.mutate({ isImportant: e.currentTarget.checked })}
+                    data-testid="esc-important"
+                  />
+                  <Switch
+                    size="sm"
+                    color="red"
+                    label={t.workspace.srochnoe2}
+                    checked={!!conv.isUrgent}
+                    onChange={(e) => upd.mutate({ isUrgent: e.currentTarget.checked })}
+                    data-testid="esc-urgent"
+                  />
+                </Group>
+              </Box>
+              <EscalateForm
+                conv={conv}
+                precheck={() => !tagMissing && req.check(missingFor(true))}
+                onDone={() => setMode('close')}
+              />
+            </Box>
+          )}
+        </Paper>
       )}
     </Stack>
   );
@@ -2311,9 +2343,16 @@ export function WorkspacePage() {
       autoHide(String(d.id));
   }, [conv.data, me?.id]);
   useEffect(() => {
-    setFocusMode(focus);
-  }, [focus]);
+    setFocusMode(working);
+  }, [working]);
   useEffect(() => () => setFocusMode(false), []);
+  const prevConvs = useList(selected ? `/conversations/${selected}/history` : '/none', !!selected);
+  const nPrev = (prevConvs.data ?? []).length;
+  /** Убрать обращение с экрана (Д-028): список снова во всю ширину. */
+  const closeConv = () => {
+    setSelected(null);
+    setListHidden(false);
+  };
   const startWork = (id: string) => {
     setSelected(id);
     autoHide(id);
@@ -2333,10 +2372,17 @@ export function WorkspacePage() {
       notifications.show({ color: 'red', title: t.error, message: errorText(e), autoClose: 8000 }),
   });
 
+  const hasConv = !!conv.data;
+  const cols = !hasConv ? '1fr 0fr 0fr' : focus ? '0fr 7fr 5fr' : '3fr 5fr 4fr';
   return (
-    <Grid gutter="md">
-      {!focus && (
-        <Grid.Col span={3} data-testid="conv-list-col">
+    <Box
+      className="cc-ws"
+      style={{ gridTemplateColumns: cols }}
+      data-testid="ws-grid"
+      data-wide={!hasConv || undefined}
+    >
+      {!focus ? (
+        <Box data-testid="conv-list-col">
           {/* Список обращений — отдельная серая панель, чтобы не сливался с обработкой обращения. */}
           <Paper
             withBorder
@@ -2401,6 +2447,7 @@ export function WorkspacePage() {
                         circle={nQueue < 10}
                         color={nQueue ? 'orange' : 'gray'}
                         variant="filled"
+                        className={nQueue ? 'cc-blink' : undefined}
                       >
                         {nQueue}
                       </Badge>
@@ -2488,43 +2535,48 @@ export function WorkspacePage() {
                   onTaken={startWork}
                   important={important}
                   callback={callback}
+                  wide={!hasConv}
                 />
               )}
             </ScrollArea>
           </Paper>
-        </Grid.Col>
+        </Box>
+      ) : (
+        <Box />
       )}
-      <Grid.Col span={focus ? 7 : 5}>
+      <Box>
         {conv.data ? (
-          <Stack gap="xs">
+          <Stack gap="xs" className="cc-slide-in" key={String(conv.data.id)}>
             <Group justify="space-between" wrap="nowrap">
               <Group gap="xs" wrap="nowrap" style={{ minWidth: 0 }}>
                 {working && (
-                  <Tooltip label={focus ? t.workspace.focusHint : t.workspace.focusHideList} withArrow>
+                  <Tooltip
+                    label={
+                      focus
+                        ? `${t.workspace.focusShowList}${nQueue ? ` · ${t.workspace.incomingNow(nQueue)}` : ''}`
+                        : t.workspace.focusHideList
+                    }
+                    withArrow
+                  >
                     <Indicator
                       disabled={!focus || !nQueue}
                       label={nQueue}
                       size={16}
                       color="orange"
                       offset={4}
+                      classNames={{ indicator: 'cc-blink' }}
                     >
-                      <Button
-                        size="xs"
-                        variant={focus ? 'light' : 'default'}
-                        px={8}
-                        leftSection={
-                          focus ? (
-                            <IconLayoutSidebarLeftExpand size={16} />
-                          ) : (
-                            <IconLayoutSidebarLeftCollapse size={16} />
-                          )
-                        }
+                      <ActionIcon
+                        variant={focus ? 'light' : 'subtle'}
+                        color="gray"
+                        size="lg"
                         onClick={() => setListHidden(!focus)}
+                        aria-label={focus ? t.workspace.focusShowList : t.workspace.focusHideList}
                         data-testid="focus-toggle-list"
                         data-focus={focus || undefined}
                       >
-                        {focus ? t.workspace.focusShowList : t.workspace.focusHideList}
-                      </Button>
+                        {focus ? <IconChevronsRight size={18} /> : <IconChevronsLeft size={18} />}
+                      </ActionIcon>
                     </Indicator>
                   </Tooltip>
                 )}
@@ -2608,6 +2660,17 @@ export function WorkspacePage() {
                   </Button>
                 </Group>
               )}
+              <Tooltip label={t.workspace.closeConv} withArrow>
+                <ActionIcon
+                  variant="subtle"
+                  color="gray"
+                  onClick={closeConv}
+                  aria-label={t.workspace.closeConv}
+                  data-testid="conv-close-view"
+                >
+                  <IconX size={18} />
+                </ActionIcon>
+              </Tooltip>
             </Group>
             {conv.data.channelKind === 'review' && <ReviewPanel conv={conv.data} />}
             <Messages
@@ -2621,21 +2684,50 @@ export function WorkspacePage() {
               }}
             />
           </Stack>
-        ) : (
-          <Text c="dimmed" mt="xl" ta="center">
-            {t.workspace.vyberiteObrashchenieSleva}
-          </Text>
-        )}
-      </Grid.Col>
-      <Grid.Col span={focus ? 5 : 4}>
+        ) : null}
+      </Box>
+      <Box>
         {conv.data && (
-          <Tabs defaultValue={rightTabs[0]?.value ?? 'card'}>
+          <Tabs
+            defaultValue={rightTabs[0]?.value ?? 'card'}
+            className="cc-slide-in"
+            key={String(conv.data.id)}
+          >
             <Tabs.List mb="xs">
               {rightTabs.map((x) => (
                 <Tabs.Tab key={x.value} value={x.value} data-testid={x.testId}>
-                  {x.label}
+                  {x.value === 'contact' && nPrev > 0 ? (
+                    <Tooltip label={t.workspace.prevCount(nPrev)} withArrow>
+                      <Indicator
+                        label={nPrev}
+                        size={16}
+                        offset={-2}
+                        position="top-end"
+                        color="blue"
+                        data-testid="prev-count"
+                      >
+                        <Box pr={10} pt={4}>
+                          {x.label}
+                        </Box>
+                      </Indicator>
+                    </Tooltip>
+                  ) : (
+                    x.label
+                  )}
                 </Tabs.Tab>
               ))}
+              <Box style={{ flex: 1 }} />
+              <Tooltip label={t.workspace.closeConv} withArrow>
+                <ActionIcon
+                  variant="subtle"
+                  color="gray"
+                  onClick={closeConv}
+                  aria-label={t.workspace.closeConv}
+                  mt={4}
+                >
+                  <IconX size={16} />
+                </ActionIcon>
+              </Tooltip>
             </Tabs.List>
             <ScrollArea h="calc(100vh - 140px)" type="auto" offsetScrollbars>
               <Tabs.Panel value="card">
@@ -2647,7 +2739,7 @@ export function WorkspacePage() {
             </ScrollArea>
           </Tabs>
         )}
-      </Grid.Col>
-    </Grid>
+      </Box>
+    </Box>
   );
 }

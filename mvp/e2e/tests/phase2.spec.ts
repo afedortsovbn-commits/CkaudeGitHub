@@ -60,12 +60,11 @@ test.describe.serial('Ф2: чат на сайте → оператор', () => {
     await clientSays(client.w, 'Спасибо, получил');
     await expect(page.getByTestId('messages')).toContainText('Спасибо, получил');
 
-    // Внутренняя заметка клиенту не видна
-    await page.getByLabel('Внутренняя заметка').check();
-    await page.getByTestId('reply').fill('Заметка для коллег');
-    await page.getByTestId('send').click();
+    // Внутренняя заметка клиенту не видна (Д-027: заметка — в правой колонке карточки)
+    await page.getByTestId('call-note-toggle').click();
+    await page.getByTestId('call-note').fill('Заметка для коллег');
+    await page.getByTestId('call-note-save').click();
     await expect(page.getByTestId('msg-note')).toContainText('Заметка для коллег');
-    await page.getByLabel('Внутренняя заметка').uncheck();
 
     // Закрытие без темы запрещено; с темой — успешно
     await page.getByTestId('disposition').click();

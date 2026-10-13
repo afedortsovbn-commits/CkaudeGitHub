@@ -90,24 +90,31 @@ export function OrgPicker({
   departmentId,
   onChange,
   requireDepartment,
+  enterpriseOnly,
   ...rest
 }: Common & {
   enterpriseId: string | null;
   departmentId: string | null;
   onChange(enterpriseId: string | null, departmentId: string | null): void;
   requireDepartment?: boolean;
+  /** Только предприятия, без подразделений (Д-032: АЗС к подразделению не привязана). */
+  enterpriseOnly?: boolean;
 }) {
-  const data = useOrgTree();
+  const tree = useOrgTree();
+  const data = useMemo(
+    () => (enterpriseOnly ? tree.map((e) => ({ value: e.value, label: e.label })) : tree),
+    [tree, enterpriseOnly],
+  );
   return (
     <TreePicker
       data={data}
-      value={orgValue(enterpriseId, departmentId)}
+      value={orgValue(enterpriseId, enterpriseOnly ? null : departmentId)}
       onChange={(v) => {
         const p = parseOrg(v);
         onChange(p.enterpriseId, p.departmentId);
       }}
       leafOnly={requireDepartment}
-      label={t.tree.org}
+      label={enterpriseOnly ? t.tree.enterprise : t.tree.org}
       description={requireDepartment ? t.tree.orgHint : undefined}
       {...rest}
     />

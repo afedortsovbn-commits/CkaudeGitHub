@@ -27,6 +27,7 @@ import { errorText, post } from '../lib/api';
 import { options, type Row, useList } from '../lib/data';
 import { useAuth } from '../lib/auth';
 import { softphone, type SupervisorMode, useSoftphone } from '../lib/softphone';
+import { operatorGroups } from '../lib/operators';
 import { t } from '../lib/i18n';
 
 const REG = {
@@ -307,7 +308,7 @@ function Transfer({
           }
           data={
             kind === 'user'
-              ? options(operators.data, 'fullName')
+              ? operatorGroups(operators.data)
               : kind === 'queue'
                 ? options(queues.data)
                 : (deps.data ?? []).map((d) => ({
@@ -402,6 +403,7 @@ export function SoftphoneCall() {
   }, []);
   if (!call) return null;
   const talking = call.state === 'active';
+  const ringing = call.state === 'ringing' && call.direction === 'incoming' && !call.listen;
   const title = call.listen
     ? call.supervisorMode === 'whisper'
       ? t.softphoneUi.suflirovanie
@@ -422,9 +424,11 @@ export function SoftphoneCall() {
       withBorder
       data-testid="softphone-call"
       data-state={call.state}
+      // Д-026: входящий звонок — справа снизу, «выезжает» и пульсирует, чтобы его нельзя было не заметить.
+      className={ringing ? 'cc-ringing' : undefined}
       style={{
         position: 'fixed',
-        left: 16,
+        ...(ringing ? { right: 16 } : { left: 16 }),
         bottom: 16,
         zIndex: 300,
         width: 'min(360px, calc(100vw - 32px))',
