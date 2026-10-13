@@ -355,7 +355,7 @@ test.describe.serial('Ф12: доводка и приёмка', () => {
     try {
       await sw.check({ force: true });
       await page.getByRole('textbox', { name: 'Общая: голос' }).fill('30');
-      await page.getByRole('button', { name: 'Сохранить' }).first().click();
+      await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
       await expect(page.getByText('Сохранено').first()).toBeVisible();
       await page.reload();
       await expect(page.getByTestId('setting-report.sl_count_short_abandons')).toBeChecked();

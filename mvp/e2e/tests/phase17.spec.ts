@@ -43,7 +43,7 @@ test.describe.serial('Ф17: распределение «по загрузке»
     await admin.getByRole('option', { name: mode === 'load' ? /По загрузке/ : /По группам каналов/ }).click();
     if (mode === 'load' && silenceMin !== undefined)
       await admin.getByTestId('routing-silence-min').fill(String(silenceMin));
-    await admin.getByRole('button', { name: 'Сохранить' }).click();
+    await admin.getByRole('button', { name: 'Сохранить', exact: true }).click();
     await expect(admin.getByText('Сохранено')).toBeVisible();
     await admin.context().close();
   }

@@ -112,20 +112,43 @@ function decodeWord(v: string): string {
   );
 }
 
-function parse(raw: string): ReceivedMail {
+/** Заголовки и тело части письма (или всего письма). */
+function split(raw: string) {
   const [head = '', ...rest] = raw.split(/\r\n\r\n/);
   const unfolded = head.replace(/\r\n[ \t]+/g, ' ');
   const header = (name: string) => new RegExp(`^${name}:\\s*(.*)$`, 'im').exec(unfolded)?.[1]?.trim() ?? null;
-  let text = rest.join('\r\n\r\n');
+  return { header, body: rest.join('\r\n\r\n') };
+}
+
+/** Текст письма: тело с учётом кодировки; у multipart — текстовая часть (а если её нет — первая). */
+function bodyText(raw: string): string {
+  const { header, body } = split(raw);
+  const boundary = /^multipart\/.*boundary="?([^";]+)"?/i.exec(header('Content-Type') ?? '')?.[1];
+  if (boundary) {
+    const parts = body
+      .split(`--${boundary}`)
+      .slice(1)
+      .filter((p) => !p.startsWith('--'))
+      .map((p) => p.replace(/^\r\n/, ''));
+    const plain = parts.find((p) => /^text\/plain/i.test(split(p).header('Content-Type') ?? ''));
+    const part = plain ?? parts[0];
+    return part !== undefined ? bodyText(part) : body;
+  }
   const cte = (header('Content-Transfer-Encoding') ?? '').toLowerCase();
-  if (cte === 'base64') text = Buffer.from(text.replace(/\s+/g, ''), 'base64').toString('utf8');
-  else if (cte === 'quoted-printable')
-    text = Buffer.from(
-      text
+  if (cte === 'base64') return Buffer.from(body.replace(/\s+/g, ''), 'base64').toString('utf8');
+  if (cte === 'quoted-printable')
+    return Buffer.from(
+      body
         .replace(/=\r\n/g, '')
         .replace(/=([0-9A-F]{2})/g, (_m, h: string) => String.fromCharCode(parseInt(h, 16))),
       'latin1',
     ).toString('utf8');
+  return body;
+}
+
+function parse(raw: string): ReceivedMail {
+  const { header } = split(raw);
+  const text = bodyText(raw);
   return {
     raw,
     subject: decodeWord((header('Subject') ?? '').replace(/\?=\s+=\?/g, '?==?')),

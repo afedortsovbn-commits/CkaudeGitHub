@@ -89,7 +89,7 @@ test.describe.serial('Ф10: упрощённая аналитика', () => {
     // Порог «ожидающих в очереди — внимание» = 1: любая ожидающая очередь подсвечивается (без перезапуска).
     await nav(admin, 'Настройки');
     await admin.getByTestId('setting-queueWarn').fill('1');
-    await admin.getByRole('button', { name: 'Сохранить' }).click();
+    await admin.getByRole('button', { name: 'Сохранить', exact: true }).click();
     await expect(admin.getByText('Сохранено')).toBeVisible();
 
     await openWidget(browser, `Клиент ОТЧ ${stamp}`, 'Когда откроется АЗС?');
@@ -119,7 +119,7 @@ test.describe.serial('Ф10: упрощённая аналитика', () => {
     // Порог — обратно по умолчанию.
     await nav(admin, 'Настройки');
     await admin.getByTestId('setting-queueWarn').fill('5');
-    await admin.getByRole('button', { name: 'Сохранить' }).click();
+    await admin.getByRole('button', { name: 'Сохранить', exact: true }).click();
     await expect(admin.getByText('Сохранено').first()).toBeVisible();
   });
 

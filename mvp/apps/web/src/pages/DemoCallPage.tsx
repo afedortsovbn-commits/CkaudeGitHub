@@ -67,7 +67,8 @@ export function DemoCallPage() {
       session_timers: false,
     });
     ua.current = u;
-    u.on('connected', () => {
+    // Только первое подключение: при переподключении WebSocket «connected» приходит снова — второй звонок не нужен.
+    u.once('connected', () => {
       setState('calling');
       const s = u.call(`sip:${did.trim() || c.did}@${c.domain}`, {
         mediaConstraints: { audio: AUDIO_CONSTRAINTS, video: false },
