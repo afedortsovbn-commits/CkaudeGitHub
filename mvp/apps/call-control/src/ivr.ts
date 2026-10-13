@@ -27,6 +27,7 @@ import type { Logger } from '@cc/service-kit';
 import type { NatsConnection } from 'nats';
 import type { Pool, PoolClient } from 'pg';
 import type { Ari } from './ari';
+import { mediaUris } from './media';
 import type { RecordingStore } from './recordings';
 
 /** Состояние вызова в IVR — `call.ivr_state`, сохраняется после каждого шага (02-архитектура 6.3). */
@@ -160,7 +161,7 @@ export class IvrRunner {
         ids.push(...rows.map((r) => r.audio_id));
       }
     }
-    return ids.map((id) => `sound:${this.d.mediaBaseUrl}/media/${id}.wav`);
+    return mediaUris(this.d.pool, this.d.mediaBaseUrl, ids);
   }
 
   private async load(callId: string): Promise<IvrCall | undefined> {

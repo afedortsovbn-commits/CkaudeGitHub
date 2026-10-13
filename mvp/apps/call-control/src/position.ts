@@ -4,6 +4,7 @@ import { positionKeys } from '@cc/flow-engine';
 import type { Logger } from '@cc/service-kit';
 import type { Pool, PoolClient } from 'pg';
 import type { Ari } from './ari';
+import { mediaUris } from './media';
 
 export interface PositionDeps {
   node: string;
@@ -89,7 +90,7 @@ export class PositionAnnouncer {
       await this.d.ari.channels.play(
         r.client_channel,
         playback,
-        ids.map((id) => `sound:${this.d.mediaBaseUrl}/media/${id}.wav`),
+        await mediaUris(this.d.pool, this.d.mediaBaseUrl, ids as string[]),
       );
     } catch (err) {
       this.d.logger.warn({ err: String(err), callId: r.id }, 'позиция в очереди: не удалось проиграть');
