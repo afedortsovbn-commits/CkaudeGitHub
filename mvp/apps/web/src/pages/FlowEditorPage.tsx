@@ -21,6 +21,7 @@ import {
   Textarea,
   TextInput,
   Title,
+  Tooltip,
 } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -1416,6 +1417,11 @@ function Editor({ flow }: { flow: FlowRow }) {
   const [selected, setSelected] = useState<string | null>(null);
   const [name, setName] = useState(flow.name);
   const [dids, setDids] = useState<string[]>(flow.dids ?? []);
+  const botChannels = useList('/dict/channels', flow.kind === 'text');
+  const usedIn =
+    flow.kind === 'text'
+      ? (botChannels.data ?? []).filter((c) => c.botFlowId === flow.id).map((c) => String(c.name))
+      : dids;
   const [serverIssues, setServerIssues] = useState<{
     errors: { message: string; nodeId?: string }[];
     warnings: { message: string; nodeId?: string }[];
@@ -1578,6 +1584,22 @@ function Editor({ flow }: { flow: FlowRow }) {
               : t.flowEditor.neOpublikovan}
           </Badge>
           {dirty && <Badge color="orange">{t.flowEditor.neSokhraneno}</Badge>}
+          {(flow.kind === 'voice' || botChannels.data) &&
+            (usedIn.length ? (
+              <Badge variant="light" color="gray" tt="none" data-testid="flow-used-in">
+                {t.flowEditor.rabotaetV(usedIn.join(', '))}
+              </Badge>
+            ) : (
+              <Tooltip
+                label={flow.kind === 'text' ? t.flowEditor.nePodklyuchenBot : t.flowEditor.nePodklyuchenIvr}
+                multiline
+                w={280}
+              >
+                <Badge color="red" variant="light" tt="none" data-testid="flow-used-in">
+                  {t.flowEditor.nePodklyuchen}
+                </Badge>
+              </Tooltip>
+            ))}
         </Group>
         <Group gap="xs">
           <Button variant="default" onClick={() => setTesting(true)} data-testid="flow-test">

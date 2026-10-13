@@ -314,6 +314,28 @@ async function loadGraph(tx: PoolClient, versionId: string): Promise<FlowGraph |
   return rows[0]?.graph ?? null;
 }
 
+/**
+ * Д-038: после «Опубликовать» идущий диалог с ботом переходит на новую версию сценария со следующего сообщения
+ * клиента — если шаг, на котором он стоит, есть в новой версии (иначе доходит по прежней).
+ */
+async function newerBotGraph(tx: PoolClient, c: ConvRow, st: BotState): Promise<FlowGraph | null> {
+  const { rows } = await tx.query<{ id: string }>(
+    `SELECT f.published_version_id AS id FROM flow_version v JOIN flow f ON f.id = v.flow_id
+      WHERE v.id = $1 AND f.is_active AND f.published_version_id IS NOT NULL AND f.published_version_id <> v.id`,
+    [c.bot_flow_version_id],
+  );
+  const next = rows[0]?.id;
+  if (!next) return null;
+  const graph = await loadGraph(tx, next);
+  if (!graph || !graph.nodes.some((n) => n.id === st.node)) return null;
+  await tx.query(`UPDATE conversation SET bot_flow_version_id = $2, updated_at = now() WHERE id = $1`, [
+    c.id,
+    next,
+  ]);
+  c.bot_flow_version_id = next;
+  return graph;
+}
+
 async function engineCtx(tx: PoolClient, graph: FlowGraph, now: Date) {
   return { now, schedules: await loadSchedules(tx, collectRefs(graph).schedules) };
 }
@@ -335,7 +357,7 @@ async function continueBot(tx: PoolClient, c: ConvRow, event: FlowEvent, now: Da
   if (!st || st.done) return null;
   // Клиент пишет, пока бот ждёт ответа внешней системы, — сообщение сохранено, шаг не меняется.
   if (st.pending && event.type !== 'http') return null;
-  const graph = await loadGraph(tx, c.bot_flow_version_id!);
+  const graph = (await newerBotGraph(tx, c, st)) ?? (await loadGraph(tx, c.bot_flow_version_id!));
   if (!graph) return null;
   const r = resumeFlow(graph, st, event, await engineCtx(tx, graph, now));
   if (!r) return null;
