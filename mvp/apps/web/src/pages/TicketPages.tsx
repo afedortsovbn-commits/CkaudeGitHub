@@ -189,46 +189,63 @@ function Files({ value, onChange }: { value: Uploaded[]; onChange(v: Uploaded[])
 
 // ---------------------------------------------------------------- передача из карточки
 
-/** Форма «Передать на 2-ю линию» (M-TKT-01): предприятие и подразделение, ответственные и срок с подстановкой. */
-export function EscalateModal({ conv, opened, onClose }: { conv: Row; opened: boolean; onClose(): void }) {
+/**
+ * Форма «Передать на 2-ю линию» (M-TKT-01) прямо в карточке обращения (Д-033): предприятие и подразделение,
+ * ответственный и куратор (по одному, подставляются по матрице — тема, подтема, подразделение; можно заменить),
+ * срок — сразу по теме (по умолчанию 5 дней). Предприятие из выбранной АЗС не подставляется (Д-032): для 2-й линии
+ * его выбирают вместе с подразделением. precheck — проверка обязательных полей карточки перед передачей.
+ */
+export function EscalateForm({
+  conv,
+  onDone,
+  onCancel,
+  precheck,
+}: {
+  conv: Row;
+  onDone(): void;
+  onCancel?(): void;
+  precheck?(): boolean;
+}) {
   const people = useList('/tickets/assignable');
   const [enterpriseId, setEnterpriseId] = useState<string | null>(null);
   const [departmentId, setDepartmentId] = useState<string | null>(null);
   const [topicId, setTopicId] = useState<string | null>(null);
   const [summary, setSummary] = useState('');
-  const [responsible, setResponsible] = useState<string[]>([]);
-  const [curators, setCurators] = useState<string[]>([]);
+  const [responsible, setResponsible] = useState<string | null>(null);
+  const [curator, setCurator] = useState<string | null>(null);
   const [due, setDue] = useState('');
   const req = useRequired();
   useEffect(() => {
-    if (!opened) return;
-    setEnterpriseId((conv.enterpriseId as string) ?? null);
-    setDepartmentId((conv.departmentId as string) ?? null);
+    const dept = (conv.departmentId as string) ?? null;
+    setEnterpriseId(dept ? ((conv.enterpriseId as string) ?? null) : null);
+    setDepartmentId(dept);
     setTopicId((conv.topicId as string) ?? null);
     // Суть — из поля карточки «Суть обращения», если оператор его заполнил (можно изменить).
     setSummary(String((conv.fields as Record<string, unknown> | null)?.issue_summary ?? ''));
     req.reset();
-  }, [opened, conv.id, conv.enterpriseId, conv.departmentId, conv.topicId]);
+  }, [conv.id, conv.departmentId, conv.topicId]);
   const ready = !!enterpriseId && !!departmentId && !!topicId;
   const defaults = useQuery({
-    queryKey: ['/tickets/defaults', enterpriseId, departmentId, topicId],
+    queryKey: ['/tickets/defaults', ready ? enterpriseId : null, ready ? departmentId : null, topicId],
     queryFn: () =>
       get<{ responsibleIds: string[]; curatorIds: string[]; dueDate: string }>(
-        `/tickets/defaults?enterpriseId=${enterpriseId}&departmentId=${departmentId}&topicId=${topicId}`,
+        `/tickets/defaults?topicId=${topicId}${ready ? `&enterpriseId=${enterpriseId}&departmentId=${departmentId}` : ''}`,
       ),
-    enabled: opened && ready,
+    enabled: !!topicId,
   });
-  // Подстановка по матрице: оператор может заменить или добавить людей и изменить срок.
+  // Подстановка по матрице: оператор может заменить ответственного, куратора и срок.
   useEffect(() => {
     if (!defaults.data) return;
-    setResponsible(defaults.data.responsibleIds);
-    setCurators(defaults.data.curatorIds);
+    if (ready) {
+      setResponsible(defaults.data.responsibleIds[0] ?? null);
+      setCurator(defaults.data.curatorIds.find((c) => !defaults.data!.responsibleIds.includes(c)) ?? null);
+    }
     setDue(defaults.data.dueDate);
   }, [defaults.data]);
   useEffect(() => {
     if (!ready) {
-      setResponsible([]);
-      setCurators([]);
+      setResponsible(null);
+      setCurator(null);
     }
   }, [ready]);
   const send = useTicketAction(
@@ -238,104 +255,107 @@ export function EscalateModal({ conv, opened, onClose }: { conv: Row; opened: bo
         departmentId,
         topicId,
         summary,
-        responsibleIds: responsible,
-        curatorIds: curators.filter((c) => !responsible.includes(c)),
+        responsibleIds: responsible ? [responsible] : [],
+        curatorIds: curator && curator !== responsible ? [curator] : [],
         ...(due ? { dueDate: due } : {}),
       }),
     t.tickets.obrashcheniePeredanoNa2,
-    onClose,
+    onDone,
   );
   const peopleOptions = (people.data ?? []).map((p) => ({ value: p.id, label: String(p.fullName) }));
   return (
-    <Modal opened={opened} onClose={onClose} title={t.tickets.peredatNa2Yu} size="lg">
-      <Stack gap="xs" data-testid="escalate-form">
-        <OrgPicker
-          size="sm"
-          enterpriseId={enterpriseId}
-          departmentId={departmentId}
-          onChange={(e, d) => {
-            setEnterpriseId(e);
-            setDepartmentId(d);
-          }}
-          requireDepartment
-          withAsterisk
-          error={req.error(!departmentId)}
-          testId="esc-org"
-        />
-        <TopicPicker
-          size="sm"
-          value={topicId}
-          onChange={setTopicId}
-          withAsterisk
-          error={req.error(!topicId)}
-          testId="esc-topic"
-        />
-        <Textarea
-          label={t.tickets.sutObrashcheniyaDlyaOtvetstvennykh}
-          description={t.tickets.otvetstvennyeVidyatEtuSut}
-          withAsterisk
-          error={req.error(!summary.trim())}
-          value={summary}
-          onChange={(e) => setSummary(e.currentTarget.value)}
-          minRows={3}
-          autosize
-          data-testid="esc-summary"
-        />
-        <MultiSelect
-          label={t.tickets.otvetstvennye}
-          description={
-            ready && defaults.data && !defaults.data.responsibleIds.length
-              ? t.tickets.poMatritseOtvetstvennykhNe
-              : t.tickets.podstavlenyPoMatritseMozhno
-          }
-          data={peopleOptions}
-          value={responsible}
-          onChange={setResponsible}
-          searchable
-          withAsterisk
-          error={req.error(!responsible.length)}
-          data-testid="esc-responsible"
-        />
-        <MultiSelect
-          label={t.tickets.kuratory}
-          data={peopleOptions}
-          value={curators}
-          onChange={setCurators}
-          searchable
-          data-testid="esc-curators"
-        />
-        <TextInput
-          type="date"
-          label={t.tickets.srokOtveta}
-          description={t.tickets.poUmolchaniyuSrokTemy}
-          value={due}
-          onChange={(e) => setDue(e.currentTarget.value)}
-          data-testid="esc-due"
-        />
-        <Group justify="flex-end">
-          <Button variant="default" onClick={onClose}>
+    <Stack gap="xs" data-testid="escalate-form">
+      <OrgPicker
+        size="sm"
+        enterpriseId={enterpriseId}
+        departmentId={departmentId}
+        onChange={(e, d) => {
+          setEnterpriseId(e);
+          setDepartmentId(d);
+        }}
+        requireDepartment
+        withAsterisk
+        error={req.error(!departmentId)}
+        testId="esc-org"
+      />
+      <TopicPicker
+        size="sm"
+        value={topicId}
+        onChange={setTopicId}
+        withAsterisk
+        error={req.error(!topicId)}
+        testId="esc-topic"
+      />
+      <Textarea
+        label={t.tickets.sutObrashcheniyaDlyaOtvetstvennykh}
+        description={t.tickets.otvetstvennyeVidyatEtuSut}
+        withAsterisk
+        error={req.error(!summary.trim())}
+        value={summary}
+        onChange={(e) => setSummary(e.currentTarget.value)}
+        minRows={3}
+        autosize
+        data-testid="esc-summary"
+      />
+      <Select
+        label={t.tickets.otvetstvennyyOne}
+        description={
+          ready && defaults.data && !defaults.data.responsibleIds.length
+            ? t.tickets.poMatritseOtvetstvennykhNe
+            : t.tickets.podstavlenyPoMatritseMozhno
+        }
+        data={peopleOptions}
+        value={responsible}
+        onChange={setResponsible}
+        searchable
+        withAsterisk
+        error={req.error(!responsible)}
+        data-testid="esc-responsible"
+      />
+      <Select
+        label={t.tickets.kurator}
+        data={peopleOptions.filter((o) => o.value !== responsible)}
+        value={curator}
+        onChange={setCurator}
+        searchable
+        withAsterisk
+        error={req.error(!curator)}
+        data-testid="esc-curators"
+      />
+      <TextInput
+        type="date"
+        label={t.tickets.srokOtveta}
+        description={t.tickets.poUmolchaniyuSrokTemy}
+        value={due}
+        onChange={(e) => setDue(e.currentTarget.value)}
+        data-testid="esc-due"
+      />
+      <Group justify="flex-end">
+        {onCancel && (
+          <Button variant="default" onClick={onCancel}>
             {t.cancel}
           </Button>
-          <Button
-            onClick={() =>
-              req.check([
-                ...(!departmentId ? [t.tree.org] : []),
-                ...(!topicId ? [t.tree.topic] : []),
-                ...(!summary.trim() ? [t.tickets.sutObrashcheniyaDlyaOtvetstvennykh] : []),
-                ...(!responsible.length ? [t.tickets.otvetstvennye] : []),
-              ]) && send.mutate(undefined)
-            }
-            loading={send.isPending}
-            data-testid="esc-submit"
-          >
-            {t.tickets.peredat}
-          </Button>
-        </Group>
-        <Text size="xs" c="dimmed" hidden={!!responsible.length}>
-          {t.tickets.bezOtvetstvennogoTiketNe}
-        </Text>
-      </Stack>
-    </Modal>
+        )}
+        <Button
+          color="violet"
+          onClick={() =>
+            (precheck ? precheck() : true) &&
+            req.check([
+              ...(!departmentId ? [t.tree.org] : []),
+              ...(!topicId ? [t.tree.topic] : []),
+              ...(!summary.trim() ? [t.tickets.sutObrashcheniyaDlyaOtvetstvennykh] : []),
+              ...(!responsible ? [t.tickets.otvetstvennyyOne] : []),
+              ...(!curator ? [t.tickets.kurator] : []),
+            ]) &&
+            send.mutate(undefined)
+          }
+          loading={send.isPending}
+          data-testid="esc-submit"
+        >
+          {t.tickets.peredat}
+        </Button>
+      </Group>
+    </Stack>
   );
 }
 

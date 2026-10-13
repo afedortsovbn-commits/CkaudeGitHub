@@ -215,28 +215,27 @@ export class TicketsController {
   @Get('tickets/defaults')
   @RequirePerm('conversations.work', 'tickets.work')
   async defaults(@Query() q: Record<string, string>) {
+    // Д-033: срок — сразу по теме (предприятие ещё не выбрано), ответственный и куратор — когда выбрано подразделение.
     const { enterpriseId, departmentId, topicId } = parse(
-      z.object({ enterpriseId: uuid, departmentId: uuid, topicId: uuid }),
+      z.object({ enterpriseId: uuid.optional(), departmentId: uuid.optional(), topicId: uuid }),
       q,
     );
-    const ed = await one<{ id: string }>(
-      this.ctx.pool,
-      `SELECT ed.id FROM enterprise_department ed WHERE ed.enterprise_id = $1 AND ed.department_id = $2 AND ed.is_active`,
-      [enterpriseId, departmentId],
-    );
-    if (!ed) throw notFound('Подразделение на предприятии');
     const topic = await one<{ path: string[] }>(
       this.ctx.pool,
       'SELECT path FROM topic WHERE id = $1 AND is_active',
       [topicId],
     );
     if (!topic) throw notFound('Тема');
+    const dueDate = await defaultDueDate(this.ctx.pool, topic.path);
+    if (!enterpriseId || !departmentId) return { responsibleIds: [], curatorIds: [], dueDate };
+    const ed = await one<{ id: string }>(
+      this.ctx.pool,
+      `SELECT ed.id FROM enterprise_department ed WHERE ed.enterprise_id = $1 AND ed.department_id = $2 AND ed.is_active`,
+      [enterpriseId, departmentId],
+    );
+    if (!ed) throw notFound('Подразделение на предприятии');
     const d = await matrixDefaults(this.ctx.pool, ed.id, topic.path);
-    return {
-      responsibleIds: d.responsibles,
-      curatorIds: d.curators,
-      dueDate: await defaultDueDate(this.ctx.pool, topic.path),
-    };
+    return { responsibleIds: d.responsibles, curatorIds: d.curators, dueDate };
   }
 
   // ---------- Списки ----------

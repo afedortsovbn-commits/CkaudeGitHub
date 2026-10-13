@@ -277,7 +277,7 @@ export async function defaultDueDate(db: Db, topicPath: string[], now = new Date
   const byId = new Map(rows.map((r) => [r.id, r.default_response_days]));
   const days = resolveResponseDays(
     topicPath.map((id) => byId.get(id) ?? null),
-    Number((await setting(db, 'ticket.default_response_days')) ?? 15),
+    Number((await setting(db, 'ticket.default_response_days')) ?? 5),
   );
   return endOfDayDate(now, days, await systemTimezone(db));
 }
@@ -428,10 +428,7 @@ export async function createTicket(tx: PoolClient, i: CreateTicketInput): Promis
   ).rows[0];
   if (!conv) throw notFound('Обращение');
   if (conv.status === 'closed') throw bad('Обращение закрыто');
-  if (conv.channel_kind === 'voice')
-    throw bad(
-      'Передача голосовых обращений на 2-ю линию — в фазе Ф12 (запись разговора в кабинете ответственного)',
-    );
+  // Голосовое обращение передаётся так же (Д-035): ответственный слушает запись разговора в карточке тикета.
   const open = await tx.query("SELECT 1 FROM ticket WHERE conversation_id = $1 AND status <> 'closed'", [
     i.conversationId,
   ]);

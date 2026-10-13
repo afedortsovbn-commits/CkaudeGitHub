@@ -254,7 +254,7 @@ export class MatrixController {
     const s = Object.fromEntries(settings.map((r) => [r.key, r.value]));
     const days = resolveResponseDays(
       topic.path.map((id) => daysById.get(id) ?? null),
-      Number(s['ticket.default_response_days'] ?? 15),
+      Number(s['ticket.default_response_days'] ?? 5),
     );
     const people = await rows(this.ctx.pool, 'SELECT id, full_name, email FROM app_user WHERE id = ANY($1)', [
       [...d.responsibles, ...d.curators],

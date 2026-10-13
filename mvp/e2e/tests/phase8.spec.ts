@@ -89,27 +89,24 @@ test.describe.serial('Ф8: вторая линия', () => {
     await select(op, 'topic', 'Жалобы на персонал АЗС');
     await op.getByRole('textbox', { name: 'Номер АЗС' }).fill('12');
     await op.getByRole('textbox', { name: 'Номер АЗС' }).blur();
-    await op.getByTestId('disposition').click();
-    await op.getByRole('option', { name: 'Передать на 2-ю линию' }).click();
+    // Д-033: «На 2-ю линию» — кнопка внизу карточки, форма передачи открывается сразу под ней.
+    await op.getByTestId('mode-escalate').click();
     await op.getByTestId('esc-important').click({ force: true });
     await expect(op.getByTestId('esc-important')).toBeChecked();
-    await op.getByTestId('escalate').click();
 
     const form = op.getByTestId('escalate-form');
     await tree(op, 'esc-org', 'Север клиент', 'Отдел по работе с клиентами', form);
     // Подстановка по матрице: ответственный и куратор, срок темы (10 дней).
-    await expect(form.getByTestId('esc-responsible').locator('..')).toContainText('Васильев Андрей');
-    await expect(form.getByTestId('esc-curators').locator('..')).toContainText('Козлов Дмитрий');
+    await expect(form.getByTestId('esc-responsible')).toHaveValue(/Васильев Андрей/);
+    await expect(form.getByTestId('esc-curators')).toHaveValue(/Козлов Дмитрий/);
     const due = await form.getByTestId('esc-due').inputValue();
     const expected = new Date(Date.now() + 10 * 86_400_000).toLocaleDateString('en-CA', {
       timeZone: 'Europe/Minsk',
     });
     expect(due).toBe(expected);
     // Оператор меняет ответственного на другого.
-    await form.getByTestId('esc-responsible').click();
-    await form.getByTestId('esc-responsible').press('Backspace');
+    await form.getByTestId('esc-responsible').fill('Новиков');
     await op.getByRole('option', { name: 'Новиков Игорь (ответственный)' }).click();
-    await op.keyboard.press('Escape');
     await form.getByTestId('esc-summary').click();
     await form.getByTestId('esc-summary').fill('Клиент жалуется на грубость оператора АЗС №12');
     await form.getByTestId('esc-submit').click();

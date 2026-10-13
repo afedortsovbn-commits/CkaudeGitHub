@@ -32,6 +32,9 @@ export const tickets = {
   poUmolchaniyuSrokTemy: 'По умолчанию — срок темы или общий (15 дней); можно изменить',
   peredat: 'Передать',
   bezOtvetstvennogoTiketNe: 'Без ответственного обращение не передаётся.',
+  // Д-033: в форме передачи — по одному ответственному и куратору.
+  otvetstvennyyOne: 'Ответственный',
+  kurator: 'Куратор',
   osoboVazhnoe: 'особо важное',
   yaOtvetstvennyy: 'я ответственный',
   yaKurator: 'я куратор',
