@@ -35,6 +35,37 @@ const key = () => `b${Date.now().toString(36)}${++seq}`;
 
 // ---------------------------------------------------------------- редактор урока
 
+/** Блоки, которые добавляются кнопками; вступление, карточки, сравнение, диалог, случай — из файлов курсов (JSON). */
+type AddableBlock = 'slide' | 'text' | 'image' | 'tip' | 'steps' | 'quote' | 'situation';
+
+/** Редактор сложного блока урока как JSON (Д-040): ошибка разбора — подсказка, блок не меняется. */
+function JsonBlock({ b, onChange }: { b: Block; onChange(b: Block): void }) {
+  const { type, ...rest } = b;
+  const [text, setText] = useState(() => JSON.stringify(rest, null, 2));
+  const [bad, setBad] = useState(false);
+  return (
+    <Textarea
+      size="xs"
+      label={t.courses.blockJson}
+      autosize
+      minRows={4}
+      maxRows={16}
+      ff="monospace"
+      value={text}
+      error={bad ? t.courses.blockJsonBad : undefined}
+      onChange={(e) => setText(e.currentTarget.value)}
+      onBlur={() => {
+        try {
+          onChange({ ...(JSON.parse(text) as object), type } as Block);
+          setBad(false);
+        } catch {
+          setBad(true);
+        }
+      }}
+    />
+  );
+}
+
 function LessonEditor({
   courseId,
   lesson,
@@ -87,28 +118,30 @@ function LessonEditor({
       [n[i], n[j]] = [n[j]!, n[i]!];
       return n;
     });
-  const add = (type: Block['type']) =>
+  const add = (type: AddableBlock) =>
     setBlocks((bs) => [
       ...bs,
-      type === 'text'
-        ? { type, text: '' }
-        : type === 'image'
-          ? { type, caption: '' }
-          : type === 'tip'
-            ? { type, text: '', tone: 'info' }
-            : type === 'steps'
-              ? { type, items: [] }
-              : type === 'quote'
-                ? { type, text: '' }
-                : {
-                    type,
-                    id: key(),
-                    question: '',
-                    options: [
-                      { id: key(), text: '', correct: true },
-                      { id: key(), text: '', correct: false },
-                    ],
-                  },
+      type === 'slide'
+        ? { type, title: '' }
+        : type === 'text'
+          ? { type, text: '' }
+          : type === 'image'
+            ? { type, caption: '' }
+            : type === 'tip'
+              ? { type, text: '', tone: 'info' }
+              : type === 'steps'
+                ? { type, items: [] }
+                : type === 'quote'
+                  ? { type, text: '' }
+                  : {
+                      type,
+                      id: key(),
+                      question: '',
+                      options: [
+                        { id: key(), text: '', correct: true },
+                        { id: key(), text: '', correct: false },
+                      ],
+                    },
     ]);
   const valid =
     title.trim() &&
@@ -160,6 +193,12 @@ function LessonEditor({
                     steps: t.courses.blockSteps,
                     quote: t.courses.blockQuote,
                     situation: t.courses.blockSituation,
+                    slide: t.courses.blockSlide,
+                    intro: t.courses.blockIntro,
+                    cards: t.courses.blockCards,
+                    compare: t.courses.blockCompare,
+                    dialog: t.courses.blockDialog,
+                    case: t.courses.blockCase,
                   }[b.type]
                 }
               </Badge>
@@ -181,6 +220,17 @@ function LessonEditor({
                 </ActionIcon>
               </Group>
             </Group>
+            {b.type === 'slide' && (
+              <TextInput
+                size="xs"
+                label={t.courses.blockTitle}
+                value={b.title ?? ''}
+                onChange={(e) => set(i, { ...b, title: e.currentTarget.value })}
+              />
+            )}
+            {['intro', 'cards', 'compare', 'dialog', 'case'].includes(b.type) && (
+              <JsonBlock b={b} onChange={(x) => set(i, x)} />
+            )}
             {b.type === 'text' && (
               <>
                 <TextInput
@@ -382,7 +432,7 @@ function LessonEditor({
           </Paper>
         ))}
         <Group gap="xs">
-          {(['text', 'image', 'tip', 'steps', 'quote', 'situation'] as Block['type'][]).map((tp) => (
+          {(['slide', 'text', 'image', 'tip', 'steps', 'quote', 'situation'] as AddableBlock[]).map((tp) => (
             <Button
               key={tp}
               size="compact-xs"
@@ -399,6 +449,12 @@ function LessonEditor({
                   steps: t.courses.blockSteps,
                   quote: t.courses.blockQuote,
                   situation: t.courses.blockSituation,
+                  slide: t.courses.blockSlide,
+                  intro: t.courses.blockIntro,
+                  cards: t.courses.blockCards,
+                  compare: t.courses.blockCompare,
+                  dialog: t.courses.blockDialog,
+                  case: t.courses.blockCase,
                 }[tp]
               }
             </Button>

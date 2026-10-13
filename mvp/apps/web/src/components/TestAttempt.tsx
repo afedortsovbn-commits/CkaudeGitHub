@@ -1,4 +1,5 @@
 import {
+  ActionIcon,
   Alert,
   Badge,
   Box,
@@ -14,7 +15,7 @@ import {
   Text,
   Tooltip,
 } from '@mantine/core';
-import { IconCheck, IconClipboardCheck, IconX } from '@tabler/icons-react';
+import { IconCheck, IconChevronLeft, IconChevronRight, IconClipboardCheck, IconX } from '@tabler/icons-react';
 import { notifications } from '@mantine/notifications';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
@@ -170,6 +171,8 @@ export function TakeTestModal({ testId, onClose }: { testId: string | null; onCl
   const [started, setStarted] = useState<Started | null>(null);
   const [answers, setAnswers] = useState<Record<string, string[]>>({});
   const [result, setResult] = useState<AttemptDetail | null>(null);
+  // Д-040: вопросы по одному («слайдами»); после ответа на вопрос с одним вариантом — сам к следующему.
+  const [cur, setCur] = useState(0);
   const start = useMutation({
     mutationFn: (id: string) => post<Started>(`/my-tests/${id}/start`),
     onSuccess: (s) => setStarted(s),
@@ -194,6 +197,7 @@ export function TakeTestModal({ testId, onClose }: { testId: string | null; onCl
     setStarted(null);
     setAnswers({});
     setResult(null);
+    setCur(0);
     if (testId) start.mutate(testId);
   }, [testId]);
   const n = started?.questions.length ?? 0;
@@ -243,8 +247,56 @@ export function TakeTestModal({ testId, onClose }: { testId: string | null; onCl
             </Group>
             <Progress value={n ? (done * 100) / n : 0} size="sm" />
           </Box>
+          <Group justify="space-between" gap={4}>
+            <ActionIcon
+              variant="subtle"
+              color="gray"
+              disabled={cur === 0}
+              onClick={() => setCur(cur - 1)}
+              aria-label={t.courses.slidePrev}
+              data-testid="take-prev"
+            >
+              <IconChevronLeft size={18} />
+            </ActionIcon>
+            <Group gap={4}>
+              {started.questions.map((q, i) => (
+                <Box
+                  key={q.id}
+                  w={i === cur ? 18 : 8}
+                  h={8}
+                  onClick={() => setCur(i)}
+                  style={{
+                    cursor: 'pointer',
+                    borderRadius: 4,
+                    transition: 'width 200ms ease',
+                    background: (answers[q.id] ?? []).length
+                      ? 'var(--mantine-color-blue-5)'
+                      : 'var(--mantine-color-gray-3)',
+                  }}
+                />
+              ))}
+            </Group>
+            <ActionIcon
+              variant="subtle"
+              color="gray"
+              disabled={cur >= n - 1}
+              onClick={() => setCur(cur + 1)}
+              aria-label={t.courses.slideNext}
+              data-testid="take-next"
+            >
+              <IconChevronRight size={18} />
+            </ActionIcon>
+          </Group>
           {started.questions.map((q, i) => (
-            <Paper key={q.id} withBorder p="sm" data-testid="take-question">
+            <Paper
+              key={q.id}
+              withBorder
+              p="md"
+              mih={220}
+              display={i === cur ? 'block' : 'none'}
+              className={i === cur ? 'cc-slide-in' : undefined}
+              data-testid="take-question"
+            >
               <Text size="sm" fw={600} mb={2}>
                 {i + 1}. {q.text}
               </Text>
@@ -265,7 +317,10 @@ export function TakeTestModal({ testId, onClose }: { testId: string | null; onCl
               ) : (
                 <Radio.Group
                   value={answers[q.id]?.[0] ?? null}
-                  onChange={(v) => setAnswers({ ...answers, [q.id]: [v] })}
+                  onChange={(v) => {
+                    setAnswers({ ...answers, [q.id]: [v] });
+                    if (i < n - 1) setTimeout(() => setCur((c) => (c === i ? i + 1 : c)), 350);
+                  }}
                 >
                   <Stack gap={6}>
                     {q.options.map((o) => (

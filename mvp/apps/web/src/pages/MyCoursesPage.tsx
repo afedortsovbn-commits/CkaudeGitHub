@@ -1,4 +1,5 @@
 import {
+  ActionIcon,
   Alert,
   Badge,
   Box,
@@ -36,8 +37,19 @@ import { authBlobUrl, get, post } from '../lib/api';
 import { useAction } from '../lib/data';
 import { t } from '../lib/i18n';
 
-/** Блоки урока (см. courses.controller.ts). */
+/** Блоки урока (см. courses.controller.ts); Д-040 — слайды и интерактивные блоки. */
 export type Block =
+  | { type: 'slide'; title?: string }
+  | { type: 'intro'; why: string; gains: string[]; assetId?: string; url?: string }
+  | { type: 'cards'; title?: string; items: { icon?: string; title: string; text: string }[] }
+  | {
+      type: 'compare';
+      title?: string;
+      bad: { label?: string; items: string[] };
+      good: { label?: string; items: string[] };
+    }
+  | { type: 'dialog'; title?: string; lines: { who: 'client' | 'operator'; text: string }[] }
+  | { type: 'case'; title?: string; situation: string; action: string; result: string }
   | { type: 'text'; title?: string; text: string }
   | { type: 'image'; assetId?: string; url?: string; caption?: string }
   | { type: 'tip'; text: string; tone?: 'info' | 'warning' | 'success' }
@@ -114,7 +126,19 @@ const STATUS_LABEL: Record<MyCourse['status'], string> = {
 };
 
 /** Картинка курса (с авторизацией). */
-export function AssetImage({ id, url, alt, h }: { id?: string; url?: string; alt?: string; h?: number }) {
+export function AssetImage({
+  id,
+  url,
+  alt,
+  h,
+  fit = 'cover',
+}: {
+  id?: string;
+  url?: string;
+  alt?: string;
+  h?: number;
+  fit?: 'cover' | 'contain';
+}) {
   const [src, setSrc] = useState<string | null>(url ?? null);
   useEffect(() => {
     let alive = true;
@@ -128,7 +152,7 @@ export function AssetImage({ id, url, alt, h }: { id?: string; url?: string; alt
     };
   }, [id, url]);
   if (!src) return null;
-  return <Image src={src} alt={alt ?? ''} h={h} fit="cover" radius="md" />;
+  return <Image src={src} alt={alt ?? ''} h={h} fit={fit} radius="md" />;
 }
 
 /** Текст урока: абзацы, списки («- »), **жирный**. */
@@ -370,7 +394,7 @@ function BlockView({
     case 'image':
       return (
         <Box ta="center">
-          <AssetImage id={b.assetId} url={b.url} alt={b.caption} />
+          <AssetImage id={b.assetId} url={b.url} alt={b.caption} h={200} fit="contain" />
           {b.caption && (
             <Text size="xs" c="dimmed" mt={4}>
               {b.caption}
@@ -422,9 +446,223 @@ function BlockView({
       );
     case 'situation':
       return <Situation s={b} chosen={chosen[b.id]} onPick={(oid) => onPick(b.id, oid)} />;
+    case 'intro':
+      return (
+        <Group align="flex-start" wrap="nowrap" gap="lg">
+          {(b.assetId || b.url) && (
+            <Box w={260} style={{ flexShrink: 0 }}>
+              <AssetImage id={b.assetId} url={b.url} h={180} />
+            </Box>
+          )}
+          <Stack gap="sm" style={{ flex: 1 }}>
+            <Text fw={700} c="violet.7" size="sm" tt="uppercase">
+              {t.courses.introWhy}
+            </Text>
+            <RichText text={b.why} />
+            {b.gains.length > 0 && (
+              <>
+                <Text fw={700} c="green.7" size="sm" tt="uppercase">
+                  {t.courses.introGains}
+                </Text>
+                <Stack gap={6}>
+                  {b.gains.map((g, i) => (
+                    <Group
+                      key={i}
+                      gap={8}
+                      wrap="nowrap"
+                      className="cc-appear"
+                      style={{ animationDelay: `${300 + i * 180}ms` }}
+                    >
+                      <ThemeIcon size="sm" radius="xl" color="green" variant="light">
+                        <IconCheck size={12} />
+                      </ThemeIcon>
+                      <Text size="sm">{g}</Text>
+                    </Group>
+                  ))}
+                </Stack>
+              </>
+            )}
+          </Stack>
+        </Group>
+      );
+    case 'cards':
+      return (
+        <Box>
+          {b.title && (
+            <Title order={5} mb={8}>
+              {b.title}
+            </Title>
+          )}
+          <SimpleGrid
+            cols={{ base: 1, sm: 2, lg: b.items.length % 3 === 0 || b.items.length > 4 ? 3 : 2 }}
+            spacing="sm"
+          >
+            {b.items.map((c, i) => (
+              <Paper
+                key={i}
+                withBorder
+                radius="md"
+                p="sm"
+                className="cc-appear cc-lift"
+                style={{ animationDelay: `${i * 140}ms` }}
+              >
+                <Group gap={8} wrap="nowrap" mb={4}>
+                  {c.icon && (
+                    <Text fz={/^[A-Z]$/.test(c.icon) ? 20 : 22} fw={800} c="violet.7" lh={1}>
+                      {c.icon}
+                    </Text>
+                  )}
+                  <Text fw={700} size="sm">
+                    {c.title}
+                  </Text>
+                </Group>
+                <Text size="sm" c="dimmed">
+                  {c.text}
+                </Text>
+              </Paper>
+            ))}
+          </SimpleGrid>
+        </Box>
+      );
+    case 'compare':
+      return (
+        <Box>
+          {b.title && (
+            <Title order={5} mb={8}>
+              {b.title}
+            </Title>
+          )}
+          <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
+            {(
+              [
+                ['bad', b.bad, 'red', String.fromCharCode(10007), t.courses.compareBad],
+                ['good', b.good, 'green', String.fromCharCode(10003), t.courses.compareGood],
+              ] as const
+            ).map(([k, side, color, mark, def], col) => (
+              <Paper
+                key={k}
+                radius="md"
+                p="sm"
+                bg={`${color}.0`}
+                style={{ borderLeft: `4px solid var(--mantine-color-${color}-5)` }}
+                data-side={k}
+              >
+                <Text fw={700} size="sm" c={`${color}.8`} mb={6}>
+                  {side.label ?? def}
+                </Text>
+                <Stack gap={6}>
+                  {side.items.map((it, i) => (
+                    <Group
+                      key={i}
+                      gap={6}
+                      wrap="nowrap"
+                      align="flex-start"
+                      className="cc-appear"
+                      style={{ animationDelay: `${200 + col * 500 + i * 150}ms` }}
+                    >
+                      <Text fw={800} c={`${color}.7`} lh={1.5}>
+                        {mark}
+                      </Text>
+                      <Text size="sm">{it}</Text>
+                    </Group>
+                  ))}
+                </Stack>
+              </Paper>
+            ))}
+          </SimpleGrid>
+        </Box>
+      );
+    case 'dialog':
+      return (
+        <Box>
+          {b.title && (
+            <Title order={5} mb={8}>
+              {b.title}
+            </Title>
+          )}
+          <Stack gap={8}>
+            {b.lines.map((l, i) => (
+              <Box
+                key={i}
+                maw="80%"
+                p="xs"
+                className="cc-appear"
+                style={{
+                  alignSelf: l.who === 'client' ? 'flex-start' : 'flex-end',
+                  background:
+                    l.who === 'client' ? 'var(--mantine-color-gray-1)' : 'var(--mantine-color-blue-1)',
+                  borderRadius: 12,
+                  animationDelay: `${i * 700}ms`,
+                }}
+              >
+                <Text size="xs" c="dimmed">
+                  {l.who === 'client' ? t.courses.dialogClient : t.courses.dialogOperator}
+                </Text>
+                <Text size="sm">{l.text}</Text>
+              </Box>
+            ))}
+          </Stack>
+        </Box>
+      );
+    case 'case':
+      return (
+        <Paper withBorder radius="md" p="md" style={{ borderTop: '4px solid var(--mantine-color-orange-5)' }}>
+          <Text fw={700} mb="xs">
+            {b.title ?? t.courses.caseTitle}
+          </Text>
+          <Stack gap="xs">
+            {(
+              [
+                [t.courses.caseSituation, b.situation, 'gray'],
+                [t.courses.caseAction, b.action, 'blue'],
+                [t.courses.caseResult, b.result, 'green'],
+              ] as const
+            ).map(([label, txt, color], i) => (
+              <Box key={label} className="cc-appear" style={{ animationDelay: `${i * 500}ms` }}>
+                <Badge color={color} variant="light" size="sm" mb={2}>
+                  {label}
+                </Badge>
+                <Text size="sm">{txt}</Text>
+              </Box>
+            ))}
+          </Stack>
+        </Paper>
+      );
     default:
       return null;
   }
+}
+
+interface Slide {
+  title?: string;
+  blocks: Block[];
+}
+
+/**
+ * Урок по слайдам (Д-040): блок «slide» начинает новый слайд. Урок без разметки делится сам: каждый блок — свой
+ * слайд, картинка — вместе со следующим блоком, подсказка и цитата — к предыдущему.
+ */
+export function toSlides(blocks: Block[]): Slide[] {
+  const out: Slide[] = [];
+  if (blocks.some((b) => b.type === 'slide')) {
+    let cur: Slide = { blocks: [] };
+    for (const b of blocks) {
+      if (b.type === 'slide') {
+        if (cur.blocks.length || cur.title) out.push(cur);
+        cur = { title: b.title, blocks: [] };
+      } else cur.blocks.push(b);
+    }
+    if (cur.blocks.length || cur.title) out.push(cur);
+    return out;
+  }
+  let joinNext = false;
+  for (const b of blocks) {
+    const last = out[out.length - 1];
+    if (last && (joinNext || b.type === 'tip' || b.type === 'quote')) last.blocks.push(b);
+    else out.push({ blocks: [b] });
+    joinNext = b.type === 'image';
+  }
+  return out;
 }
 
 /** Прохождение курса: список уроков слева, урок справа; ситуации, тест, отметки. */
@@ -450,6 +688,22 @@ export function CourseLessonPage() {
   const [testFor, setTestFor] = useState<string | null>(null);
   const [chosen, setChosen] = useState<Record<string, string>>({});
   useEffect(() => setChosen(lesson?.progress?.answers ?? {}), [lesson?.id, lesson?.progress?.answers]);
+  // Слайды урока (Д-040): стрелки сверху справа и клавиши ← →.
+  const slides = useMemo(() => toSlides(lesson?.blocks ?? []), [lesson?.blocks]);
+  const [slide, setSlide] = useState(0);
+  useEffect(() => setSlide(0), [lesson?.id]);
+  const go = (n: number) => setSlide(Math.max(0, Math.min(slides.length - 1, n)));
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement | null;
+      if (el && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) return;
+      if (document.querySelector('[role="dialog"]')) return;
+      if (e.key === 'ArrowRight') setSlide((x) => Math.min(slides.length - 1, x + 1));
+      if (e.key === 'ArrowLeft') setSlide((x) => Math.max(0, x - 1));
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [slides.length]);
   const assignmentId = course?.assignment && !course.assignment.completedAt ? course.assignment.id : null;
   const save = useAction(async (body: { read?: boolean; answers?: Record<string, string> }) => {
     const r = await post<{ completed: boolean; courseCompleted: boolean }>(
@@ -572,20 +826,70 @@ export function CourseLessonPage() {
         </Paper>
         <Paper withBorder p="lg" radius="md" style={{ flex: 1, minWidth: 0 }} data-testid="lesson-view">
           <Stack gap="md">
-            <Box>
-              <Text size="xs" c="dimmed">
-                {t.courses.lessonOf(idx + 1, lessons.length)}
-              </Text>
-              <Title order={3}>{lesson.title}</Title>
-              {lesson.summary && (
-                <Text size="sm" c="dimmed">
-                  {lesson.summary}
+            <Group justify="space-between" align="flex-start" wrap="nowrap">
+              <Box style={{ minWidth: 0 }}>
+                <Text size="xs" c="dimmed">
+                  {t.courses.lessonOf(idx + 1, lessons.length)}
                 </Text>
+                <Title order={3}>{lesson.title}</Title>
+                {slide === 0 && lesson.summary && (
+                  <Text size="sm" c="dimmed">
+                    {lesson.summary}
+                  </Text>
+                )}
+              </Box>
+              {slides.length > 1 && (
+                <Group gap={2} wrap="nowrap" style={{ flexShrink: 0 }}>
+                  <ActionIcon
+                    variant="subtle"
+                    color="gray"
+                    disabled={slide === 0}
+                    onClick={() => go(slide - 1)}
+                    aria-label={t.courses.slidePrev}
+                    title={t.courses.slidePrev}
+                    data-testid="slide-prev"
+                  >
+                    <IconChevronLeft size={18} />
+                  </ActionIcon>
+                  <Text size="xs" c="dimmed" w={42} ta="center" data-testid="slide-pos">
+                    {t.courses.slideOf(slide + 1, slides.length)}
+                  </Text>
+                  <ActionIcon
+                    variant="subtle"
+                    color="gray"
+                    disabled={slide >= slides.length - 1}
+                    onClick={() => go(slide + 1)}
+                    aria-label={t.courses.slideNext}
+                    title={t.courses.slideNext}
+                    data-testid="slide-next"
+                  >
+                    <IconChevronRight size={18} />
+                  </ActionIcon>
+                </Group>
               )}
-            </Box>
-            {lesson.blocks.map((b, i) => (
-              <BlockView key={i} b={b} chosen={chosen} onPick={pick} />
-            ))}
+            </Group>
+            {slides.length > 1 && (
+              <Progress value={((slide + 1) * 100) / slides.length} size={3} color="violet" />
+            )}
+            {/* Виден один слайд — без прокрутки страницы; ответы на ситуации помнятся (состояние урока). */}
+            {slides.map((sl, si) =>
+              si === slide ? (
+                <Box key={`${lesson.id}:${si}`} mih="calc(100vh - 430px)" data-testid="lesson-slide">
+                  <Stack gap="md" className="cc-slide-in">
+                    {sl.title && (
+                      <Title order={4} c="violet.8">
+                        {sl.title}
+                      </Title>
+                    )}
+                    {sl.blocks.map((b, i) => (
+                      <Box key={i} className="cc-appear" style={{ animationDelay: `${120 + i * 160}ms` }}>
+                        <BlockView b={b} chosen={chosen} onPick={pick} />
+                      </Box>
+                    ))}
+                  </Stack>
+                </Box>
+              ) : null,
+            )}
             <Paper withBorder p="md" radius="md" bg="gray.0" data-testid="lesson-footer">
               <Stack gap="xs">
                 {situations.length > 0 && (

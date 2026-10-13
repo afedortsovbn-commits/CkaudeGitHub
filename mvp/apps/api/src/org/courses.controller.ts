@@ -33,8 +33,55 @@ const Option = z
     feedback: z.string().max(1000).optional(),
   })
   .strict();
-/** Блоки урока: текст, картинка, подсказка, шаги, цитата, ситуация «как поступить». */
+const short = z.string().max(300);
+const para = z.string().max(4000);
+/**
+ * Блоки урока: текст, картинка, подсказка, шаги, цитата, ситуация «как поступить»; Д-040 — урок по слайдам: «slide»
+ * начинает новый слайд, «intro» (зачем урок и что даст), «cards» (приёмы карточками), «compare» (так не надо / так
+ * лучше), «dialog» (пример разговора), «case» (случай из практики).
+ */
 const Block = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('slide'), title: short.optional() }).strict(),
+  z
+    .object({
+      type: z.literal('intro'),
+      why: para,
+      gains: z.array(short).max(8).default([]),
+      assetId: uuid.optional(),
+      url: z.string().max(1000).optional(),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('cards'),
+      title: short.optional(),
+      items: z
+        .array(z.object({ icon: z.string().max(8).optional(), title: short, text: para }).strict())
+        .min(1)
+        .max(12),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('compare'),
+      title: short.optional(),
+      bad: z.object({ label: short.optional(), items: z.array(para).max(12) }).strict(),
+      good: z.object({ label: short.optional(), items: z.array(para).max(12) }).strict(),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('dialog'),
+      title: short.optional(),
+      lines: z
+        .array(z.object({ who: z.enum(['client', 'operator']), text: para }).strict())
+        .min(1)
+        .max(20),
+    })
+    .strict(),
+  z
+    .object({ type: z.literal('case'), title: short.optional(), situation: para, action: para, result: para })
+    .strict(),
   z
     .object({ type: z.literal('text'), title: z.string().max(200).optional(), text: z.string().max(20000) })
     .strict(),
@@ -99,7 +146,7 @@ const LessonBody = z
   .object({
     title: z.string().trim().min(1).max(200),
     summary: z.string().max(1000).default(''),
-    blocks: z.array(Block).max(60).default([]),
+    blocks: z.array(Block).max(80).default([]),
     testId: uuid.nullable().optional(),
     sortOrder: z.number().int().default(0),
     isActive: z.boolean().default(true),
