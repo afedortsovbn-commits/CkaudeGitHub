@@ -212,3 +212,15 @@
   transform: translateY(-2px);
   box-shadow: var(--mantine-shadow-md);
 }
+
+/*
+ * Тосты сверху справа не перехватывают щелчки (Д-033): под ними кнопки «Очередь», вкладки карточки — щелчок
+ * проходит насквозь; закрыть тост крестиком можно.
+ */
+.mantine-Notifications-root,
+.mantine-Notification-root {
+  pointer-events: none;
+}
+.mantine-Notification-closeButton {
+  pointer-events: auto;
+}
