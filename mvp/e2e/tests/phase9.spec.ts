@@ -36,15 +36,14 @@ async function takeFromQueue(page: Page, client: string) {
 async function closeWithTopic(page: Page, topic: string) {
   await page.getByTestId('topic').click();
   await page.getByRole('option', { name: topic, exact: true }).click();
-  // Список итога может закрыться, пока карточка перечитывается после смены темы, — открыть снова.
-  const resolved = page.getByRole('option', { name: 'Решено на 1-й линии' });
-  for (let i = 0; i < 5; i++) {
-    await page.getByTestId('disposition').click();
-    if (await resolved.isVisible().catch(() => false)) break;
-    await page.waitForTimeout(700);
-  }
-  await resolved.click();
-  await page.getByTestId('close').click();
+  // Итог — с клавиатуры: в полном прогоне щелчок по списку внизу карточки перехватывался (отдельно тест проходит).
+  const disp = page.getByTestId('disposition');
+  await disp.focus();
+  await disp.press('ArrowDown');
+  await disp.press('Enter');
+  await expect(disp).toHaveValue('Решено на 1-й линии');
+  await page.getByTestId('close').focus();
+  await page.keyboard.press('Enter');
   await expect(page.getByText('Обращение закрыто.')).toBeVisible();
 }
 
