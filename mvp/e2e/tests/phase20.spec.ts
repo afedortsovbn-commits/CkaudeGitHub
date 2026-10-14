@@ -53,15 +53,20 @@ test.describe.serial('Ф20: обучение сотрудников', () => {
     // Ситуация: верный вариант содержит «одна сеть».
     const situation = page.getByTestId('situation').first();
     // Д-040: урок по слайдам — листать до слайда с ситуацией.
-    for (let i = 0; i < 20 && !(await situation.isVisible()); i++) await page.getByTestId('slide-next').click();
+    for (let i = 0; i < 20 && !(await situation.isVisible()); i++)
+      await page.getByTestId('slide-next').click();
     await situation.getByTestId('situation-option').filter({ hasText: 'одна сеть' }).click();
     await expect(situation.getByTestId('situation-result')).toContainText('Верно');
+    // Д-055: итог урока — последний слайд: ситуации, «Отметить прочитанным», тест.
+    for (let i = 0; i < 30 && !(await page.getByTestId('lesson-final').isVisible()); i++)
+      await page.getByTestId('slide-next').click();
     await expect(page.getByTestId('situations-score')).toContainText('1 из 1 верно');
     await page.getByTestId('lesson-read').click();
-    await expect(page.getByText('Прочитано')).toBeVisible();
+    await expect(page.getByText('Прочитано').first()).toBeVisible();
     // Тест после урока: отвечаем по содержанию урока.
     await page.getByTestId('lesson-test').click();
-    const answers = ['Девять', 'Зелёный', 'azs.belorusneft.by', 'Исторически', 'BelorusneftBot'];
+    // Д-054: в тесте урока — и вопросы теста, и ситуация урока; проходной балл 100 %.
+    const answers = ['Девять', 'Зелёный', 'azs.belorusneft.by', 'Исторически', 'BelorusneftBot', 'одна сеть'];
     const modal = page.getByRole('dialog');
     await expect(modal).toBeVisible();
     for (const a of answers) await modal.getByText(a, { exact: false }).first().click();

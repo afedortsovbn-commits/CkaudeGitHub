@@ -68,7 +68,7 @@ const BLANK: EditTest = {
   title: '',
   description: '',
   topicIds: [],
-  passScore: 80,
+  passScore: 100,
   isActive: true,
   questions: [],
 };
@@ -171,7 +171,7 @@ function TestEditor({
             min={1}
             max={100}
             value={v.passScore}
-            onChange={(x) => setV({ ...v, passScore: Number(x) || 80 })}
+            onChange={(x) => setV({ ...v, passScore: Number(x) || 100 })}
             maw={180}
           />
           <Switch

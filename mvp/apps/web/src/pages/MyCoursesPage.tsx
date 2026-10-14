@@ -20,7 +20,7 @@ import {
 } from '@mantine/core';
 import {
   IconAlertTriangle,
-  IconBook2,
+  IconEye,
   IconBulb,
   IconCheck,
   IconChevronLeft,
@@ -31,7 +31,7 @@ import {
 } from '@tabler/icons-react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Fragment, useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router';
+import { Link, useParams } from 'react-router';
 import { TakeTestModal } from '../components/TestAttempt';
 import { authBlobUrl, get, post } from '../lib/api';
 import { useAction } from '../lib/data';
@@ -681,7 +681,6 @@ export function toSlides(blocks: Block[]): Slide[] {
 export function CourseLessonPage() {
   useCompactMenu();
   const { id } = useParams();
-  const nav = useNavigate();
   const qc = useQueryClient();
   const q = useQuery({
     queryKey: [`/my-courses/${id}`],
@@ -703,20 +702,22 @@ export function CourseLessonPage() {
   useEffect(() => setChosen(lesson?.progress?.answers ?? {}), [lesson?.id, lesson?.progress?.answers]);
   // Слайды урока (Д-040): стрелки сверху справа и клавиши ← →.
   const slides = useMemo(() => toSlides(lesson?.blocks ?? []), [lesson?.blocks]);
+  // Д-055: последний слайд каждого урока — «Итог урока» (ситуации, отметка о прочтении, тест).
+  const total = slides.length + 1;
   const [slide, setSlide] = useState(0);
   useEffect(() => setSlide(0), [lesson?.id]);
-  const go = (n: number) => setSlide(Math.max(0, Math.min(slides.length - 1, n)));
+  const go = (n: number) => setSlide(Math.max(0, Math.min(total - 1, n)));
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement | null;
       if (el && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) return;
       if (document.querySelector('[role="dialog"]')) return;
-      if (e.key === 'ArrowRight') setSlide((x) => Math.min(slides.length - 1, x + 1));
+      if (e.key === 'ArrowRight') setSlide((x) => Math.min(total - 1, x + 1));
       if (e.key === 'ArrowLeft') setSlide((x) => Math.max(0, x - 1));
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [slides.length]);
+  }, [total]);
   const assignmentId = course?.assignment && !course.assignment.completedAt ? course.assignment.id : null;
   const save = useAction(async (body: { read?: boolean; answers?: Record<string, string> }) => {
     const r = await post<{ completed: boolean; courseCompleted: boolean }>(
@@ -819,15 +820,30 @@ export function CourseLessonPage() {
                 onClick={() => setIdx(i)}
                 data-testid="lesson-item"
                 data-done={l.progress?.completedAt ? 'yes' : undefined}
+                data-read={l.progress?.readAt ? 'yes' : undefined}
+                // Д-055: пройден — зелёная галочка, прочитан (тест или ситуации ещё нет) — синий значок, иначе номер.
+                title={
+                  l.progress?.completedAt
+                    ? t.courses.lessonDone
+                    : l.progress?.readAt
+                      ? t.courses.lessonRead
+                      : undefined
+                }
               >
                 <Group gap={8} wrap="nowrap">
                   <ThemeIcon
                     size="sm"
                     radius="xl"
-                    color={l.progress?.completedAt ? 'green' : 'gray'}
+                    color={l.progress?.completedAt ? 'green' : l.progress?.readAt ? 'blue' : 'gray'}
                     variant={l.progress?.completedAt ? 'filled' : 'light'}
                   >
-                    {l.progress?.completedAt ? <IconCheck size={12} /> : <Text size="xs">{i + 1}</Text>}
+                    {l.progress?.completedAt ? (
+                      <IconCheck size={12} />
+                    ) : l.progress?.readAt ? (
+                      <IconEye size={12} />
+                    ) : (
+                      <Text size="xs">{i + 1}</Text>
+                    )}
                   </ThemeIcon>
                   <Text size="sm" fw={i === idx ? 700 : 500} lineClamp={2}>
                     {l.title}
@@ -851,7 +867,7 @@ export function CourseLessonPage() {
                   </Text>
                 )}
               </Box>
-              {slides.length > 1 && (
+              {total > 1 && (
                 <Group gap={2} wrap="nowrap" style={{ flexShrink: 0 }}>
                   <ActionIcon
                     variant="subtle"
@@ -865,12 +881,12 @@ export function CourseLessonPage() {
                     <IconChevronLeft size={18} />
                   </ActionIcon>
                   <Text size="xs" c="dimmed" w={42} ta="center" data-testid="slide-pos">
-                    {t.courses.slideOf(slide + 1, slides.length)}
+                    {t.courses.slideOf(slide + 1, total)}
                   </Text>
                   <ActionIcon
                     variant="subtle"
                     color="gray"
-                    disabled={slide >= slides.length - 1}
+                    disabled={slide >= total - 1}
                     onClick={() => go(slide + 1)}
                     aria-label={t.courses.slideNext}
                     title={t.courses.slideNext}
@@ -881,13 +897,11 @@ export function CourseLessonPage() {
                 </Group>
               )}
             </Group>
-            {slides.length > 1 && (
-              <Progress value={((slide + 1) * 100) / slides.length} size={3} color="violet" />
-            )}
+            {total > 1 && <Progress value={((slide + 1) * 100) / total} size={3} color="violet" />}
             {/* Виден один слайд — без прокрутки страницы; ответы на ситуации помнятся (состояние урока). */}
             {slides.map((sl, si) =>
               si === slide ? (
-                <Box key={`${lesson.id}:${si}`} mih="calc(100vh - 430px)" data-testid="lesson-slide">
+                <Box key={`${lesson.id}:${si}`} mih="calc(100vh - 290px)" data-testid="lesson-slide">
                   <Stack gap="md" className="cc-slide-in">
                     {sl.title && (
                       <Title order={4} c="violet.8">
@@ -903,100 +917,110 @@ export function CourseLessonPage() {
                 </Box>
               ) : null,
             )}
-            <Paper withBorder p="md" radius="md" bg="gray.0" data-testid="lesson-footer">
-              <Stack gap="xs">
-                {situations.length > 0 && (
-                  <Text size="sm" data-testid="situations-score">
-                    {t.courses.situationsDone(correct, situations.length)}
-                    {answered < situations.length ? ` · ${t.courses.situationsHint}` : ''}
-                  </Text>
-                )}
-                <Group gap="xs">
-                  {pr?.readAt ? (
-                    <Badge color="green" variant="light" leftSection={<IconCheck size={12} />}>
-                      {t.courses.lessonRead}
-                    </Badge>
-                  ) : (
-                    <Button
-                      size="xs"
-                      variant="light"
-                      onClick={() => save.mutate({ read: true }, { onSuccess: refresh })}
-                      loading={save.isPending}
-                      data-testid="lesson-read"
-                    >
-                      {t.courses.markRead}
-                    </Button>
-                  )}
-                  {lesson.testId && (
-                    <>
-                      {pr?.testPassedAt ? (
-                        <Badge
-                          color="green"
-                          variant="light"
-                          leftSection={<IconCheck size={12} />}
-                          data-testid="lesson-test-passed"
-                        >
-                          {t.courses.testPassed(fmtDate(pr.testPassedAt))}
-                        </Badge>
-                      ) : null}
-                      <Button
-                        size="xs"
-                        color="violet"
-                        variant={pr?.testPassedAt ? 'subtle' : 'filled'}
-                        onClick={() => setTestFor(lesson.testId)}
-                        data-testid="lesson-test"
-                      >
-                        {pr?.testPassedAt ? t.courses.retakeTest : t.courses.takeTest}
-                      </Button>
-                      {!pr?.testPassedAt && (
-                        <Text size="xs" c="dimmed">
-                          {t.courses.testHint}
+            {/* Д-055: итог урока — последним слайдом (серого блока под слайдом нет). */}
+            {slide === slides.length && (
+              <Box key={`${lesson.id}:final`} mih="calc(100vh - 290px)" data-testid="lesson-slide">
+                <Stack
+                  gap="lg"
+                  className="cc-slide-in"
+                  maw={640}
+                  mx="auto"
+                  py="md"
+                  data-testid="lesson-final"
+                >
+                  <Title order={4} c="violet.8">
+                    {t.courses.finalTitle}
+                  </Title>
+                  {situations.length > 0 && (
+                    <Paper withBorder p="md" radius="md">
+                      <Group justify="space-between" wrap="nowrap">
+                        <Text size="sm" data-testid="situations-score">
+                          {t.courses.situationsDone(correct, situations.length)}
                         </Text>
+                        {answered < situations.length && (
+                          <Button
+                            size="compact-sm"
+                            variant="subtle"
+                            onClick={() => {
+                              const first = slides.findIndex((sl) =>
+                                sl.blocks.some((b) => b.type === 'situation' && !chosen[b.id]),
+                              );
+                              if (first >= 0) go(first);
+                            }}
+                          >
+                            {t.courses.toSituations}
+                          </Button>
+                        )}
+                      </Group>
+                    </Paper>
+                  )}
+                  <Paper withBorder p="md" radius="md">
+                    <Group justify="space-between" wrap="nowrap">
+                      <Text size="sm">{t.courses.finalRead}</Text>
+                      {pr?.readAt ? (
+                        <Badge color="green" variant="light" leftSection={<IconCheck size={12} />}>
+                          {t.courses.lessonRead}
+                        </Badge>
+                      ) : (
+                        <Button
+                          size="sm"
+                          variant="light"
+                          leftSection={<IconCheck size={16} />}
+                          onClick={() => save.mutate({ read: true }, { onSuccess: refresh })}
+                          loading={save.isPending}
+                          data-testid="lesson-read"
+                        >
+                          {t.courses.markRead}
+                        </Button>
                       )}
-                    </>
+                    </Group>
+                  </Paper>
+                  {lesson.testId && (
+                    <Paper withBorder p="md" radius="md">
+                      <Group justify="space-between" wrap="nowrap">
+                        <Box>
+                          <Text size="sm">{t.courses.testTitle}</Text>
+                          {pr?.testPassedAt ? (
+                            <Badge
+                              mt={4}
+                              color="green"
+                              variant="light"
+                              leftSection={<IconCheck size={12} />}
+                              data-testid="lesson-test-passed"
+                            >
+                              {t.courses.testPassed(fmtDate(pr.testPassedAt))}
+                            </Badge>
+                          ) : (
+                            <Text size="xs" c="dimmed">
+                              {t.courses.testHint}
+                            </Text>
+                          )}
+                        </Box>
+                        <Button
+                          size="sm"
+                          color="violet"
+                          variant={pr?.testPassedAt ? 'subtle' : 'filled'}
+                          onClick={() => setTestFor(lesson.testId)}
+                          data-testid="lesson-test"
+                        >
+                          {pr?.testPassedAt ? t.courses.retakeTest : t.courses.takeTest}
+                        </Button>
+                      </Group>
+                    </Paper>
                   )}
                   {pr?.completedAt && (
-                    <Badge
+                    <Alert
                       color="green"
-                      leftSection={<IconCircleCheck size={12} />}
+                      icon={<IconCircleCheck size={18} />}
+                      title={t.courses.lessonDone}
                       data-testid="lesson-done"
                     >
-                      {t.courses.lessonDone}
-                    </Badge>
+                      {idx < lessons.length - 1 ? t.courses.finalNext : t.courses.finalLast}
+                    </Alert>
                   )}
-                </Group>
-                <Group justify="space-between">
-                  <Button
-                    size="xs"
-                    variant="default"
-                    disabled={idx === 0}
-                    onClick={() => setIdx(idx - 1)}
-                    leftSection={<IconChevronLeft size={14} />}
-                  >
-                    {t.courses.prevLesson}
-                  </Button>
-                  {idx < lessons.length - 1 ? (
-                    <Button
-                      size="xs"
-                      onClick={() => setIdx(idx + 1)}
-                      rightSection={<IconChevronRight size={14} />}
-                      data-testid="lesson-next"
-                    >
-                      {t.courses.nextLesson}
-                    </Button>
-                  ) : (
-                    <Button
-                      size="xs"
-                      variant="light"
-                      onClick={() => nav('/my-courses')}
-                      rightSection={<IconBook2 size={14} />}
-                    >
-                      {t.courses.backToList}
-                    </Button>
-                  )}
-                </Group>
-              </Stack>
-            </Paper>
+                </Stack>
+              </Box>
+            )}
           </Stack>
         </Paper>
       </Group>

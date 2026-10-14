@@ -42,7 +42,7 @@ const TestBody = z
     title: z.string().trim().min(1, 'Укажите название теста').max(300),
     description: z.string().trim().max(5000).default(''),
     topicIds: z.array(uuid).max(200).default([]),
-    passScore: z.number().int().min(1).max(100).default(80),
+    passScore: z.number().int().min(1).max(100).default(100),
     isActive: z.boolean().default(true),
     questions: z.array(QuestionBody).max(300).default([]),
   })
@@ -650,7 +650,7 @@ export class TestsController {
           [id, q.id, p.id, JSON.stringify(picked), ok],
         );
       }
-      const g = gradeAttempt(correct, a.question_ids.length, pass?.pass_score ?? 80);
+      const g = gradeAttempt(correct, a.question_ids.length, pass?.pass_score ?? 100);
       await tx.query(
         `UPDATE test_attempt SET finished_at = now(), correct = $2, total = $3, score = $4, passed = $5 WHERE id = $1`,
         [id, correct, a.question_ids.length, g.score, g.passed],
