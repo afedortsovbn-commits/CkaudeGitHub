@@ -5,7 +5,7 @@ import {
   IconSortAscending,
   IconSortDescending,
 } from '@tabler/icons-react';
-import { useMemo, useState } from 'react';
+import { type ReactNode, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { t } from '../../lib/i18n';
 import { type Config, formatValue, type Grid } from './pivotModel';
 
@@ -13,16 +13,47 @@ import { type Config, formatValue, type Grid } from './pivotModel';
  * Д-041. Таблица конструктора: шапка в несколько уровней (поля столбцов, показатель, при сравнении — текущее,
  * прошлое и изменение), заголовки строк по уровням; группы сворачиваются щелчком, итог закреплён внизу,
  * щелчок по заголовку показателя — сортировка (по убыванию, по возрастанию, без сортировки).
+ * Д-053: колонки подписей строк закреплены при прокрутке вбок вместе с заголовком (если они не шире половины
+ * таблицы — иначе прокручиваются все вместе); длинный текст — полностью, сокращённым до 25 символов или с переносом.
  */
+const CUT = 25;
+const cut = (x: ReactNode, mode: TextMode): ReactNode =>
+  mode === 'cut' && typeof x === 'string' && x.length > CUT ? `${x.slice(0, CUT - 1)}…` : x;
+type TextMode = NonNullable<Config['textMode']>;
+
 export function PivotTable({
   grid,
   sort,
   onSort,
+  textMode = 'full',
 }: {
   grid: Grid;
   sort: Config['sort'];
   onSort(s: Config['sort']): void;
+  textMode?: TextMode;
 }) {
+  // Смещения закреплённых колонок подписей: ширина предыдущих колонок, измеренная после отрисовки.
+  const wrap = useRef<HTMLDivElement>(null);
+  const [lefts, setLefts] = useState<number[] | null>(null);
+  useLayoutEffect(() => {
+    const box = wrap.current;
+    if (!box) return;
+    const measure = () => {
+      const ths = [...box.querySelectorAll<HTMLElement>('th.pivot-rowhead')];
+      const widths = ths.map((th) => th.getBoundingClientRect().width);
+      const total = widths.reduce((a, b) => a + b, 0);
+      if (!ths.length || total > box.clientWidth / 2) return setLefts(null);
+      const next = widths.map((_, i) => widths.slice(0, i).reduce((a, b) => a + b, 0));
+      setLefts((prev) => (prev && prev.join() === next.join() ? prev : next));
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(box);
+    return () => ro.disconnect();
+  }, [grid, textMode]);
+  const stick = (i: number) => (lefts ? { position: 'sticky' as const, left: lefts[i] } : undefined);
+  const titleOf = (x: ReactNode) =>
+    textMode === 'cut' && typeof x === 'string' && x.length > CUT ? x : undefined;
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const groups = useMemo(() => grid.rows.filter((r) => r.kind === 'group').map((r) => r.id), [grid]);
   const visible = grid.rows.filter((r) => !r.parents.some((p) => collapsed.has(p)));
@@ -56,8 +87,12 @@ export function PivotTable({
           </Button>
         </Group>
       )}
-      <div className="pivot-table-wrap">
-        <table className="pivot-table" data-testid="pivot-table">
+      <div className="pivot-table-wrap" ref={wrap}>
+        <table
+          className={`pivot-table${textMode === 'wrap' ? ' pivot-text-wrap' : ''}${lefts ? ' pivot-sticky-labels' : ''}`}
+          data-testid="pivot-table"
+          data-text={textMode}
+        >
           <thead>
             {grid.head.map((row, d) => (
               <tr key={d}>
@@ -67,9 +102,10 @@ export function PivotTable({
                       key={`rh${i}`}
                       rowSpan={nHead}
                       className="pivot-rowhead"
-                      style={{ top: 0, left: undefined, verticalAlign: 'bottom' }}
+                      style={{ top: 0, left: lefts ? lefts[i] : 'auto', verticalAlign: 'bottom' }}
+                      title={titleOf(h)}
                     >
-                      {h}
+                      {cut(h, textMode)}
                     </th>
                   ))}
                 {row.map((c, i) => {
@@ -84,8 +120,11 @@ export function PivotTable({
                       title={c.colId ? t.pivot.sortHint : undefined}
                       onClick={c.colId ? () => clickSort(c.colId!) : undefined}
                     >
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                        {c.text}
+                      <span
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                        title={titleOf(c.text)}
+                      >
+                        {cut(c.text, textMode)}
                         {sorted === 'desc' && <IconSortDescending size={14} />}
                         {sorted === 'asc' && <IconSortAscending size={14} />}
                       </span>
@@ -108,14 +147,19 @@ export function PivotTable({
             {visible.map((r) => (
               <tr key={r.id} className={`pivot-${r.kind}`}>
                 {r.labels.map((l, i) => (
-                  <td key={i} className="pivot-label" style={{ paddingLeft: 10 }}>
+                  <td
+                    key={i}
+                    className="pivot-label"
+                    style={{ paddingLeft: 10, ...stick(i) }}
+                    title={titleOf(l)}
+                  >
                     {r.kind === 'group' && i === r.level - 1 ? (
                       <button type="button" className="pivot-toggle" onClick={() => toggle(r.id)}>
                         {collapsed.has(r.id) ? <IconChevronRight size={14} /> : <IconChevronDown size={14} />}
-                        {l}
+                        {cut(l, textMode)}
                       </button>
                     ) : (
-                      l
+                      cut(l, textMode)
                     )}
                   </td>
                 ))}

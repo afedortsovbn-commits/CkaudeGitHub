@@ -5,6 +5,46 @@
   grid-template-columns: 290px minmax(0, 1fr);
   gap: 12px;
   align-items: start;
+  transition: grid-template-columns 0.25s ease;
+}
+/* Д-051: каталог свёрнут в узкую полосу. */
+.pivot-layout.pivot-layout-mini {
+  grid-template-columns: 34px minmax(0, 1fr);
+}
+.pivot-catalog.pivot-catalog-mini {
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  cursor: pointer;
+}
+.pivot-catalog-mini:hover {
+  background: var(--mantine-color-gray-0);
+}
+.pivot-catalog-mini-label {
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--mantine-color-dimmed);
+}
+/* Д-051: свёрнутые настройки — одна строка-сводка. */
+.pivot-setup-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  width: 100%;
+  padding: 6px 10px;
+  border: 1px dashed var(--mantine-color-gray-4);
+  border-radius: 8px;
+  background: var(--mantine-color-gray-0);
+  font: inherit;
+  font-size: 12px;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.pivot-setup-summary:hover {
+  border-color: var(--mantine-color-blue-4);
 }
 @media (max-width: 900px) {
   .pivot-layout {
@@ -108,8 +148,16 @@
 /* ---- зоны ---- */
 .pivot-zones {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
+}
+.pivot-zones[hidden] {
+  display: none;
+}
+@media (max-width: 1100px) {
+  .pivot-zones {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 .pivot-zone {
   border: 1px dashed var(--mantine-color-gray-4);
@@ -271,8 +319,21 @@
 }
 .pivot-table th.pivot-rowhead {
   text-align: left;
-  left: 0;
   z-index: 3;
+}
+/* Д-053: подписи строк закреплены слева вместе с заголовком (смещения — из PivotTable). */
+.pivot-table.pivot-sticky-labels td.pivot-label {
+  z-index: 1;
+}
+.pivot-table.pivot-sticky-labels tr.pivot-total td.pivot-label {
+  z-index: 2;
+}
+/* Д-053: перенос длинных подписей по 25 символов. */
+.pivot-table.pivot-text-wrap td.pivot-label,
+.pivot-table.pivot-text-wrap thead th {
+  white-space: normal;
+  max-width: 25ch;
+  overflow-wrap: anywhere;
 }
 .pivot-table td.pivot-num {
   text-align: right;

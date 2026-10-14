@@ -1,6 +1,7 @@
 import {
   ActionIcon,
   Badge,
+  Box,
   Button,
   Checkbox,
   Group,
@@ -20,6 +21,8 @@ import {
   IconChevronDown,
   IconChevronRight,
   IconGripVertical,
+  IconLayoutSidebarLeftCollapse,
+  IconLayoutSidebarLeftExpand,
   IconMapPin,
   IconPlus,
   IconSearch,
@@ -32,37 +35,49 @@ import { t } from '../../lib/i18n';
 import { type DragItem, useDnd, useDropZone } from './pivotDnd';
 import type { Catalog, DimInfo, Filter, MeasureInfo, Zone } from './pivotModel';
 
+/** Высота тела окна фильтра (одинаковая на обеих вкладках). */
+const FILTER_BODY_H = 300;
+
 const canon = (s: string) =>
   s.toLowerCase().replace(new RegExp(String.fromCharCode(0x451), 'g'), String.fromCharCode(0x435));
 
 // ------------------------------------------------------------------ каталог
 
 /**
- * Каталог слева: разделы свёрнуты, внутри — поля и показатели. Тянуть — мышью за строку или пальцем за ручку;
- * «+» — добавить без перетаскивания. Поиск раскрывает разделы с совпадениями. Чип, брошенный на каталог, убирается.
+ * Каталог слева: две вкладки — «Поля» и «Показатели» (Д-051), в каждой разделы свёрнуты. Тянуть — мышью за строку
+ * или пальцем за ручку; «+» — добавить без перетаскивания. Поиск раскрывает разделы с совпадениями. Чип, брошенный
+ * на каталог, убирается. Каталог сворачивается в узкую полосу — больше места отчёту.
  */
 export function FieldCatalog({
   catalog,
   used,
   onAdd,
+  collapsed,
+  onCollapse,
 }: {
   catalog: Catalog;
   used: Set<string>;
   onAdd(item: DragItem): void;
+  collapsed: boolean;
+  onCollapse(v: boolean): void;
 }) {
   const { start } = useDnd();
   const drop = useDropZone('catalog', (i) => !!i.from);
   const [open, setOpen] = useState<Set<string>>(new Set());
   const [q, setQ] = useState('');
+  const [kind, setKind] = useState<'dim' | 'measure'>('dim');
   const words = canon(q).split(/\s+/).filter(Boolean);
   const match = (label: string) => words.every((w) => canon(label).includes(w));
-  const sections = catalog.sections
-    .map((s) => ({
-      ...s,
-      dims: catalog.dims.filter((d) => d.section === s.id && match(d.label)),
-      measures: catalog.measures.filter((m) => m.section === s.id && match(m.label)),
-    }))
-    .filter((s) => s.dims.length + s.measures.length > 0);
+  const all = catalog.sections.map((s) => ({
+    ...s,
+    dims: catalog.dims.filter((d) => d.section === s.id && match(d.label)),
+    measures: catalog.measures.filter((m) => m.section === s.id && match(m.label)),
+  }));
+  const found = {
+    dim: all.reduce((n, s) => n + s.dims.length, 0),
+    measure: all.reduce((n, s) => n + s.measures.length, 0),
+  };
+  const sections = all.filter((s) => (kind === 'dim' ? s.dims : s.measures).length > 0);
   const toggle = (id: string) =>
     setOpen((o) => {
       const n = new Set(o);
@@ -105,6 +120,26 @@ export function FieldCatalog({
     );
   };
 
+  if (collapsed)
+    return (
+      <div
+        ref={drop.ref}
+        className="pivot-catalog pivot-catalog-mini"
+        data-testid="pivot-catalog"
+        onClick={() => onCollapse(false)}
+        title={t.pivot.catalogShow}
+      >
+        <ActionIcon
+          variant="subtle"
+          size="sm"
+          aria-label={t.pivot.catalogShow}
+          data-testid="pivot-cat-expand"
+        >
+          <IconLayoutSidebarLeftExpand size={16} />
+        </ActionIcon>
+        <span className="pivot-catalog-mini-label">{t.pivot.catalog}</span>
+      </div>
+    );
   return (
     <div
       ref={drop.ref}
@@ -112,9 +147,38 @@ export function FieldCatalog({
       data-testid="pivot-catalog"
     >
       <Stack gap={4} p={8} pb={4}>
-        <Text fw={700} size="sm">
-          {t.pivot.catalog}
-        </Text>
+        <Group justify="space-between" wrap="nowrap" gap={4}>
+          <SegmentedControl
+            size="xs"
+            fullWidth
+            style={{ flex: 1 }}
+            value={kind}
+            onChange={(v) => setKind(v as 'dim' | 'measure')}
+            data={[
+              {
+                value: 'dim',
+                label: words.length ? `${t.pivot.dims} · ${found.dim}` : t.pivot.dims,
+              },
+              {
+                value: 'measure',
+                label: words.length ? `${t.pivot.measures} · ${found.measure}` : t.pivot.measures,
+              },
+            ]}
+            data-testid="pivot-cat-kind"
+          />
+          <Tooltip label={t.pivot.catalogHide} withArrow>
+            <ActionIcon
+              variant="subtle"
+              color="gray"
+              size="sm"
+              onClick={() => onCollapse(true)}
+              aria-label={t.pivot.catalogHide}
+              data-testid="pivot-cat-collapse"
+            >
+              <IconLayoutSidebarLeftCollapse size={16} />
+            </ActionIcon>
+          </Tooltip>
+        </Group>
         <TextInput
           size="xs"
           leftSection={<IconSearch size={14} />}
@@ -124,7 +188,7 @@ export function FieldCatalog({
           data-testid="pivot-cat-search"
         />
         <Text size="xs" c="dimmed">
-          {t.pivot.catalogHint}
+          {kind === 'dim' ? t.pivot.catalogHintDims : t.pivot.catalogHintMeasures}
         </Text>
       </Stack>
       <div className="pivot-catalog-list">
@@ -146,23 +210,14 @@ export function FieldCatalog({
                 {isOpen ? <IconChevronDown size={14} /> : <IconChevronRight size={14} />}
                 <span style={{ flex: 1 }}>{s.label}</span>
                 <Badge size="xs" variant="light" color="gray">
-                  {s.dims.length + s.measures.length}
+                  {(kind === 'dim' ? s.dims : s.measures).length}
                 </Badge>
               </button>
               {isOpen && (
                 <div className="pivot-section-body">
-                  {s.dims.length > 0 && s.measures.length > 0 && (
-                    <Text size="xs" c="dimmed" fw={600} mt={2}>
-                      {t.pivot.dims}
-                    </Text>
-                  )}
-                  {s.dims.map((d) => item('dim', d))}
-                  {s.dims.length > 0 && s.measures.length > 0 && (
-                    <Text size="xs" c="dimmed" fw={600} mt={4}>
-                      {t.pivot.measures}
-                    </Text>
-                  )}
-                  {s.measures.map((m) => item('measure', m))}
+                  {kind === 'dim'
+                    ? s.dims.map((d) => item('dim', d))
+                    : s.measures.map((m) => item('measure', m))}
                 </div>
               )}
             </div>
@@ -347,9 +402,21 @@ export function FilterPopover({
       shadow="md"
       trapFocus={false}
       withinPortal
+      // Д-052: окно всегда в пределах экрана — переворачивается вверх и сдвигается, а не уходит за край.
+      middlewares={{
+        flip: true,
+        shift: { padding: 8 },
+        // Высота окна — не больше места до края экрана (дальше — прокрутка внутри окна).
+        size: {
+          padding: 8,
+          apply({ availableHeight, elements }) {
+            elements.floating.style.maxHeight = `${Math.max(220, Math.floor(availableHeight))}px`;
+          },
+        },
+      }}
     >
       <Popover.Target>{children}</Popover.Target>
-      <Popover.Dropdown data-testid="pivot-filter">
+      <Popover.Dropdown data-testid="pivot-filter" style={{ overflowY: 'auto' }}>
         <Stack gap={8}>
           <Group justify="space-between" wrap="nowrap">
             <Text fw={700} size="sm">
@@ -369,153 +436,168 @@ export function FilterPopover({
               { value: 'cond', label: t.pivot.filterCondition },
             ]}
           />
-          {tab === 'values' && (
-            <>
-              <Group gap={6} wrap="nowrap">
-                <SegmentedControl
+          {/* Д-052: тело окна одной высоты на обеих вкладках — окно не скачет при переключении. */}
+          <Box h={FILTER_BODY_H} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {tab === 'values' && (
+              <>
+                <Group gap={6} wrap="nowrap">
+                  <SegmentedControl
+                    size="xs"
+                    value={filter.mode}
+                    onChange={(v) =>
+                      onChange({
+                        ...filter,
+                        measure: undefined,
+                        op: undefined,
+                        value: undefined,
+                        mode: v as 'in' | 'out',
+                      })
+                    }
+                    data={[
+                      { value: 'in', label: t.pivot.filterOnly },
+                      { value: 'out', label: t.pivot.filterExcept },
+                    ]}
+                  />
+                </Group>
+                {dim.map && (
+                  <Button
+                    size="compact-xs"
+                    variant="light"
+                    leftSection={<IconMapPin size={14} />}
+                    onClick={onMap}
+                    data-testid="pivot-filter-map"
+                  >
+                    {t.pivot.pickOnMap}
+                  </Button>
+                )}
+                <TextInput
                   size="xs"
-                  value={filter.mode}
+                  leftSection={<IconSearch size={14} />}
+                  placeholder={t.search}
+                  value={q}
+                  onChange={(e) => setQ(e.currentTarget.value)}
+                  data-autofocus
+                  data-testid="pivot-filter-search"
+                />
+                <Group gap={6} justify="space-between">
+                  <Group gap={4}>
+                    <Button
+                      size="compact-xs"
+                      variant="subtle"
+                      onClick={() => setValues([...new Set([...filter.values, ...found.map((v) => v.id)])])}
+                    >
+                      {t.pivot.selectFound}
+                    </Button>
+                    <Button size="compact-xs" variant="subtle" color="gray" onClick={() => setValues([])}>
+                      {t.pivot.clearSel}
+                    </Button>
+                    <Button size="compact-xs" onClick={onClose} data-testid="pivot-filter-apply">
+                      {t.pivot.apply}
+                    </Button>
+                  </Group>
+                  <Text size="xs" c="dimmed">
+                    {t.pivot.shown(shown.length, found.length)}
+                  </Text>
+                </Group>
+                <ScrollArea type="auto" style={{ flex: 1, minHeight: 0 }}>
+                  <Stack gap={3}>
+                    {shown.map((v) => (
+                      <Checkbox
+                        key={v.id}
+                        size="xs"
+                        label={v.name}
+                        checked={sel.has(v.id)}
+                        onChange={() =>
+                          setValues(
+                            sel.has(v.id)
+                              ? filter.values.filter((x) => x !== v.id)
+                              : [...filter.values, v.id],
+                          )
+                        }
+                        data-testid="pivot-filter-value"
+                      />
+                    ))}
+                    <Checkbox
+                      size="xs"
+                      label={t.pivot.empty}
+                      checked={sel.has('__null')}
+                      onChange={() =>
+                        setValues(
+                          sel.has('__null')
+                            ? filter.values.filter((x) => x !== '__null')
+                            : [...filter.values, '__null'],
+                        )
+                      }
+                    />
+                  </Stack>
+                </ScrollArea>
+              </>
+            )}
+            {tab === 'values' && !dim.hasValues && (
+              <Text size="xs" c="dimmed">
+                {t.pivot.noValues}
+              </Text>
+            )}
+            {tab === 'cond' && (
+              <Stack gap={6}>
+                <Text size="xs" c="dimmed">
+                  {t.pivot.condHint}
+                </Text>
+                <Select
+                  size="xs"
+                  label={t.pivot.condMeasure}
+                  searchable
+                  data={compatible.map((m) => ({ value: m.id, label: m.label }))}
+                  value={filter.measure ?? null}
                   onChange={(v) =>
                     onChange({
-                      ...filter,
-                      measure: undefined,
-                      op: undefined,
-                      value: undefined,
-                      mode: v as 'in' | 'out',
+                      field: filter.field,
+                      mode: 'in',
+                      values: [],
+                      measure: v ?? undefined,
+                      op: filter.op ?? '>',
+                      value: filter.value ?? 0,
                     })
                   }
-                  data={[
-                    { value: 'in', label: t.pivot.filterOnly },
-                    { value: 'out', label: t.pivot.filterExcept },
-                  ]}
+                  data-testid="pivot-cond-measure"
                 />
-              </Group>
-              {dim.map && (
-                <Button
-                  size="compact-xs"
-                  variant="light"
-                  leftSection={<IconMapPin size={14} />}
-                  onClick={onMap}
-                  data-testid="pivot-filter-map"
-                >
-                  {t.pivot.pickOnMap}
-                </Button>
-              )}
-              <TextInput
-                size="xs"
-                leftSection={<IconSearch size={14} />}
-                placeholder={t.search}
-                value={q}
-                onChange={(e) => setQ(e.currentTarget.value)}
-                data-autofocus
-                data-testid="pivot-filter-search"
-              />
-              <Group gap={6} justify="space-between">
-                <Group gap={4}>
+                <Group gap={6} grow>
+                  <Select
+                    size="xs"
+                    data={OPS.map((o) => ({ value: o, label: OP_LABEL[o]! }))}
+                    value={filter.op ?? '>'}
+                    onChange={(v) => onChange({ ...filter, op: v ?? '>' })}
+                    allowDeselect={false}
+                  />
+                  <NumberInput
+                    size="xs"
+                    label=""
+                    value={filter.value ?? 0}
+                    onChange={(v) =>
+                      onChange({ ...filter, value: typeof v === 'number' ? v : Number(v) || 0 })
+                    }
+                    decimalSeparator=","
+                    data-testid="pivot-cond-value"
+                  />
+                </Group>
+                {hasCond && (
                   <Button
                     size="compact-xs"
                     variant="subtle"
-                    onClick={() => setValues([...new Set([...filter.values, ...found.map((v) => v.id)])])}
+                    color="gray"
+                    onClick={() => onChange({ field: filter.field, mode: 'in', values: [] })}
                   >
-                    {t.pivot.selectFound}
+                    {t.pivot.condClear}
                   </Button>
-                  <Button size="compact-xs" variant="subtle" color="gray" onClick={() => setValues([])}>
-                    {t.pivot.clearSel}
+                )}
+                <Group justify="flex-end">
+                  <Button size="compact-xs" onClick={onClose}>
+                    {t.pivot.apply}
                   </Button>
                 </Group>
-                <Text size="xs" c="dimmed">
-                  {t.pivot.shown(shown.length, found.length)}
-                </Text>
-              </Group>
-              <ScrollArea.Autosize mah={280} type="auto">
-                <Stack gap={3}>
-                  {shown.map((v) => (
-                    <Checkbox
-                      key={v.id}
-                      size="xs"
-                      label={v.name}
-                      checked={sel.has(v.id)}
-                      onChange={() =>
-                        setValues(
-                          sel.has(v.id) ? filter.values.filter((x) => x !== v.id) : [...filter.values, v.id],
-                        )
-                      }
-                      data-testid="pivot-filter-value"
-                    />
-                  ))}
-                  <Checkbox
-                    size="xs"
-                    label={t.pivot.empty}
-                    checked={sel.has('__null')}
-                    onChange={() =>
-                      setValues(
-                        sel.has('__null')
-                          ? filter.values.filter((x) => x !== '__null')
-                          : [...filter.values, '__null'],
-                      )
-                    }
-                  />
-                </Stack>
-              </ScrollArea.Autosize>
-            </>
-          )}
-          {tab === 'values' && !dim.hasValues && (
-            <Text size="xs" c="dimmed">
-              {t.pivot.noValues}
-            </Text>
-          )}
-          {tab === 'cond' && (
-            <Stack gap={6}>
-              <Text size="xs" c="dimmed">
-                {t.pivot.condHint}
-              </Text>
-              <Select
-                size="xs"
-                label={t.pivot.condMeasure}
-                searchable
-                data={compatible.map((m) => ({ value: m.id, label: m.label }))}
-                value={filter.measure ?? null}
-                onChange={(v) =>
-                  onChange({
-                    field: filter.field,
-                    mode: 'in',
-                    values: [],
-                    measure: v ?? undefined,
-                    op: filter.op ?? '>',
-                    value: filter.value ?? 0,
-                  })
-                }
-                data-testid="pivot-cond-measure"
-              />
-              <Group gap={6} grow>
-                <Select
-                  size="xs"
-                  data={OPS.map((o) => ({ value: o, label: OP_LABEL[o]! }))}
-                  value={filter.op ?? '>'}
-                  onChange={(v) => onChange({ ...filter, op: v ?? '>' })}
-                  allowDeselect={false}
-                />
-                <NumberInput
-                  size="xs"
-                  label=""
-                  value={filter.value ?? 0}
-                  onChange={(v) => onChange({ ...filter, value: typeof v === 'number' ? v : Number(v) || 0 })}
-                  decimalSeparator=","
-                  data-testid="pivot-cond-value"
-                />
-              </Group>
-              {hasCond && (
-                <Button
-                  size="compact-xs"
-                  variant="subtle"
-                  color="gray"
-                  onClick={() => onChange({ field: filter.field, mode: 'in', values: [] })}
-                >
-                  {t.pivot.condClear}
-                </Button>
-              )}
-            </Stack>
-          )}
+              </Stack>
+            )}
+          </Box>
         </Stack>
       </Popover.Dropdown>
     </Popover>

@@ -35,7 +35,10 @@ test.describe.serial('Ф22: конструктор отчётов', () => {
     // Поле — в строки, показатель — в значения, период — в столбцы.
     await page.getByTestId('pivot-sec-conv').click();
     await drag(page, page.getByTestId('pivot-cat-conv.channel'), page.getByTestId('pivot-zone-rows'));
+    // Д-051: показатели — на своей вкладке каталога.
+    await page.getByTestId('pivot-cat-kind').getByText('Показатели').click();
     await drag(page, page.getByTestId('pivot-cat-conv.count'), page.getByTestId('pivot-zone-values'));
+    await page.getByTestId('pivot-cat-kind').getByText('Поля').click();
     await page.getByTestId('pivot-sec-time').click();
     await drag(page, page.getByTestId('pivot-cat-time.period'), page.getByTestId('pivot-zone-cols'));
     await page.getByTestId('pivot-view-cross').click();
@@ -58,18 +61,25 @@ test.describe.serial('Ф22: конструктор отчётов', () => {
     await expect(table.locator('thead')).toContainText('Предприятие');
 
     // Сравнение с предыдущим периодом — у показателя появляются «сравн.» и «Δ, %».
-    await page.getByTestId('pivot-compare').click();
-    await page.getByRole('option', { name: 'Предыдущим периодом' }).click();
+    // Д-051: «Сравнить» — флажок; строка выбора периода сравнения появляется только при нём.
+    await expect(page.getByTestId('pivot-compare-row')).toHaveCount(0);
+    await page.getByTestId('pivot-compare-on').check();
+    await expect(page.getByTestId('pivot-compare')).toHaveValue('Предыдущим периодом');
     await expect(table.locator('thead')).toContainText('Δ, %');
-    await page.getByTestId('pivot-compare').click();
-    await page.getByRole('option', { name: 'Без сравнения' }).click();
+    await page.getByTestId('pivot-compare-on').uncheck();
+    await expect(page.getByTestId('pivot-compare-row')).toHaveCount(0);
 
     // Фильтр: только «Телефон».
     await drag(page, page.getByTestId('pivot-cat-conv.channel'), page.getByTestId('pivot-zone-filters'));
     await expect(page.getByTestId('pivot-filter')).toBeVisible();
     await page.getByTestId('pivot-filter-search').fill('Телефон');
     await page.getByTestId('pivot-filter').getByText('Телефон', { exact: true }).click();
-    await page.keyboard.press('Escape');
+    // Д-052: окно фильтра целиком в экране; закрывается кнопкой «Применить».
+    const box = await page.getByTestId('pivot-filter').boundingBox();
+    const vp = page.viewportSize()!;
+    expect(box!.y).toBeGreaterThanOrEqual(0);
+    expect(box!.y + box!.height).toBeLessThanOrEqual(vp.height);
+    await page.getByTestId('pivot-filter-apply').click();
     await expect(page.getByTestId('pivot-filter')).toBeHidden();
     await expect(page.getByTestId('pivot-zone-filters')).toContainText('Телефон');
 

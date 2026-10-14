@@ -71,6 +71,8 @@ export interface Config {
   compareTo?: string;
   view: ViewKind;
   subtotals: boolean;
+  /** Длинные подписи в таблице: полностью, сокращать до 25 символов или переносить по 25 (Д-053). */
+  textMode?: 'full' | 'cut' | 'wrap';
   sort?: { col: string; dir: 'asc' | 'desc' } | null;
 }
 

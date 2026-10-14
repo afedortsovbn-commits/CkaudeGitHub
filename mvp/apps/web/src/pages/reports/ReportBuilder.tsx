@@ -8,7 +8,6 @@ import {
   Loader,
   Menu,
   Modal,
-  SegmentedControl,
   Select,
   Stack,
   Text,
@@ -29,6 +28,9 @@ import {
   IconEraser,
   IconFileSpreadsheet,
   IconFolderOpen,
+  IconChevronDown,
+  IconChevronUp,
+  IconTextWrap,
   IconGridDots,
   IconLayoutGrid,
   IconStack2,
@@ -38,6 +40,7 @@ import {
 import { lazy, type ReactNode, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { del, errorText, get, post, postAbortable, postBlob, put } from '../../lib/api';
 import { useAction } from '../../lib/data';
+import { pref } from '../../lib/pref';
 import { t } from '../../lib/i18n';
 import { type DragItem, type DropTarget, PivotDnd } from './pivotDnd';
 import {
@@ -228,6 +231,19 @@ export function ReportBuilder() {
   const [saveOpen, setSaveOpen] = useState(false);
   const [toDelete, setToDelete] = useState<SavedView | null>(null);
   const [excelBusy, setExcelBusy] = useState(false);
+  // Д-051: свернуть каталог и настройки (зоны, период) — больше места таблице; запоминается в браузере.
+  const [catCollapsed, setCatCollapsed] = useState<boolean>(() => pref.get('cc.pivot.catCollapsed', false));
+  const [setupCollapsed, setSetupCollapsed] = useState<boolean>(() =>
+    pref.get('cc.pivot.setupCollapsed', false),
+  );
+  const collapseCat = (v: boolean) => {
+    setCatCollapsed(v);
+    pref.set('cc.pivot.catCollapsed', v);
+  };
+  const collapseSetup = (v: boolean) => {
+    setSetupCollapsed(v);
+    pref.set('cc.pivot.setupCollapsed', v);
+  };
   const abort = useRef<AbortController | null>(null);
   // Окно фильтра, открытое после переноса поля, не закрывается «щелчком снаружи» от того же переноса.
   const openedAt = useRef(0);
@@ -453,8 +469,14 @@ export function ReportBuilder() {
 
   return (
     <PivotDnd onDrop={onDrop}>
-      <div className="pivot-layout">
-        <FieldCatalog catalog={cat} used={used} onAdd={addFromCatalog} />
+      <div className={`pivot-layout${catCollapsed ? ' pivot-layout-mini' : ''}`}>
+        <FieldCatalog
+          catalog={cat}
+          used={used}
+          onAdd={addFromCatalog}
+          collapsed={catCollapsed}
+          onCollapse={collapseCat}
+        />
         <Stack gap={10} style={{ minWidth: 0 }}>
           {/* Действия и вид */}
           <Group justify="space-between" gap="xs">
@@ -565,6 +587,37 @@ export function ReportBuilder() {
                 {t.pivot.clear}
               </Button>
             </Group>
+            <Group gap={6} wrap="nowrap">
+              {/* Д-053: длинные подписи — сокращать, переносить или полностью */}
+              <Tooltip label={t.pivot.textModeHint} withArrow openDelay={200}>
+                <Select
+                  size="xs"
+                  w={136}
+                  leftSection={<IconTextWrap size={14} />}
+                  data={(['full', 'cut', 'wrap'] as const).map((v) => ({
+                    value: v,
+                    label: t.pivot.textModes[v],
+                  }))}
+                  value={cfg.textMode ?? 'full'}
+                  onChange={(v) => set('textMode', (v ?? 'full') as Config['textMode'])}
+                  allowDeselect={false}
+                  aria-label={t.pivot.textModeHint}
+                  data-testid="pivot-text"
+                />
+              </Tooltip>
+              <Tooltip label={setupCollapsed ? t.pivot.setupShow : t.pivot.setupHide} withArrow>
+                <ActionIcon
+                  variant="light"
+                  color="gray"
+                  size="lg"
+                  onClick={() => collapseSetup(!setupCollapsed)}
+                  aria-label={setupCollapsed ? t.pivot.setupShow : t.pivot.setupHide}
+                  data-testid="pivot-setup-toggle"
+                >
+                  {setupCollapsed ? <IconChevronDown size={18} /> : <IconChevronUp size={18} />}
+                </ActionIcon>
+              </Tooltip>
+            </Group>
             <Group gap={2} data-testid="pivot-views">
               {(Object.keys(VIEW_ICONS) as ViewKind[]).map((v) => (
                 <Tooltip key={v} label={t.pivot.views[v]} withArrow openDelay={200}>
@@ -583,98 +636,178 @@ export function ReportBuilder() {
             </Group>
           </Group>
 
-          {/* Период, шаг, сравнение */}
-          <Group gap="xs" align="flex-end">
-            <Select
-              size="xs"
-              w={190}
-              label={t.pivot.period}
-              data={PRESETS.map((p) => ({ value: p, label: t.pivot.presets[p]! }))}
-              value={cfg.preset}
-              placeholder={`${ruDate(cfg.from)} — ${ruDate(cfg.to)}`}
-              onChange={(p) =>
-                update((c) => (p ? { ...c, preset: p, ...presetRange(p) } : { ...c, preset: null }))
-              }
-              clearable
-              data-testid="pivot-preset"
-            />
-            <TextInput
-              size="xs"
-              type="date"
-              label={t.pivot.from}
-              value={cfg.from}
-              onChange={(e) => {
-                const v = e.currentTarget.value;
-                if (v) update((c) => ({ ...c, from: v, preset: null }));
-              }}
-              data-testid="pivot-from"
-            />
-            <TextInput
-              size="xs"
-              type="date"
-              label={t.pivot.to}
-              value={cfg.to}
-              onChange={(e) => {
-                const v = e.currentTarget.value;
-                if (v) update((c) => ({ ...c, to: v, preset: null }));
-              }}
-              data-testid="pivot-to"
-            />
-            <Stack gap={2}>
-              <Text size="xs" fw={500} title={t.pivot.grainHint}>
-                {t.pivot.grain}
-              </Text>
-              <SegmentedControl
-                size="xs"
-                value={cfg.grain}
-                onChange={(v) => set('grain', v as Config['grain'])}
-                data={Object.entries(t.pivot.grains).map(([value, label]) => ({ value, label }))}
-                data-testid="pivot-grain"
-              />
-            </Stack>
-            <Select
-              size="xs"
-              w={230}
-              label={t.pivot.compare}
-              data={Object.entries(t.pivot.compares).map(([value, label]) => ({ value, label }))}
-              value={cfg.compare}
-              onChange={(v) => set('compare', (v ?? 'none') as Config['compare'])}
-              allowDeselect={false}
-              data-testid="pivot-compare"
-            />
-            {cfg.compare === 'custom' && (
-              <>
-                <TextInput
+          {/* Период, шаг, сравнение (Д-051: в одну строку, подписи «с»/«по» слева; сравнение — флажком, своя строка
+              только при включённом сравнении). Свёрнутые настройки — одна строка-сводка. */}
+          {setupCollapsed ? (
+            <button
+              type="button"
+              className="pivot-setup-summary"
+              onClick={() => collapseSetup(false)}
+              title={t.pivot.setupShow}
+              data-testid="pivot-setup-summary"
+            >
+              <span>
+                {ruDate(cfg.from)} — {ruDate(cfg.to)} · {t.pivot.grains[cfg.grain]}
+              </span>
+              {(
+                [
+                  [t.pivot.zoneRows, known.rows.map((id) => dimById.get(id)!.label)],
+                  [t.pivot.zoneCols, known.cols.map((id) => dimById.get(id)!.label)],
+                  [t.pivot.zoneValues, known.values.map((id) => measureById.get(id)!.label)],
+                  [t.pivot.zoneFilters, known.filters.map((f) => dimById.get(f.field)!.label)],
+                ] as const
+              )
+                .filter(([, l]) => l.length > 0)
+                .map(([title, l]) => (
+                  <span key={title}>
+                    <b>{title}:</b> {l.join(', ')}
+                  </span>
+                ))}
+            </button>
+          ) : (
+            <>
+              <Group gap="xs" align="center" wrap="wrap">
+                <Select
                   size="xs"
-                  type="date"
-                  label={t.pivot.from}
-                  value={cfg.compareFrom ?? ''}
-                  onChange={(e) => set('compareFrom', e.currentTarget.value)}
+                  w={170}
+                  aria-label={t.pivot.period}
+                  data={PRESETS.map((p) => ({ value: p, label: t.pivot.presets[p]! }))}
+                  value={cfg.preset}
+                  placeholder={t.pivot.period}
+                  onChange={(p) =>
+                    update((c) => (p ? { ...c, preset: p, ...presetRange(p) } : { ...c, preset: null }))
+                  }
+                  clearable
+                  data-testid="pivot-preset"
                 />
-                <TextInput
+                <Group gap={4} wrap="nowrap">
+                  <Text size="xs">{t.pivot.fromLower}</Text>
+                  <TextInput
+                    size="xs"
+                    type="date"
+                    aria-label={t.pivot.from}
+                    value={cfg.from}
+                    onChange={(e) => {
+                      const v = e.currentTarget.value;
+                      if (v) update((c) => ({ ...c, from: v, preset: null }));
+                    }}
+                    data-testid="pivot-from"
+                  />
+                  <Text size="xs">{t.pivot.toLower}</Text>
+                  <TextInput
+                    size="xs"
+                    type="date"
+                    aria-label={t.pivot.to}
+                    value={cfg.to}
+                    onChange={(e) => {
+                      const v = e.currentTarget.value;
+                      if (v) update((c) => ({ ...c, to: v, preset: null }));
+                    }}
+                    data-testid="pivot-to"
+                  />
+                </Group>
+                <Tooltip label={t.pivot.grainHint} withArrow multiline w={260} openDelay={300}>
+                  <Select
+                    size="xs"
+                    w={110}
+                    aria-label={t.pivot.grain}
+                    data={Object.entries(t.pivot.grains).map(([value, label]) => ({ value, label }))}
+                    value={cfg.grain}
+                    onChange={(v) => v && set('grain', v as Config['grain'])}
+                    allowDeselect={false}
+                    data-testid="pivot-grain"
+                  />
+                </Tooltip>
+                <Checkbox
                   size="xs"
-                  type="date"
-                  label={t.pivot.to}
-                  value={cfg.compareTo ?? ''}
-                  onChange={(e) => set('compareTo', e.currentTarget.value)}
+                  label={t.pivot.compareOn}
+                  checked={cfg.compare !== 'none'}
+                  onChange={(e) => set('compare', e.currentTarget.checked ? 'prev' : 'none')}
+                  data-testid="pivot-compare-on"
                 />
-              </>
-            )}
-            {cmp && cfg.compare !== 'custom' && (
-              <Text size="xs" c="dimmed" pb={6}>
-                {ruDate(cmp.from)} — {ruDate(cmp.to)}
-              </Text>
-            )}
-          </Group>
+              </Group>
+              {cfg.compare !== 'none' && (
+                <Group gap="xs" align="center" className="cc-reveal" data-testid="pivot-compare-row">
+                  <Text size="xs">{t.pivot.compare}</Text>
+                  <Select
+                    size="xs"
+                    w={210}
+                    aria-label={t.pivot.compare}
+                    data={Object.entries(t.pivot.compares)
+                      .filter(([value]) => value !== 'none')
+                      .map(([value, label]) => ({ value, label }))}
+                    value={cfg.compare}
+                    onChange={(v) => v && set('compare', v as Config['compare'])}
+                    allowDeselect={false}
+                    data-testid="pivot-compare"
+                  />
+                  {cfg.compare === 'custom' && (
+                    <Group gap={4} wrap="nowrap">
+                      <Text size="xs">{t.pivot.fromLower}</Text>
+                      <TextInput
+                        size="xs"
+                        type="date"
+                        aria-label={t.pivot.from}
+                        value={cfg.compareFrom ?? ''}
+                        onChange={(e) => set('compareFrom', e.currentTarget.value)}
+                        data-testid="pivot-compare-from"
+                      />
+                      <Text size="xs">{t.pivot.toLower}</Text>
+                      <TextInput
+                        size="xs"
+                        type="date"
+                        aria-label={t.pivot.to}
+                        value={cfg.compareTo ?? ''}
+                        onChange={(e) => set('compareTo', e.currentTarget.value)}
+                        data-testid="pivot-compare-to"
+                      />
+                    </Group>
+                  )}
+                  {cmp && cfg.compare !== 'custom' && (
+                    <Text size="xs" c="dimmed">
+                      {ruDate(cmp.from)} — {ruDate(cmp.to)}
+                    </Text>
+                  )}
+                </Group>
+              )}
+            </>
+          )}
 
-          {/* Зоны */}
-          <div className="pivot-zones">
+          {/* Зоны (Д-051: в одну строку — строки, столбцы, значения, фильтры) */}
+          <div className="pivot-zones" hidden={setupCollapsed}>
+            <ZoneBox
+              zone="rows"
+              title={t.pivot.zoneRows}
+              empty={t.pivot.zoneRowsEmpty}
+              kind="dim"
+              chips={dimChips('rows')}
+              onRemove={(i) => update((c) => ({ ...c, rows: c.rows.filter((_, j) => j !== i) }))}
+            />
+            <ZoneBox
+              zone="cols"
+              title={t.pivot.zoneCols}
+              empty={t.pivot.zoneColsEmpty}
+              kind="dim"
+              chips={dimChips('cols')}
+              onRemove={(i) => update((c) => ({ ...c, cols: c.cols.filter((_, j) => j !== i) }))}
+            />
+            <ZoneBox
+              zone="values"
+              title={t.pivot.zoneValues}
+              empty={t.pivot.zoneValuesEmpty}
+              kind="measure"
+              chips={known.values.map((id) => ({
+                id,
+                label: measureById.get(id)!.label,
+                warn: incompatible(id) ? t.pivot.incompatible : undefined,
+              }))}
+              onRemove={(i) => update((c) => ({ ...c, values: c.values.filter((_, j) => j !== i) }))}
+            />
             <ZoneBox
               zone="filters"
               title={t.pivot.zoneFilters}
               empty={t.pivot.zoneFiltersEmpty}
               kind="dim"
-              wide
               onRemove={(i) => update((c) => ({ ...c, filters: c.filters.filter((_, j) => j !== i) }))}
               chips={known.filters.map((f) => {
                 const dim = dimById.get(f.field)!;
@@ -703,34 +836,6 @@ export function ReportBuilder() {
                   ),
                 };
               })}
-            />
-            <ZoneBox
-              zone="rows"
-              title={t.pivot.zoneRows}
-              empty={t.pivot.zoneRowsEmpty}
-              kind="dim"
-              chips={dimChips('rows')}
-              onRemove={(i) => update((c) => ({ ...c, rows: c.rows.filter((_, j) => j !== i) }))}
-            />
-            <ZoneBox
-              zone="cols"
-              title={t.pivot.zoneCols}
-              empty={t.pivot.zoneColsEmpty}
-              kind="dim"
-              chips={dimChips('cols')}
-              onRemove={(i) => update((c) => ({ ...c, cols: c.cols.filter((_, j) => j !== i) }))}
-            />
-            <ZoneBox
-              zone="values"
-              title={t.pivot.zoneValues}
-              empty={t.pivot.zoneValuesEmpty}
-              kind="measure"
-              chips={known.values.map((id) => ({
-                id,
-                label: measureById.get(id)!.label,
-                warn: incompatible(id) ? t.pivot.incompatible : undefined,
-              }))}
-              onRemove={(i) => update((c) => ({ ...c, values: c.values.filter((_, j) => j !== i) }))}
             />
           </div>
 
@@ -804,7 +909,14 @@ export function ReportBuilder() {
                   />
                 </Suspense>
               ) : (
-                grid && <PivotTable grid={grid} sort={cfg.sort} onSort={(s) => set('sort', s)} />
+                grid && (
+                  <PivotTable
+                    grid={grid}
+                    sort={cfg.sort}
+                    onSort={(s) => set('sort', s)}
+                    textMode={cfg.textMode ?? 'full'}
+                  />
+                )
               )}
             </div>
           )}
