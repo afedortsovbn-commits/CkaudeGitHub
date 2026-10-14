@@ -41,7 +41,11 @@ import { t } from '../lib/i18n';
 export type Block =
   | { type: 'slide'; title?: string }
   | { type: 'intro'; why: string; gains: string[]; assetId?: string; url?: string }
-  | { type: 'cards'; title?: string; items: { icon?: string; title: string; text: string }[] }
+  | {
+      type: 'cards';
+      title?: string;
+      items: { icon?: string; iconAssetId?: string; title: string; text: string }[];
+    }
   | {
       type: 'compare';
       title?: string;
@@ -507,10 +511,16 @@ function BlockView({
                 style={{ animationDelay: `${i * 140}ms` }}
               >
                 <Group gap={8} wrap="nowrap" mb={4}>
-                  {c.icon && (
-                    <Text fz={/^[A-Z]$/.test(c.icon) ? 20 : 22} fw={800} c="violet.7" lh={1}>
-                      {c.icon}
-                    </Text>
+                  {c.iconAssetId ? (
+                    <Box w={36} h={36} style={{ flexShrink: 0 }}>
+                      <AssetImage id={c.iconAssetId} h={36} fit="contain" />
+                    </Box>
+                  ) : (
+                    c.icon && (
+                      <Text fz={/^[A-Z]$/.test(c.icon) ? 20 : 22} fw={800} c="violet.7" lh={1}>
+                        {c.icon}
+                      </Text>
+                    )
                   )}
                   <Text fw={700} size="sm">
                     {c.title}

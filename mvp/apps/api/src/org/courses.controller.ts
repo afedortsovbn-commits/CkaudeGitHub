@@ -56,7 +56,16 @@ const Block = z.discriminatedUnion('type', [
       type: z.literal('cards'),
       title: short.optional(),
       items: z
-        .array(z.object({ icon: z.string().max(8).optional(), title: short, text: para }).strict())
+        .array(
+          z
+            .object({
+              icon: z.string().max(8).optional(),
+              iconAssetId: uuid.optional(),
+              title: short,
+              text: para,
+            })
+            .strict(),
+        )
         .min(1)
         .max(12),
     })
