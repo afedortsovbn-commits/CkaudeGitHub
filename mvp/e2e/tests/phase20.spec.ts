@@ -81,7 +81,8 @@ test.describe.serial('Ф20: обучение сотрудников', () => {
       .filter({ hasText: 'Иванов Пётр' })
       .filter({ hasText: COURSE })
       .first();
-    await expect(row).toContainText('25 %');
+    // Д-040: в курсе 7 уроков — пройден 1 из 7.
+    await expect(row).toContainText('14 %');
     await sup.getByTestId('courses-tab-results').click();
     await expect(sup.getByTestId('course-results')).toContainText('Иванов Пётр');
     await sup.context().close();
