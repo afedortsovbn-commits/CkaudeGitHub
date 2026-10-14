@@ -1961,6 +1961,8 @@ function ConversationCard({ conv }: { conv: Row }) {
                 data={options((dispositions.data ?? []).filter((d) => d.behavior !== 'escalate'))}
                 value={isEscalate ? null : disp}
                 onChange={setDisp}
+                // Список внизу колонки — открывается вверх и поверх всего (не уходит под нижний край).
+                comboboxProps={{ position: 'top', zIndex: 1000 }}
                 data-testid="disposition"
               />
               {isPostponed && (
@@ -2004,6 +2006,7 @@ function ConversationCard({ conv }: { conv: Row }) {
                 onChange={setTo}
                 searchable
                 maxDropdownHeight={360}
+                comboboxProps={{ position: 'top', zIndex: 1000 }}
                 data-testid="conv-transfer-target"
               />
               <Button
