@@ -2302,7 +2302,9 @@ export function WorkspacePage() {
           typingTimer.current = setTimeout(() => setTypingContact(null), 4000);
           return;
         }
-        if (e.type !== 'event' || !e.data) return;
+        // Только события обращений: config.changed и прочие (их бывают сотни при загрузке справочников) не
+        // перечитывают открытое обращение — иначе раскрытые списки в карточке закрываются сами.
+        if (e.type !== 'event' || !e.data?.conversationId) return;
         const id = String(e.data.conversationId);
         void qc.invalidateQueries({
           predicate: (q) =>
