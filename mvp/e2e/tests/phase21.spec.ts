@@ -43,12 +43,21 @@ test.describe.serial('Ф21: нейросеть (заглушка)', () => {
     // Оператор исправляет суть.
     await summary.fill(`Грубость кассира на АЗС №12 ${stamp}`);
     await summary.blur();
+    // Тема — точно «Жалобы на персонал АЗС» (заглушка могла выбрать соседнюю), № АЗС обязателен при закрытии.
+    await page.getByTestId('topic').click();
+    await page.getByRole('option', { name: 'Жалобы на персонал АЗС', exact: true }).first().click();
+    const azs = page.getByRole('textbox', { name: 'Номер АЗС' });
+    // Поля темы появляются после её загрузки.
+    await azs.waitFor({ timeout: 8000 }).catch(() => undefined);
+    if ((await azs.count()) && !(await azs.inputValue())) {
+      await azs.fill('12');
+      await azs.blur();
+    }
     await page.getByTestId('reply').fill('Здравствуйте! Передадим руководству АЗС.');
     await page.getByTestId('send').click();
     await page.getByTestId('mode-close').click();
     await page.getByTestId('disposition').click();
     await page.getByRole('option', { name: 'Решено на 1-й линии' }).click();
-    // Обязательные поля темы (если нейросеть выбрала тему с обязательным № АЗС) — номер уже подставлен.
     await page.getByTestId('close').click();
     await expect(page.getByText('Обращение закрыто.')).toBeVisible({ timeout: 15_000 });
     await client.ctx.close();
@@ -57,9 +66,9 @@ test.describe.serial('Ф21: нейросеть (заглушка)', () => {
     const sup = await browser.newPage({ ignoreHTTPSErrors: true });
     await login(sup, 'supervisor@demo.local', DEMO_PASSWORD);
     await nav(sup, 'Журнал нейросети');
-    const row = sup.getByTestId('ai-row').filter({ hasText: CLIENT });
+    const row = sup.getByTestId('ai-row').filter({ hasText: `Грубость кассира на АЗС №12 ${stamp}` });
     await expect(row.first()).toBeVisible({ timeout: 15_000 });
-    await expect(row.first()).toContainText(`Грубость кассира на АЗС №12 ${stamp}`);
+    await expect(row.first()).toContainText(CLIENT);
     await row.first().getByTestId('ai-review').click();
     await expect(row.first()).toContainText('Просмотрел');
     await sup.context().close();
