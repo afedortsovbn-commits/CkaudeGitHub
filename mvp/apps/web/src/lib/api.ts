@@ -105,6 +105,7 @@ export async function api<T = unknown>(
   path: string,
   body?: unknown,
   retry = true,
+  signal?: AbortSignal,
 ): Promise<T> {
   const send = () =>
     fetch(`/api/v1${path}`, {
@@ -115,6 +116,7 @@ export async function api<T = unknown>(
         ...(accessToken ? { authorization: `Bearer ${accessToken}` } : {}),
       },
       body: body !== undefined ? JSON.stringify(body) : undefined,
+      signal,
     });
   let res: Response;
   try {
@@ -127,7 +129,7 @@ export async function api<T = unknown>(
     res = await send();
   }
   if (res.status === 401 && retry && !path.startsWith('/auth/')) {
-    if (await refreshSession()) return api<T>(method, path, body, false);
+    if (await refreshSession()) return api<T>(method, path, body, false, signal);
     accessToken = null;
     listeners.forEach((l) => l());
   }
@@ -162,4 +164,29 @@ export function errorText(e: unknown): string {
     return d ? `${e.message}: ${d}` : e.message;
   }
   return String(e);
+}
+
+/** POST, который можно отменить (конструктор отчётов: пользователь поменял отчёт — прежний запрос не нужен). */
+export const postAbortable = <T>(p: string, b: unknown, signal: AbortSignal) =>
+  api<T>('POST', p, b, true, signal);
+
+/** POST, ответ которого — файл (выгрузка в Excel): возвращает Blob, ошибка — с текстом сервера. */
+export async function postBlob(path: string, body: unknown): Promise<Blob> {
+  const send = () =>
+    fetch(`/api/v1${path}`, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: {
+        'content-type': 'application/json',
+        ...(accessToken ? { authorization: `Bearer ${accessToken}` } : {}),
+      },
+      body: JSON.stringify(body),
+    });
+  let r = await send();
+  if (r.status === 401 && (await refreshSession())) r = await send();
+  if (!r.ok) {
+    const data = (await r.json().catch(() => ({}))) as Record<string, unknown>;
+    throw new ApiError(r.status, String(data.error ?? 'error'), String(data.message ?? r.statusText));
+  }
+  return r.blob();
 }

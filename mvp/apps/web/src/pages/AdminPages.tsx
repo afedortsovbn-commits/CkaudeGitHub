@@ -463,6 +463,8 @@ export function SettingsPage() {
             ['report.sl_text_s', t.settingsPage.slOtvetVTekstovom, 60],
             ['report.short_abandon_s', t.settingsPage.korotkiySbrosNeSchitaetsya, 5],
             ['report.first_response_s', t.settingsPage.pervyyOtvetVChate, 120],
+            ['report.pivot_warn_s', t.settingsPage.pivotWarnS, 5],
+            ['report.pivot_timeout_s', t.settingsPage.pivotTimeoutS, 60],
           ] as const
         ).map(([k, label, def]) => (
           <NumberInput

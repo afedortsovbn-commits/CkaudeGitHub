@@ -27,6 +27,7 @@ import { demoLogin } from './i18n/demoLogin';
 import { extApps } from './i18n/extApps';
 import { hintPanel } from './i18n/hintPanel';
 import { profilePage } from './i18n/profilePage';
+import { pivot } from './i18n/pivot';
 import { reports } from './i18n/reports';
 import { resources } from './i18n/resources';
 import { schedule } from './i18n/schedule';
@@ -170,6 +171,7 @@ const ru = {
   org,
   privacy,
   profilePage,
+  pivot,
   reports,
   resources,
   schedule,

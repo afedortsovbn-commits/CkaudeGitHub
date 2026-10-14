@@ -1,0 +1,531 @@
+import {
+  ActionIcon,
+  Badge,
+  Button,
+  Checkbox,
+  Group,
+  NumberInput,
+  Popover,
+  ScrollArea,
+  SegmentedControl,
+  Select,
+  Stack,
+  Text,
+  TextInput,
+  Tooltip,
+} from '@mantine/core';
+import { useQuery } from '@tanstack/react-query';
+import {
+  IconCategory2,
+  IconChevronDown,
+  IconChevronRight,
+  IconGripVertical,
+  IconMapPin,
+  IconPlus,
+  IconSearch,
+  IconSum,
+  IconX,
+} from '@tabler/icons-react';
+import { type ReactNode, useMemo, useState } from 'react';
+import { get } from '../../lib/api';
+import { t } from '../../lib/i18n';
+import { type DragItem, useDnd, useDropZone } from './pivotDnd';
+import type { Catalog, DimInfo, Filter, MeasureInfo, Zone } from './pivotModel';
+
+const canon = (s: string) =>
+  s.toLowerCase().replace(new RegExp(String.fromCharCode(0x451), 'g'), String.fromCharCode(0x435));
+
+// ------------------------------------------------------------------ каталог
+
+/**
+ * Каталог слева: разделы свёрнуты, внутри — поля и показатели. Тянуть — мышью за строку или пальцем за ручку;
+ * «+» — добавить без перетаскивания. Поиск раскрывает разделы с совпадениями. Чип, брошенный на каталог, убирается.
+ */
+export function FieldCatalog({
+  catalog,
+  used,
+  onAdd,
+}: {
+  catalog: Catalog;
+  used: Set<string>;
+  onAdd(item: DragItem): void;
+}) {
+  const { start } = useDnd();
+  const drop = useDropZone('catalog', (i) => !!i.from);
+  const [open, setOpen] = useState<Set<string>>(new Set());
+  const [q, setQ] = useState('');
+  const words = canon(q).split(/\s+/).filter(Boolean);
+  const match = (label: string) => words.every((w) => canon(label).includes(w));
+  const sections = catalog.sections
+    .map((s) => ({
+      ...s,
+      dims: catalog.dims.filter((d) => d.section === s.id && match(d.label)),
+      measures: catalog.measures.filter((m) => m.section === s.id && match(m.label)),
+    }))
+    .filter((s) => s.dims.length + s.measures.length > 0);
+  const toggle = (id: string) =>
+    setOpen((o) => {
+      const n = new Set(o);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
+
+  const item = (kind: 'dim' | 'measure', x: DimInfo | MeasureInfo) => {
+    const di: DragItem = { kind, id: x.id, label: x.label };
+    return (
+      <div
+        key={x.id}
+        className={`pivot-item${used.has(x.id) ? ' pivot-used' : ''}`}
+        title={x.hint ?? undefined}
+        onPointerDown={(e) => start(e, di)}
+        data-testid={`pivot-cat-${x.id}`}
+      >
+        <span className="pivot-handle" data-drag-handle>
+          <IconGripVertical size={14} />
+        </span>
+        {kind === 'dim' ? (
+          <IconCategory2 size={14} className="pivot-kind-dim" />
+        ) : (
+          <IconSum size={14} className="pivot-kind-measure" />
+        )}
+        <span>{x.label}</span>
+        <ActionIcon
+          className="pivot-add"
+          size="xs"
+          variant="subtle"
+          data-no-drag
+          aria-label={kind === 'dim' ? t.pivot.addToRows : t.pivot.addToValues}
+          title={kind === 'dim' ? t.pivot.addToRows : t.pivot.addToValues}
+          onClick={() => onAdd(di)}
+        >
+          <IconPlus size={14} />
+        </ActionIcon>
+      </div>
+    );
+  };
+
+  return (
+    <div
+      ref={drop.ref}
+      className={`pivot-catalog${drop.active?.accepted ? ' pivot-catalog-drop' : ''}`}
+      data-testid="pivot-catalog"
+    >
+      <Stack gap={4} p={8} pb={4}>
+        <Text fw={700} size="sm">
+          {t.pivot.catalog}
+        </Text>
+        <TextInput
+          size="xs"
+          leftSection={<IconSearch size={14} />}
+          placeholder={t.pivot.catalogSearch}
+          value={q}
+          onChange={(e) => setQ(e.currentTarget.value)}
+          data-testid="pivot-cat-search"
+        />
+        <Text size="xs" c="dimmed">
+          {t.pivot.catalogHint}
+        </Text>
+      </Stack>
+      <div className="pivot-catalog-list">
+        {sections.length === 0 && (
+          <Text size="sm" c="dimmed" p={8}>
+            {t.pivot.nothingFound}
+          </Text>
+        )}
+        {sections.map((s) => {
+          const isOpen = words.length > 0 || open.has(s.id);
+          return (
+            <div key={s.id}>
+              <button
+                type="button"
+                className="pivot-section-head"
+                onClick={() => toggle(s.id)}
+                data-testid={`pivot-sec-${s.id}`}
+              >
+                {isOpen ? <IconChevronDown size={14} /> : <IconChevronRight size={14} />}
+                <span style={{ flex: 1 }}>{s.label}</span>
+                <Badge size="xs" variant="light" color="gray">
+                  {s.dims.length + s.measures.length}
+                </Badge>
+              </button>
+              {isOpen && (
+                <div className="pivot-section-body">
+                  {s.dims.length > 0 && s.measures.length > 0 && (
+                    <Text size="xs" c="dimmed" fw={600} mt={2}>
+                      {t.pivot.dims}
+                    </Text>
+                  )}
+                  {s.dims.map((d) => item('dim', d))}
+                  {s.dims.length > 0 && s.measures.length > 0 && (
+                    <Text size="xs" c="dimmed" fw={600} mt={4}>
+                      {t.pivot.measures}
+                    </Text>
+                  )}
+                  {s.measures.map((m) => item('measure', m))}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ------------------------------------------------------------------ зоны
+
+export interface ChipView {
+  id: string;
+  label: string;
+  sub?: string;
+  warn?: string;
+  /** Обёртка чипа (например, всплывающее окно фильтра). */
+  wrap?(chip: ReactNode): ReactNode;
+  onClick?(): void;
+}
+
+export function ZoneBox({
+  zone,
+  title,
+  empty,
+  kind,
+  chips,
+  wide,
+  onRemove,
+  extra,
+}: {
+  zone: Zone;
+  title: string;
+  empty: string;
+  kind: 'dim' | 'measure';
+  chips: ChipView[];
+  wide?: boolean;
+  onRemove(index: number): void;
+  extra?: ReactNode;
+}) {
+  const { start } = useDnd();
+  const drop = useDropZone(zone, (i) => i.kind === kind);
+  const ready = drop.dragging && drop.dragging.item.kind === kind;
+  const cls = [
+    'pivot-zone',
+    wide ? 'pivot-zone-wide' : '',
+    ready ? 'pivot-zone-ready' : '',
+    drop.active ? (drop.active.accepted ? 'pivot-zone-over' : 'pivot-zone-bad') : '',
+  ].join(' ');
+  const chipCls =
+    zone === 'values'
+      ? 'pivot-chip pivot-chip-measure'
+      : zone === 'filters'
+        ? 'pivot-chip pivot-chip-filter'
+        : 'pivot-chip';
+  const draggingKey = drop.dragging?.item.from
+    ? `${drop.dragging.item.from.zone}:${drop.dragging.item.from.index}`
+    : null;
+  return (
+    <div className={cls} data-testid={`pivot-zone-${zone}`}>
+      <div className="pivot-zone-title">
+        {title}
+        {drop.active && !drop.active.accepted && (
+          <Text span size="xs" c="red" fw={600} style={{ textTransform: 'none' }}>
+            {kind === 'dim' ? t.pivot.onlyDims : t.pivot.onlyMeasures}
+          </Text>
+        )}
+        {extra}
+      </div>
+      <div ref={drop.ref} className="pivot-zone-chips">
+        {chips.length === 0 && <span className="pivot-zone-empty">{empty}</span>}
+        {chips.map((c, i) => {
+          const key = `${zone}:${i}`;
+          const chip = (
+            <div
+              key={key}
+              data-pivot-chip={key}
+              className={`${chipCls}${c.warn ? ' pivot-chip-warn' : ''}${draggingKey === key ? ' pivot-chip-dragging' : ''}`}
+              title={c.warn ?? undefined}
+              onPointerDown={(e) =>
+                start(e, { kind, id: c.id, label: c.label, from: { zone, index: i } }, c.onClick)
+              }
+              data-testid={`pivot-chip-${zone}-${c.id}`}
+            >
+              <span className="pivot-chip-text">{c.label}</span>
+              {c.sub && <span className="pivot-chip-sub">{c.sub}</span>}
+              <ActionIcon
+                size={18}
+                radius="xl"
+                variant="subtle"
+                color="gray"
+                data-no-drag
+                aria-label={t.pivot.remove}
+                title={t.pivot.remove}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onRemove(i);
+                }}
+              >
+                <IconX size={12} />
+              </ActionIcon>
+            </div>
+          );
+          return c.wrap ? <span key={key}>{c.wrap(chip)}</span> : chip;
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ------------------------------------------------------------------ фильтр
+
+const OPS = ['>', '>=', '<', '<=', '=', '!='];
+const OP_LABEL: Record<string, string> = { '>': '>', '>=': '≥', '<': '<', '<=': '≤', '=': '=', '!=': '≠' };
+
+/** Краткая подпись фильтра на чипе. */
+export function filterSummary(f: Filter, measures: MeasureInfo[]): string {
+  if (f.measure && f.op && f.value !== undefined) {
+    const m = measures.find((x) => x.id === f.measure);
+    return `${m?.label ?? f.measure} ${OP_LABEL[f.op] ?? f.op} ${f.value.toLocaleString('ru-RU')}`;
+  }
+  if (!f.values.length) return t.pivot.summaryAll;
+  if (f.values.length === 1 && f.labels?.[0])
+    return f.mode === 'out' ? `${t.pivot.summaryOut(1)}: ${f.labels[0]}` : f.labels[0];
+  return f.mode === 'out' ? t.pivot.summaryOut(f.values.length) : t.pivot.summaryIn(f.values.length);
+}
+
+/** Окно фильтра: галочки значений с поиском («только» / «кроме»), выбор на карте, условие по показателю. */
+export function FilterPopover({
+  dim,
+  filter,
+  measures,
+  opened,
+  onClose,
+  onChange,
+  onMap,
+  children,
+}: {
+  dim: DimInfo;
+  filter: Filter;
+  measures: MeasureInfo[];
+  opened: boolean;
+  onClose(): void;
+  onChange(f: Filter): void;
+  onMap(): void;
+  children: ReactNode;
+}) {
+  const hasCond = !!filter.measure;
+  const [tab, setTab] = useState<'values' | 'cond'>(hasCond || !dim.hasValues ? 'cond' : 'values');
+  const [q, setQ] = useState('');
+  const values = useQuery({
+    queryKey: ['pivot-values', dim.id],
+    queryFn: () =>
+      get<{ id: string; name: string }[]>(`/reports/pivot/values?field=${encodeURIComponent(dim.id)}`),
+    enabled: opened && dim.hasValues,
+    staleTime: 5 * 60_000,
+  });
+  const words = canon(q).split(/\s+/).filter(Boolean);
+  const found = useMemo(
+    () => (values.data ?? []).filter((v) => words.every((w) => canon(v.name).includes(w))),
+    [values.data, q],
+  );
+  const shown = found.slice(0, 300);
+  const sel = new Set(filter.values);
+  const names = new Map((values.data ?? []).map((v) => [v.id, v.name]));
+  const setValues = (ids: string[]) =>
+    onChange({
+      field: filter.field,
+      mode: filter.mode,
+      values: ids,
+      labels: ids.map((id) => names.get(id) ?? filter.labels?.[filter.values.indexOf(id)] ?? id),
+    });
+  const compatible = measures.filter((m) => dim.facts.includes(m.fact));
+
+  return (
+    <Popover
+      opened={opened}
+      onClose={onClose}
+      width={430}
+      position="bottom-start"
+      shadow="md"
+      trapFocus={false}
+      withinPortal
+    >
+      <Popover.Target>{children}</Popover.Target>
+      <Popover.Dropdown data-testid="pivot-filter">
+        <Stack gap={8}>
+          <Group justify="space-between" wrap="nowrap">
+            <Text fw={700} size="sm">
+              {dim.label}
+            </Text>
+            <ActionIcon size="sm" variant="subtle" onClick={onClose} aria-label={t.cancel}>
+              <IconX size={14} />
+            </ActionIcon>
+          </Group>
+          <SegmentedControl
+            size="xs"
+            fullWidth
+            value={tab}
+            onChange={(v) => setTab(v as 'values' | 'cond')}
+            data={[
+              { value: 'values', label: t.pivot.filterValues, disabled: !dim.hasValues },
+              { value: 'cond', label: t.pivot.filterCondition },
+            ]}
+          />
+          {tab === 'values' && (
+            <>
+              <Group gap={6} wrap="nowrap">
+                <SegmentedControl
+                  size="xs"
+                  value={filter.mode}
+                  onChange={(v) =>
+                    onChange({
+                      ...filter,
+                      measure: undefined,
+                      op: undefined,
+                      value: undefined,
+                      mode: v as 'in' | 'out',
+                    })
+                  }
+                  data={[
+                    { value: 'in', label: t.pivot.filterOnly },
+                    { value: 'out', label: t.pivot.filterExcept },
+                  ]}
+                />
+              </Group>
+              {dim.map && (
+                <Button
+                  size="compact-xs"
+                  variant="light"
+                  leftSection={<IconMapPin size={14} />}
+                  onClick={onMap}
+                  data-testid="pivot-filter-map"
+                >
+                  {t.pivot.pickOnMap}
+                </Button>
+              )}
+              <TextInput
+                size="xs"
+                leftSection={<IconSearch size={14} />}
+                placeholder={t.search}
+                value={q}
+                onChange={(e) => setQ(e.currentTarget.value)}
+                data-autofocus
+                data-testid="pivot-filter-search"
+              />
+              <Group gap={6} justify="space-between">
+                <Group gap={4}>
+                  <Button
+                    size="compact-xs"
+                    variant="subtle"
+                    onClick={() => setValues([...new Set([...filter.values, ...found.map((v) => v.id)])])}
+                  >
+                    {t.pivot.selectFound}
+                  </Button>
+                  <Button size="compact-xs" variant="subtle" color="gray" onClick={() => setValues([])}>
+                    {t.pivot.clearSel}
+                  </Button>
+                </Group>
+                <Text size="xs" c="dimmed">
+                  {t.pivot.shown(shown.length, found.length)}
+                </Text>
+              </Group>
+              <ScrollArea.Autosize mah={280} type="auto">
+                <Stack gap={3}>
+                  {shown.map((v) => (
+                    <Checkbox
+                      key={v.id}
+                      size="xs"
+                      label={v.name}
+                      checked={sel.has(v.id)}
+                      onChange={() =>
+                        setValues(
+                          sel.has(v.id) ? filter.values.filter((x) => x !== v.id) : [...filter.values, v.id],
+                        )
+                      }
+                      data-testid="pivot-filter-value"
+                    />
+                  ))}
+                  <Checkbox
+                    size="xs"
+                    label={t.pivot.empty}
+                    checked={sel.has('__null')}
+                    onChange={() =>
+                      setValues(
+                        sel.has('__null')
+                          ? filter.values.filter((x) => x !== '__null')
+                          : [...filter.values, '__null'],
+                      )
+                    }
+                  />
+                </Stack>
+              </ScrollArea.Autosize>
+            </>
+          )}
+          {tab === 'values' && !dim.hasValues && (
+            <Text size="xs" c="dimmed">
+              {t.pivot.noValues}
+            </Text>
+          )}
+          {tab === 'cond' && (
+            <Stack gap={6}>
+              <Text size="xs" c="dimmed">
+                {t.pivot.condHint}
+              </Text>
+              <Select
+                size="xs"
+                label={t.pivot.condMeasure}
+                searchable
+                data={compatible.map((m) => ({ value: m.id, label: m.label }))}
+                value={filter.measure ?? null}
+                onChange={(v) =>
+                  onChange({
+                    field: filter.field,
+                    mode: 'in',
+                    values: [],
+                    measure: v ?? undefined,
+                    op: filter.op ?? '>',
+                    value: filter.value ?? 0,
+                  })
+                }
+                data-testid="pivot-cond-measure"
+              />
+              <Group gap={6} grow>
+                <Select
+                  size="xs"
+                  data={OPS.map((o) => ({ value: o, label: OP_LABEL[o]! }))}
+                  value={filter.op ?? '>'}
+                  onChange={(v) => onChange({ ...filter, op: v ?? '>' })}
+                  allowDeselect={false}
+                />
+                <NumberInput
+                  size="xs"
+                  label=""
+                  value={filter.value ?? 0}
+                  onChange={(v) => onChange({ ...filter, value: typeof v === 'number' ? v : Number(v) || 0 })}
+                  decimalSeparator=","
+                  data-testid="pivot-cond-value"
+                />
+              </Group>
+              {hasCond && (
+                <Button
+                  size="compact-xs"
+                  variant="subtle"
+                  color="gray"
+                  onClick={() => onChange({ field: filter.field, mode: 'in', values: [] })}
+                >
+                  {t.pivot.condClear}
+                </Button>
+              )}
+            </Stack>
+          )}
+        </Stack>
+      </Popover.Dropdown>
+    </Popover>
+  );
+}
+
+export function IconHint({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <Tooltip label={label} withArrow openDelay={300}>
+      <span>{children}</span>
+    </Tooltip>
+  );
+}

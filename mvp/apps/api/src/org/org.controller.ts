@@ -148,6 +148,9 @@ const SETTINGS: Record<string, z.ZodTypeAny> = {
   'report.sl_text_s': z.number().int().min(1).max(86400),
   'report.short_abandon_s': z.number().int().min(0).max(600),
   'report.first_response_s': z.number().int().min(1).max(86400),
+  // Д-041: конструктор отчётов — с какого примерного времени спрашивать подтверждение и предел времени отчёта.
+  'report.pivot_warn_s': z.number().min(1).max(600),
+  'report.pivot_timeout_s': z.number().int().min(5).max(600),
   // Ф12 (В-51): параметры расчёта SL — порог по очереди (id очереди → голос/текст, пусто — общий), учёт коротких
   // сбросов и возвратов в IVR/бот в знаменателе, постановка после перевода — новое поступление.
   'report.sl_queue_thresholds': z.record(

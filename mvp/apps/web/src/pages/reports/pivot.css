@@ -1,0 +1,337 @@
+/* Д-041. Конструктор отчётов: каталог, зоны, чипы, перетаскивание, таблица. */
+
+.pivot-layout {
+  display: grid;
+  grid-template-columns: 290px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+@media (max-width: 900px) {
+  .pivot-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* ---- каталог ---- */
+.pivot-catalog {
+  position: sticky;
+  top: 8px;
+  max-height: calc(100vh - 96px);
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--mantine-color-gray-3);
+  border-radius: 8px;
+  background: var(--mantine-color-body);
+  overflow: hidden;
+}
+.pivot-catalog.pivot-catalog-drop {
+  outline: 2px dashed var(--mantine-color-red-4);
+  outline-offset: -2px;
+}
+.pivot-catalog-list {
+  overflow-y: auto;
+  padding: 4px 6px 8px;
+}
+.pivot-section-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 6px 6px;
+  border: 0;
+  background: transparent;
+  border-radius: 6px;
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+  color: inherit;
+  text-align: left;
+}
+.pivot-section-head:hover {
+  background: var(--mantine-color-gray-1);
+}
+.pivot-section-body {
+  padding: 2px 0 6px 10px;
+  animation: pivot-fade-in 0.15s ease;
+}
+@keyframes pivot-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.pivot-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 6px;
+  margin: 1px 0;
+  border-radius: 6px;
+  font-size: 13px;
+  line-height: 1.25;
+  cursor: grab;
+  user-select: none;
+  border: 1px solid transparent;
+}
+.pivot-item:hover {
+  background: var(--mantine-color-gray-0);
+  border-color: var(--mantine-color-gray-3);
+}
+.pivot-item.pivot-used {
+  color: var(--mantine-color-dimmed);
+}
+.pivot-item .pivot-add {
+  margin-left: auto;
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+.pivot-item:hover .pivot-add {
+  opacity: 1;
+}
+.pivot-handle {
+  touch-action: none;
+  display: inline-flex;
+  color: var(--mantine-color-gray-5);
+  cursor: grab;
+}
+.pivot-kind-dim {
+  color: var(--mantine-color-blue-7);
+}
+.pivot-kind-measure {
+  color: var(--mantine-color-teal-7);
+}
+
+/* ---- зоны ---- */
+.pivot-zones {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+.pivot-zone {
+  border: 1px dashed var(--mantine-color-gray-4);
+  border-radius: 8px;
+  padding: 4px 8px 8px;
+  min-height: 62px;
+  background: var(--mantine-color-gray-0);
+  transition:
+    background 0.12s,
+    border-color 0.12s;
+}
+.pivot-zone-wide {
+  grid-column: 1 / -1;
+}
+.pivot-zone.pivot-zone-ready {
+  border-color: var(--mantine-color-blue-4);
+}
+.pivot-zone.pivot-zone-over {
+  border-style: solid;
+  border-color: var(--mantine-color-blue-6);
+  background: var(--mantine-color-blue-0);
+}
+.pivot-zone.pivot-zone-bad {
+  border-style: solid;
+  border-color: var(--mantine-color-red-5);
+  background: var(--mantine-color-red-0);
+}
+.pivot-zone-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--mantine-color-dimmed);
+  margin-bottom: 4px;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.pivot-zone-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-height: 30px;
+  align-items: center;
+}
+.pivot-zone-empty {
+  font-size: 12px;
+  color: var(--mantine-color-dimmed);
+}
+.pivot-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  padding: 3px 4px 3px 8px;
+  border-radius: 14px;
+  font-size: 13px;
+  border: 1px solid var(--mantine-color-blue-3);
+  background: var(--mantine-color-blue-0);
+  color: var(--mantine-color-blue-9);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  transition:
+    transform 0.08s ease,
+    opacity 0.12s;
+}
+.pivot-chip:active {
+  transform: scale(0.97);
+}
+.pivot-chip-measure {
+  border-color: var(--mantine-color-teal-3);
+  background: var(--mantine-color-teal-0);
+  color: var(--mantine-color-teal-9);
+}
+.pivot-chip-filter {
+  border-color: var(--mantine-color-orange-3);
+  background: var(--mantine-color-orange-0);
+  color: var(--mantine-color-orange-9);
+}
+.pivot-chip-warn {
+  border-color: var(--mantine-color-red-4);
+  background: var(--mantine-color-red-0);
+}
+.pivot-chip.pivot-chip-dragging {
+  opacity: 0.35;
+}
+.pivot-chip-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pivot-chip-sub {
+  font-size: 11px;
+  opacity: 0.75;
+  white-space: nowrap;
+}
+
+.pivot-ghost {
+  position: fixed;
+  z-index: 10000;
+  pointer-events: none;
+  padding: 4px 10px;
+  border-radius: 14px;
+  font-size: 13px;
+  background: var(--mantine-color-blue-6);
+  color: white;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.25);
+  white-space: nowrap;
+}
+.pivot-ghost-measure {
+  background: var(--mantine-color-teal-6);
+}
+.pivot-ghost-bad {
+  background: var(--mantine-color-red-6);
+}
+.pivot-insert-bar {
+  position: fixed;
+  z-index: 9999;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--mantine-color-blue-6);
+  pointer-events: none;
+  box-shadow: 0 0 0 2px rgba(34, 139, 230, 0.2);
+}
+
+/* ---- таблица ---- */
+.pivot-table-wrap {
+  overflow: auto;
+  max-height: calc(100vh - 260px);
+  border: 1px solid var(--mantine-color-gray-3);
+  border-radius: 8px;
+}
+.pivot-table {
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 13px;
+  min-width: 100%;
+}
+.pivot-table th,
+.pivot-table td {
+  padding: 5px 10px;
+  border-bottom: 1px solid var(--mantine-color-gray-2);
+  border-right: 1px solid var(--mantine-color-gray-2);
+  white-space: nowrap;
+}
+.pivot-table thead th {
+  position: sticky;
+  background: var(--mantine-color-gray-1);
+  z-index: 2;
+  font-weight: 600;
+  text-align: center;
+}
+.pivot-table thead th.pivot-sortable {
+  cursor: pointer;
+}
+.pivot-table thead th.pivot-sortable:hover {
+  background: var(--mantine-color-gray-2);
+}
+.pivot-table th.pivot-rowhead {
+  text-align: left;
+  left: 0;
+  z-index: 3;
+}
+.pivot-table td.pivot-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.pivot-table td.pivot-label {
+  background: var(--mantine-color-body);
+}
+.pivot-table tr.pivot-group td {
+  font-weight: 600;
+  background: var(--mantine-color-gray-0);
+}
+.pivot-table tr.pivot-total td {
+  font-weight: 700;
+  background: var(--mantine-color-gray-1);
+  position: sticky;
+  bottom: 0;
+}
+.pivot-table tr.pivot-leaf:hover td {
+  background: var(--mantine-color-blue-0);
+}
+.pivot-table td.pivot-subtotal-col {
+  background: var(--mantine-color-gray-0);
+  font-weight: 600;
+}
+.pivot-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+.pivot-delta-up {
+  color: var(--mantine-color-green-8);
+}
+.pivot-delta-down {
+  color: var(--mantine-color-red-8);
+}
+.pivot-busy {
+  transition: opacity 0.15s;
+}
+.pivot-busy.pivot-busy-on {
+  opacity: 0.55;
+}
+
+/* ---- карта ---- */
+.pivot-map {
+  height: 62vh;
+  border-radius: 8px;
+  overflow: hidden;
+}
+.pivot-map.pivot-map-lasso {
+  cursor: crosshair;
+}
+.pivot-map-list {
+  height: 62vh;
+  overflow-y: auto;
+}

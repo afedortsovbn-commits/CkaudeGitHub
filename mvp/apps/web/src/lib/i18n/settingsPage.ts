@@ -30,6 +30,8 @@ export const settingsPage = {
   podsvechivatPereryvOperatoraDolshe: 'Подсвечивать перерыв оператора дольше, с',
   tselSlZaSegodnya: 'Цель SL за сегодня, %',
   slOtvetNaZvonok: 'SL: ответ на звонок в пределах, с',
+  pivotWarnS: 'Конструктор отчётов: предупреждать, если отчёт строится дольше, с',
+  pivotTimeoutS: 'Конструктор отчётов: останавливать отчёт через, с',
   slOtvetVTekstovom: 'SL: ответ в текстовом канале в пределах, с',
   korotkiySbrosNeSchitaetsya: 'Короткий сброс (не считается пропущенным), с',
   pervyyOtvetVChate: 'Первый ответ в чате вовремя, с',

@@ -78,6 +78,8 @@ async function handle(
 
 async function openReport(page: Page, title: string, group?: string) {
   await nav(page, 'Отчёты');
+  // Д-041: в разделе две вкладки — «Конструктор» и «Готовые отчёты».
+  await page.getByTestId('reports-tab-ready').click();
   await choose(page, 'report-kind', title);
   if (group) await choose(page, 'report-group', group);
   await expect(page.getByTestId('report-table')).toBeVisible();

@@ -1,5 +1,6 @@
 import {
   Alert,
+  Tabs,
   Button,
   Chip,
   Group,
@@ -16,6 +17,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import { authBlobUrl, errorText, get } from '../lib/api';
 import { t } from '../lib/i18n';
+import { ReportBuilder } from './reports/ReportBuilder';
 
 interface CatalogItem {
   kind: string;
@@ -104,7 +106,7 @@ function cell(v: unknown, type: Column['type']): string {
  * тема/подтема, объект, оператор, ответственный/куратор, «Особо важные»), таблица и выгрузка CSV.
  * Данные ограничены областью видимости сотрудника — это делает сервер.
  */
-export function ReportsPage() {
+function ReadyReports() {
   const catalog = useQuery({ queryKey: ['/reports'], queryFn: () => get<CatalogItem[]>('/reports') });
   const options = useQuery({
     queryKey: ['/reports/options'],
@@ -278,5 +280,45 @@ export function ReportsPage() {
         </>
       )}
     </Stack>
+  );
+}
+
+const TAB_KEY = 'cc.reports.tab';
+
+/** Раздел «Отчёты»: конструктор (Д-041) и готовые отчёты M-REP-03. Последняя вкладка запоминается. */
+export function ReportsPage() {
+  const [tab, setTab] = useState<string>(() => {
+    try {
+      return localStorage.getItem(TAB_KEY) ?? 'builder';
+    } catch {
+      return 'builder';
+    }
+  });
+  const change = (v: string | null) => {
+    if (!v) return;
+    setTab(v);
+    try {
+      localStorage.setItem(TAB_KEY, v);
+    } catch {
+      /* хранилище недоступно */
+    }
+  };
+  return (
+    <Tabs value={tab} onChange={change} keepMounted={false}>
+      <Tabs.List mb="sm">
+        <Tabs.Tab value="builder" data-testid="reports-tab-builder">
+          {t.pivot.tabBuilder}
+        </Tabs.Tab>
+        <Tabs.Tab value="ready" data-testid="reports-tab-ready">
+          {t.pivot.tabReady}
+        </Tabs.Tab>
+      </Tabs.List>
+      <Tabs.Panel value="builder">
+        <ReportBuilder />
+      </Tabs.Panel>
+      <Tabs.Panel value="ready">
+        <ReadyReports />
+      </Tabs.Panel>
+    </Tabs>
   );
 }
