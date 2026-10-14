@@ -24,6 +24,7 @@ import {
   Text,
   Textarea,
   TextInput,
+  Modal,
   Title,
   Tooltip,
 } from '@mantine/core';
@@ -1321,7 +1322,13 @@ function StationPicker({
   );
 }
 
-function ConversationCard({ conv }: { conv: Row }) {
+function ConversationCard({
+  conv,
+  onDone,
+}: {
+  conv: Row;
+  /** Итог подведён — вернуться к списку. */ onDone?(): void;
+}) {
   const topics = useList('/topics');
   const tags = useList('/dict/tags');
   const dispositions = useList('/dict/dispositions');
@@ -1358,6 +1365,16 @@ function ConversationCard({ conv }: { conv: Row }) {
   // Итог обращения (Д-033): завершить, переадресовать или передать на 2-ю линию — кнопками внизу карточки.
   const [mode, setMode] = useState<'close' | 'transfer' | 'escalate'>('close');
   useEffect(() => setMode('close'), [conv.id]);
+  // Переадресация и передача на 2-ю линию — в отдельном окне поверх карточки (Д-049); «Завершить» — в карточке.
+  const dialogMode = mode === 'transfer' || mode === 'escalate' ? mode : null;
+  const closeDialog = () => {
+    setMode('close');
+    if (isEscalate) setDisp(null);
+  };
+  const finished = () => {
+    setMode('close');
+    onDone?.();
+  };
   const req = useRequired();
   useEffect(() => req.reset(), [conv.id]);
   // Похожие обращения (Д-019): совпадение полей темы с отметкой «проверять на повтор» — предупреждение оператору.
@@ -1799,20 +1816,22 @@ function ConversationCard({ conv }: { conv: Row }) {
         style={!conv.topicId && !closed ? { borderColor: 'var(--mantine-color-blue-4)' } : undefined}
       >
         <Stack gap={6}>
-          {!closed && (
-            <Group justify="flex-end" mb={-28} style={{ position: 'relative', zIndex: 1 }}>
-              <Tooltip label={t.ai.fillHint} withArrow multiline w={260}>
-                <Button
-                  size="compact-xs"
+          {/* Д-049: значок в строке подписи темы (надпись налезала на подпись в узкой колонке); после передачи на
+              2-ю линию карточка не правится — значка нет. */}
+          {!closed && conv.status !== 'waiting_2nd_line' && (
+            <Group justify="flex-end" mb={-26} style={{ position: 'relative', zIndex: 1 }}>
+              <Tooltip label={`${t.ai.fillBtn}. ${t.ai.fillHint}`} withArrow multiline w={260}>
+                <ActionIcon
+                  size="md"
                   variant="light"
                   color="violet"
-                  leftSection={<IconSparkles size={14} />}
                   loading={aiFill.isPending}
                   onClick={() => aiFill.mutate()}
+                  aria-label={t.ai.fillBtn}
                   data-testid="ai-fill"
                 >
-                  {t.ai.fillBtn}
-                </Button>
+                  <IconSparkles size={16} />
+                </ActionIcon>
               </Tooltip>
             </Group>
           )}
@@ -1957,7 +1976,7 @@ function ConversationCard({ conv }: { conv: Row }) {
               </Button>
             )}
           </Group>
-          {mode === 'close' && (
+          {(mode === 'close' || dialogMode) && (
             <Box mt="xs" className="cc-reveal" key="close">
               <Select
                 size="sm"
@@ -1988,77 +2007,87 @@ function ConversationCard({ conv }: { conv: Row }) {
                 fullWidth
                 color="green"
                 disabled={!disp || isEscalate || tagMissing}
-                onClick={() => req.check(missingFor(false)) && close.mutate(undefined)}
+                onClick={() =>
+                  req.check(missingFor(false)) && close.mutate(undefined, { onSuccess: finished })
+                }
                 data-testid="close"
               >
                 {t.workspace.zavershitObrashchenie}
               </Button>
             </Box>
           )}
-          {mode === 'transfer' && (
-            <Box mt="xs" className="cc-reveal" key="transfer">
-              <Select
-                size="xs"
-                label={t.workspace.peredat}
-                data={[
-                  ...operatorGroups(operators.data, 'u:'),
-                  {
-                    group: t.workspace.vOchered,
-                    items: (queues.data ?? []).map((q) => ({ value: `q:${q.id}`, label: String(q.name) })),
-                  },
-                ]}
-                value={to}
-                onChange={setTo}
-                searchable
-                maxDropdownHeight={360}
-                comboboxProps={{ position: 'top', zIndex: 1000 }}
-                data-testid="conv-transfer-target"
-              />
-              <Button
-                size="xs"
-                mt="xs"
-                fullWidth
-                disabled={!to}
-                onClick={() => transfer.mutate(undefined)}
-                data-testid="conv-transfer"
-              >
-                {t.workspace.peredatSKontekstom}
-              </Button>
-            </Box>
-          )}
-          {mode === 'escalate' && escalateDisp && (
-            <Box mt="xs" className="cc-reveal" key="escalate">
-              {/* «Особо важное» и «Срочное» — для 2-й линии: оператор отмечает их при передаче. */}
-              <Box data-testid="escalate-toggle-box" mb="xs">
-                <Text size="xs" c="dimmed" mb={4}>
-                  {t.workspace.escalateFlags}
-                </Text>
-                <Group gap="lg">
-                  <Switch
-                    size="sm"
-                    color="red"
-                    label={t.workspace.osoboVazhnoe2}
-                    checked={!!conv.isImportant}
-                    onChange={(e) => upd.mutate({ isImportant: e.currentTarget.checked })}
-                    data-testid="esc-important"
-                  />
-                  <Switch
-                    size="sm"
-                    color="red"
-                    label={t.workspace.srochnoe2}
-                    checked={!!conv.isUrgent}
-                    onChange={(e) => upd.mutate({ isUrgent: e.currentTarget.checked })}
-                    data-testid="esc-urgent"
-                  />
-                </Group>
+          <Modal
+            opened={!!dialogMode}
+            onClose={closeDialog}
+            size={dialogMode === 'escalate' ? 'lg' : 'md'}
+            title={dialogMode === 'escalate' ? t.workspace.modeEscalate : t.workspace.modeTransfer}
+            data-testid="finish-dialog"
+          >
+            {mode === 'transfer' && (
+              <Box key="transfer">
+                <Select
+                  size="xs"
+                  label={t.workspace.peredat}
+                  data={[
+                    ...operatorGroups(operators.data, 'u:'),
+                    {
+                      group: t.workspace.vOchered,
+                      items: (queues.data ?? []).map((q) => ({ value: `q:${q.id}`, label: String(q.name) })),
+                    },
+                  ]}
+                  value={to}
+                  onChange={setTo}
+                  searchable
+                  maxDropdownHeight={360}
+                  comboboxProps={{ zIndex: 1000 }}
+                  data-testid="conv-transfer-target"
+                />
+                <Button
+                  size="xs"
+                  mt="xs"
+                  fullWidth
+                  disabled={!to}
+                  onClick={() => transfer.mutate(undefined, { onSuccess: finished })}
+                  data-testid="conv-transfer"
+                >
+                  {t.workspace.peredatSKontekstom}
+                </Button>
               </Box>
-              <EscalateForm
-                conv={conv}
-                precheck={() => !tagMissing && req.check(missingFor(true))}
-                onDone={() => setMode('close')}
-              />
-            </Box>
-          )}
+            )}
+            {mode === 'escalate' && escalateDisp && (
+              <Box key="escalate">
+                {/* «Особо важное» и «Срочное» — для 2-й линии: оператор отмечает их при передаче. */}
+                <Box data-testid="escalate-toggle-box" mb="xs">
+                  <Text size="xs" c="dimmed" mb={4}>
+                    {t.workspace.escalateFlags}
+                  </Text>
+                  <Group gap="lg">
+                    <Switch
+                      size="sm"
+                      color="red"
+                      label={t.workspace.osoboVazhnoe2}
+                      checked={!!conv.isImportant}
+                      onChange={(e) => upd.mutate({ isImportant: e.currentTarget.checked })}
+                      data-testid="esc-important"
+                    />
+                    <Switch
+                      size="sm"
+                      color="red"
+                      label={t.workspace.srochnoe2}
+                      checked={!!conv.isUrgent}
+                      onChange={(e) => upd.mutate({ isUrgent: e.currentTarget.checked })}
+                      data-testid="esc-urgent"
+                    />
+                  </Group>
+                </Box>
+                <EscalateForm
+                  conv={conv}
+                  precheck={() => !tagMissing && req.check(missingFor(true))}
+                  onDone={finished}
+                />
+              </Box>
+            )}
+          </Modal>
         </Paper>
       )}
     </Stack>
@@ -2812,7 +2841,7 @@ export function WorkspacePage() {
             </Tabs.List>
             <ScrollArea h="calc(100vh - 140px)" type="auto" offsetScrollbars>
               <Tabs.Panel value="card">
-                <ConversationCard conv={conv.data} />
+                <ConversationCard conv={conv.data} onDone={closeConv} />
               </Tabs.Panel>
               <Tabs.Panel value="contact">
                 <ContactCard conv={conv.data} onOpen={setSelected} />

@@ -85,10 +85,13 @@ test.describe.serial('Ф7: автоответы, бот, подсказки, ш�
     await page.getByTestId('disposition').click();
     await page.getByRole('option', { name: 'Решено на 1-й линии' }).click();
     await page.getByTestId('close').click();
-    await expect(page.getByText('Обращение закрыто.')).toBeVisible();
+    await expect(page.getByText('Обращение закрыто', { exact: true }).first()).toBeVisible();
     await expect(client.w.getByTestId('cc-csat')).toBeVisible({ timeout: 10000 });
     await client.w.getByTestId('cc-csat-5').click();
     await expect(client.w.getByText('Спасибо за оценку!')).toBeVisible();
+    // Д-049: после закрытия — список на всю ширину; оценку видно, открыв обращение среди закрытых.
+    await listView(page, 'closed');
+    await page.getByTestId('conv-item').filter({ hasText: name }).first().click();
     await expect(page.getByTestId('chat-csat')).toContainText('Оценка клиента: 5 из 5', { timeout: 10000 });
     await client.ctx.close();
   });

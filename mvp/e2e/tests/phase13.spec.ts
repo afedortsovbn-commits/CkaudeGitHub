@@ -120,7 +120,7 @@ test.describe.serial('Ф13: отзывы с карт (Rocket Data) и синхр
     await station.blur();
     await choose(op, 'disposition', 'Решено на 1-й линии');
     await op.getByTestId('close').click();
-    await expect(op.getByText('Обращение закрыто.')).toBeVisible();
+    await expect(op.getByText('Обращение закрыто', { exact: true }).first()).toBeVisible();
 
     // Повторная передача того же отзыва (Rocket Data повторила запрос) — 200, без дубля: обращение одно.
     expect((await push(review)).status).toBe(200);

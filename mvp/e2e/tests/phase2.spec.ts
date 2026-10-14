@@ -75,7 +75,7 @@ test.describe.serial('Ф2: чат на сайте → оператор', () => {
     await page.getByRole('option', { name: 'Сайт', exact: true }).click();
     await expect(page.getByTestId('topic-full')).toContainText('Сайт');
     await page.getByTestId('close').click();
-    await expect(page.getByText('Обращение закрыто.')).toBeVisible();
+    await expect(page.getByText('Обращение закрыто', { exact: true }).first()).toBeVisible();
     await expect(client.w.locator('.m.system').filter({ hasText: 'Диалог завершён' })).toBeVisible();
     await expect(client.w.getByText('Заметка для коллег')).toHaveCount(0);
 

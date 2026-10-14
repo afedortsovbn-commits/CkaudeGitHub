@@ -67,13 +67,15 @@ async function handle(
     await expect(op.getByTestId('escalate-toggle-box').getByText('Особо важное')).toBeVisible();
     await op.getByTestId('esc-important').click({ force: true });
     await expect(op.getByTestId('esc-important')).toBeChecked();
-    await op.getByTestId('mode-close').click();
+    // Д-049: передача — в окне; закрыть окно и вернуться к «Завершить».
+    await op.keyboard.press('Escape');
+    await expect(op.getByTestId('escalate-form')).toBeHidden();
   }
   await op.getByTestId('reply').fill('Здравствуйте! Вопрос решён.');
   await op.getByTestId('send').click();
   await choose(op, 'disposition', 'Решено на 1-й линии');
   await op.getByTestId('close').click();
-  await expect(op.getByText('Обращение закрыто.')).toBeVisible();
+  await expect(op.getByText('Обращение закрыто', { exact: true }).first()).toBeVisible();
 }
 
 async function openReport(page: Page, title: string, group?: string) {

@@ -61,7 +61,7 @@ async function closeConversation(page: Page) {
   await page.getByTestId('topic').click();
   await page.getByRole('option', { name: 'Сайт', exact: true }).click();
   await page.getByTestId('close').click();
-  await expect(page.getByText('Обращение закрыто.')).toBeVisible();
+  await expect(page.getByText('Обращение закрыто', { exact: true }).first()).toBeVisible();
 }
 
 test.describe.serial('Ф4: коннекторы Telegram и email', () => {

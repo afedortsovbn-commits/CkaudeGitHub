@@ -55,7 +55,7 @@ test.describe.serial('Ф3: маршрутизация (ACD), статусы оп
     await page.getByTestId('topic').click();
     await page.getByRole('option', { name: 'Сайт', exact: true }).click();
     await page.getByTestId('close').click();
-    await expect(page.getByText('Обращение закрыто.')).toBeVisible();
+    await expect(page.getByText('Обращение закрыто', { exact: true }).first()).toBeVisible();
 
     // Постобработка (M-RT-06): статус автоматически «Постобработка», затем сам router возвращает «Готов».
     await expect(page.getByTestId('agent-status')).toContainText('Постобработка', { timeout: 5000 });

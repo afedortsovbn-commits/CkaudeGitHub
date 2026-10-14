@@ -77,7 +77,7 @@ test.describe.serial('Ф17: распределение «по загрузке»
     await page.getByTestId('topic').click();
     await page.getByRole('option', { name: 'Сайт', exact: true }).click();
     await page.getByTestId('close').click();
-    await expect(page.getByText('Обращение закрыто.')).toBeVisible();
+    await expect(page.getByText('Обращение закрыто', { exact: true }).first()).toBeVisible();
     // Постобработка (очередь, 15 с) — в режиме «по загрузке» доступно продление «+2 мин».
     await expect(page.getByTestId('agent-status')).toContainText('Постобработка', { timeout: 10_000 });
     await page.getByTestId('wrapup-extend').click();

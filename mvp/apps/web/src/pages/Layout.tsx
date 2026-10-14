@@ -182,7 +182,9 @@ export function Layout() {
   const [railPref, setRailPref] = useState<boolean>(() => pref.get('cc.nav.rail', false));
   // Режим обработки обращения на рабочем месте — меню на время свёрнуто до значков (выбор сотрудника не меняется).
   // То же на страницах, которым нужно всё место (useCompactMenu).
-  const focus = useFocusMode() || usePageCompact();
+  const working = useFocusMode();
+  const pageCompact = usePageCompact();
+  const focus = working || pageCompact;
   const [focusMenuOpen, setFocusMenuOpen] = useState(false);
   useEffect(() => {
     if (!focus) setFocusMenuOpen(false);

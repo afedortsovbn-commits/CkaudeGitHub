@@ -49,6 +49,7 @@ import {
   IconPencil,
   IconPlayerPlay,
   IconTemplate,
+  IconX,
 } from '@tabler/icons-react';
 
 // ---------------------------------------------------------------- общее
@@ -132,13 +133,17 @@ async function openTicketFile(ticketId: string, fileId: string): Promise<void> {
 }
 
 /** Действие над тикетом: успех и ошибка обновляют данные (при «тикет уже изменён» форма покажет свежее). */
-function useTicketAction<A>(fn: (a: A) => Promise<unknown>, okText: string, onDone?: () => void) {
+function useTicketAction<A, R = unknown>(
+  fn: (a: A) => Promise<R>,
+  okText: string | ((res: R) => string),
+  onDone?: () => void,
+) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: fn,
-    onSuccess: () => {
+    onSuccess: (res) => {
       void qc.invalidateQueries();
-      notifications.show({ color: 'green', message: okText });
+      notifications.show({ color: 'green', message: typeof okText === 'function' ? okText(res) : okText });
       onDone?.();
     },
     onError: (e) => {
@@ -259,7 +264,8 @@ export function EscalateForm({
         curatorIds: curator && curator !== responsible ? [curator] : [],
         ...(due ? { dueDate: due } : {}),
       }),
-    t.tickets.obrashcheniePeredanoNa2,
+    // Номер — в сообщении: после передачи карточка закрывается и оператор возвращается к списку (Д-049).
+    (r) => (r?.number ? t.tickets.peredanoNomer(Number(r.number)) : t.tickets.obrashcheniePeredanoNa2),
     onDone,
   );
   const peopleOptions = (people.data ?? []).map((p) => ({ value: p.id, label: String(p.fullName) }));
@@ -378,7 +384,18 @@ function deadlineColor(tk: Row): string | undefined {
   return fade(hue, 95, 60, 0.08 + used * 0.12); // ближе к сроку — чуть насыщеннее
 }
 
-function TicketCard({ t: tk, selected, onOpen }: { t: Row; selected?: boolean; onOpen(id: string): void }) {
+function TicketCard({
+  t: tk,
+  selected,
+  onOpen,
+  wide,
+}: {
+  t: Row;
+  selected?: boolean;
+  onOpen(id: string): void;
+  /** Ничего не выбрано — список на всю ширину: обращение в одну строку (Д-050). */
+  wide?: boolean;
+}) {
   const mine = tk.myRole as string | null;
   const status = String(tk.status);
   // Закрытые и на согласовании (работа ответственного завершена) — светло-серым.
@@ -388,6 +405,47 @@ function TicketCard({ t: tk, selected, onOpen }: { t: Row; selected?: boolean; o
   const fresh = !!tk.isNew;
   // Особо важное и срочное (отметил оператор при передаче) — мерцает, пока ответственный не закрыл его.
   const hot = (!!tk.isImportant || !!tk.isUrgent) && !dim;
+  const numberAndFlags = (
+    <Group gap={6} wrap="nowrap">
+      <Text fw={700} size="sm" c={c}>
+        №{String(tk.number)}
+      </Text>
+      {tk.isImportant ? (
+        <Badge
+          color={dim ? 'gray' : 'red'}
+          size="xs"
+          variant={dim ? 'outline' : 'filled'}
+          className={hot ? 'cc-urgent-blink' : undefined}
+        >
+          {t.tickets.osoboVazhnoe}
+        </Badge>
+      ) : null}
+      {tk.isUrgent && !dim ? (
+        <Badge color="red" size="xs" variant="filled" className="cc-urgent-blink">
+          {t.workspace.urgentBadge}
+        </Badge>
+      ) : null}
+      {mine ? (
+        <Badge
+          size="xs"
+          variant={dim ? 'outline' : mine === 'responsible' ? 'filled' : 'light'}
+          color={dim ? 'gray' : 'blue'}
+        >
+          {mine === 'responsible' ? t.tickets.yaOtvetstvennyy : t.tickets.yaKurator}
+        </Badge>
+      ) : null}
+    </Group>
+  );
+  const stateMarks = (
+    <Group gap={6} wrap="nowrap">
+      {fresh && (
+        <Text size="xs" fw={700} c="green.7" tt="uppercase" data-testid="ticket-new">
+          {t.tickets.newMark}
+        </Text>
+      )}
+      <StatusBadge status={status} testId="ticket-item-status" />
+    </Group>
+  );
   return (
     <Card
       withBorder
@@ -407,60 +465,57 @@ function TicketCard({ t: tk, selected, onOpen }: { t: Row; selected?: boolean; o
       data-overdue={overdue || undefined}
       data-new={fresh || undefined}
     >
-      <Group justify="space-between" wrap="nowrap">
-        <Group gap={6} wrap="nowrap">
-          <Text fw={700} size="sm" c={c}>
-            №{String(tk.number)}
+      {wide ? (
+        <Group wrap="nowrap" gap="sm">
+          <Box w={300} style={{ flex: 'none', overflow: 'hidden' }}>
+            {numberAndFlags}
+          </Box>
+          <Text size="xs" truncate c={c} style={{ flex: 2, minWidth: 0 }}>
+            {String(tk.topicName)} · {String(tk.enterpriseName)} / {String(tk.departmentName)}
           </Text>
-          {tk.isImportant ? (
-            <Badge
-              color={dim ? 'gray' : 'red'}
-              size="xs"
-              variant={dim ? 'outline' : 'filled'}
-              className={hot ? 'cc-urgent-blink' : undefined}
-            >
-              {t.tickets.osoboVazhnoe}
-            </Badge>
-          ) : null}
-          {tk.isUrgent && !dim ? (
-            <Badge color="red" size="xs" variant="filled" className="cc-urgent-blink">
-              {t.workspace.urgentBadge}
-            </Badge>
-          ) : null}
-          {mine ? (
-            <Badge
-              size="xs"
-              variant={dim ? 'outline' : mine === 'responsible' ? 'filled' : 'light'}
-              color={dim ? 'gray' : 'blue'}
-            >
-              {mine === 'responsible' ? t.tickets.yaOtvetstvennyy : t.tickets.yaKurator}
-            </Badge>
-          ) : null}
-        </Group>
-        <Group gap={6} wrap="nowrap">
-          {fresh && (
-            <Text size="xs" fw={700} c="green.7" tt="uppercase" data-testid="ticket-new">
-              {t.tickets.newMark}
+          <Text
+            size="xs"
+            truncate
+            c={dim ? 'dimmed' : 'dark.4'}
+            style={{ flex: 3, minWidth: 0 }}
+            data-testid="ticket-item-summary"
+          >
+            {String(tk.contactName)}: {String(tk.summary)}
+          </Text>
+          <Box style={{ flex: 'none' }}>
+            <Deadline t={tk} />
+          </Box>
+          {Number(tk.returnsCount) > 0 && (
+            <Text size="xs" c={dim ? 'dimmed' : 'orange'} style={{ flex: 'none' }}>
+              {t.tickets.vozvratov}
+              {String(tk.returnsCount)}
             </Text>
           )}
-          <StatusBadge status={status} testId="ticket-item-status" />
+          <Box style={{ flex: 'none' }}>{stateMarks}</Box>
         </Group>
-      </Group>
-      <Text size="xs" lineClamp={1} c={c}>
-        {String(tk.topicName)} · {String(tk.enterpriseName)} / {String(tk.departmentName)}
-      </Text>
-      <Text size="xs" c={dim ? 'dimmed' : 'dark.4'} lineClamp={2} data-testid="ticket-item-summary">
-        {String(tk.contactName)}: {String(tk.summary)}
-      </Text>
-      <Group justify="space-between">
-        <Deadline t={tk} />
-        {Number(tk.returnsCount) > 0 && (
-          <Text size="xs" c={dim ? 'dimmed' : 'orange'}>
-            {t.tickets.vozvratov}
-            {String(tk.returnsCount)}
+      ) : (
+        <>
+          <Group justify="space-between" wrap="nowrap">
+            {numberAndFlags}
+            {stateMarks}
+          </Group>
+          <Text size="xs" lineClamp={1} c={c}>
+            {String(tk.topicName)} · {String(tk.enterpriseName)} / {String(tk.departmentName)}
           </Text>
-        )}
-      </Group>
+          <Text size="xs" c={dim ? 'dimmed' : 'dark.4'} lineClamp={2} data-testid="ticket-item-summary">
+            {String(tk.contactName)}: {String(tk.summary)}
+          </Text>
+          <Group justify="space-between">
+            <Deadline t={tk} />
+            {Number(tk.returnsCount) > 0 && (
+              <Text size="xs" c={dim ? 'dimmed' : 'orange'}>
+                {t.tickets.vozvratov}
+                {String(tk.returnsCount)}
+              </Text>
+            )}
+          </Group>
+        </>
+      )}
     </Card>
   );
 }
@@ -653,15 +708,10 @@ export function CabinetPage({ inTabs = false }: { inTabs?: boolean }) {
     queryFn: () => get<Row>(`/tickets/${selected}`),
     enabled: !!selected,
   });
-  // Ответственному и куратору сразу открыто верхнее обращение (не взятое в работу и не отмеченное просмотренным).
+  // Выбранное обращение пропало из списка (фильтр, закрыто) — снова список на всю ширину (Д-050).
   useEffect(() => {
-    const rows = list.data ?? [];
-    if (!secondLine || !rows.length) return;
-    if (!selected || !rows.some((r) => r.id === selected)) {
-      setSelected(rows[0]!.id);
-      setPicked(false);
-    }
-  }, [list.data, secondLine, selected]);
+    if (selected && list.data && !list.data.some((r) => r.id === selected)) setSelected(null);
+  }, [list.data, selected]);
   // Щелчок: обращение больше не «Новое»; «Новое» (или возвращённое) — берётся в работу (M-TKT-03).
   const openTicket = useTicketAction(
     (tid: string) => post(`/tickets/${tid}/open`),
@@ -698,8 +748,14 @@ export function CabinetPage({ inTabs = false }: { inTabs?: boolean }) {
     }
   };
   return (
-    <Grid gutter="sm">
-      <Grid.Col span={{ base: 12, md: 5 }}>
+    // Д-050: пока обращение не выбрано — список на всю ширину (как на 1-й линии); при выборе плавно сжимается,
+    // справа появляется краткая информация.
+    <Box
+      className="cc-ws"
+      style={{ gridTemplateColumns: preview.data ? '5fr 7fr' : '1fr 0fr' }}
+      data-wide={!preview.data || undefined}
+    >
+      <Box>
         <Box mb="xs">
           <TicketFilters
             value={f}
@@ -716,15 +772,27 @@ export function CabinetPage({ inTabs = false }: { inTabs?: boolean }) {
               </Text>
             )}
             {(list.data ?? []).map((tk) => (
-              <TicketCard key={tk.id} t={tk} selected={selected === tk.id} onOpen={pick} />
+              <TicketCard
+                key={tk.id}
+                t={tk}
+                selected={selected === tk.id}
+                onOpen={pick}
+                wide={!preview.data}
+              />
             ))}
           </Stack>
         </ScrollBlock>
-      </Grid.Col>
-      <Grid.Col span={{ base: 12, md: 7 }}>
-        {preview.data ? (
+      </Box>
+      <Box>
+        {preview.data && (
           <ScrollBlock h={`calc(100vh - ${100 + tabsH}px)`} testId="ticket-preview-scroll">
-            <Paper withBorder p="md" data-testid="ticket-preview">
+            <Paper
+              withBorder
+              p="md"
+              data-testid="ticket-preview"
+              className="cc-slide-in"
+              key={String(preview.data.id)}
+            >
               <Group justify="space-between" mb="xs">
                 <Group gap="xs">
                   <Title order={4} data-testid="ticket-title">
@@ -733,7 +801,23 @@ export function CabinetPage({ inTabs = false }: { inTabs?: boolean }) {
                   </Title>
                   <UrgentMark t={preview.data} />
                 </Group>
-                <StatusBadge status={String(preview.data.status)} />
+                <Group gap="xs" wrap="nowrap">
+                  <StatusBadge status={String(preview.data.status)} />
+                  <Tooltip label={t.tickets.closePreview} withArrow>
+                    <ActionIcon
+                      variant="subtle"
+                      color="gray"
+                      onClick={() => {
+                        setSelected(null);
+                        setPicked(false);
+                      }}
+                      aria-label={t.tickets.closePreview}
+                      data-testid="ticket-preview-close"
+                    >
+                      <IconX size={18} />
+                    </ActionIcon>
+                  </Tooltip>
+                </Group>
               </Group>
               <MyRoleNote t={preview.data} />
               <TicketFlags t={preview.data} />
@@ -743,11 +827,9 @@ export function CabinetPage({ inTabs = false }: { inTabs?: boolean }) {
               <TicketDialogs t={preview.data} dialog={dialog} onClose={() => setDialog(null)} />
             </Paper>
           </ScrollBlock>
-        ) : (
-          <Text c="dimmed">{t.tickets.vyberiteTiketSlevaZdes}</Text>
         )}
-      </Grid.Col>
-    </Grid>
+      </Box>
+    </Box>
   );
 }
 

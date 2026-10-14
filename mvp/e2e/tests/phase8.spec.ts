@@ -110,10 +110,10 @@ test.describe.serial('Ф8: вторая линия', () => {
     await form.getByTestId('esc-summary').click();
     await form.getByTestId('esc-summary').fill('Клиент жалуется на грубость оператора АЗС №12');
     await form.getByTestId('esc-submit').click();
-    await expect(op.getByText('Обращение передано на 2-ю линию')).toBeVisible();
-    const badge = op.getByTestId('conv-ticket');
-    await expect(badge).toBeVisible();
-    const number = /№(\d+)/.exec((await badge.textContent()) ?? '')![1]!;
+    // Д-049: после передачи карточка закрывается — номер в сообщении об успехе.
+    const toast = op.getByText(/Обращение передано на 2-ю линию: №\d+/);
+    await expect(toast).toBeVisible();
+    const number = /№(\d+)/.exec((await toast.textContent()) ?? '')![1]!;
     // Клиенту — автосообщение о передаче; обращение ушло из «Моих».
     await expect(
       client.w.getByTestId('cc-msg-out').filter({ hasText: 'передано специалисту' }),

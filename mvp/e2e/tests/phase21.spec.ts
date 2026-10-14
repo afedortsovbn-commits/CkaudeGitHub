@@ -21,7 +21,10 @@ async function openWidget(browser: Browser) {
 }
 
 test.describe.serial('Ф21: нейросеть (заглушка)', () => {
-  test('оператор: «Заполнить нейросетью», исправление — в журнал; супервизор видит журнал', async ({ browser, page }) => {
+  test('оператор: «Заполнить нейросетью», исправление — в журнал; супервизор видит журнал', async ({
+    browser,
+    page,
+  }) => {
     test.setTimeout(120_000);
     const client = await openWidget(browser);
     await client.w.getByTestId('cc-input').fill(`Сотрудник АЗС №12 нагрубил на кассе ${stamp}`);
@@ -59,7 +62,9 @@ test.describe.serial('Ф21: нейросеть (заглушка)', () => {
     await page.getByTestId('disposition').click();
     await page.getByRole('option', { name: 'Решено на 1-й линии' }).click();
     await page.getByTestId('close').click();
-    await expect(page.getByText('Обращение закрыто.')).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText('Обращение закрыто', { exact: true }).first()).toBeVisible({
+      timeout: 15_000,
+    });
     await client.ctx.close();
 
     // Супервизор: исправление сути в журнале.

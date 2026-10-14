@@ -28,8 +28,8 @@ export async function nav(page: Page, name: string) {
     const n = await groups.count();
     if (!n || i >= n) break;
     const g = groups.nth(i);
-    if ((await g.getAttribute('data-expanded')) === null)
-      await g.click({ timeout: 2000 }).catch(() => undefined);
+    const expanded = await g.getAttribute('data-expanded', { timeout: 1000 }).catch(() => 'gone');
+    if (expanded === null) await g.click({ timeout: 2000 }).catch(() => undefined);
     await link
       .first()
       .waitFor({ state: 'visible', timeout: 600 })

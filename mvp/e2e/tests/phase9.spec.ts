@@ -44,7 +44,7 @@ async function closeWithTopic(page: Page, topic: string) {
   await expect(disp).toHaveValue('Решено на 1-й линии');
   await page.getByTestId('close').focus();
   await page.keyboard.press('Enter');
-  await expect(page.getByText('Обращение закрыто.')).toBeVisible();
+  await expect(page.getByText('Обращение закрыто', { exact: true }).first()).toBeVisible();
 }
 
 async function mock(path: string, body?: unknown) {

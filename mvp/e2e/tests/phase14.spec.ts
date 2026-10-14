@@ -247,7 +247,7 @@ test.describe.serial('Ф14: бот, очередь, супервизор', () =>
     await op.getByTestId('topic').click();
     await op.getByRole('option', { name: 'Сайт', exact: true }).click();
     await op.getByTestId('close').click();
-    await expect(op.getByText('Обращение закрыто.')).toBeVisible();
+    await expect(op.getByText('Обращение закрыто', { exact: true }).first()).toBeVisible();
   });
 
   test('конструктор бота: поле «Ждать ответа» и выход «нет ответа»; тестовый прогон — «Клиент молчит»', async ({
@@ -458,6 +458,6 @@ test.describe.serial('Ф14: бот, очередь, супервизор', () =>
     await sup.getByRole('option', { name: 'Сайт', exact: true }).click();
     await expect(sup.getByTestId('topic-full')).toContainText('Сайт');
     await sup.getByTestId('close').click();
-    await expect(sup.getByText('Обращение закрыто.')).toBeVisible();
+    await expect(sup.getByText('Обращение закрыто', { exact: true }).first()).toBeVisible();
   });
 });
