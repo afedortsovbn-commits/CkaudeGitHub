@@ -2675,6 +2675,8 @@ export function WorkspacePage() {
                       color="orange"
                       offset={4}
                       classNames={{ indicator: 'cc-blink' }}
+                      // Счётчик поверх кнопки не перехватывает щелчок — нажимается кнопка.
+                      styles={{ indicator: { pointerEvents: 'none' } }}
                     >
                       <ActionIcon
                         variant={focus ? 'light' : 'subtle'}

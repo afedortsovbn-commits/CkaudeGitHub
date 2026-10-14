@@ -130,6 +130,8 @@ test.describe.serial('Ф13: отзывы с карт (Rocket Data) и синхр
 
     // Отчёт по отзывам: по объектам, отзыв отвечен.
     await nav(admin, 'Отчёты');
+    // Д-041: в разделе две вкладки — «Конструктор» и «Готовые отчёты».
+    await admin.getByTestId('reports-tab-ready').click();
     await choose(admin, 'report-kind', 'Отзывы с карт: оценки и доля отвеченных');
     await choose(admin, 'report-group', 'по объектам');
     const table = admin.getByTestId('report-table');

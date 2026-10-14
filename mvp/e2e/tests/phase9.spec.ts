@@ -97,6 +97,9 @@ test.describe.serial('Ф9: публичный API, webhooks, Bot Gateway, экс
     await closeWithTopic(page, 'Сайт');
 
     // Внешняя система получила webhook и записала результат через публичный API — оператор видит его в карточке.
+    // Д-049: после закрытия карточка закрывается — открыть обращение среди закрытых.
+    await listView(page, 'closed');
+    await page.getByTestId('conv-item').filter({ hasText: name }).first().click();
     await expect(
       page.getByTestId('msg-note').filter({ hasText: 'Результат анализа: тональность негативная' }),
     ).toBeVisible({
@@ -137,6 +140,10 @@ test.describe.serial('Ф9: публичный API, webhooks, Bot Gateway, экс
     await page.getByTestId('send').click();
     await expect(client.w.getByText('Рады помочь!')).toBeVisible({ timeout: 10000 });
     await closeWithTopic(page, 'Сайт');
+    // Д-049: карточка закрывается вместе с обращением — открыть его среди закрытых.
+    await listView(page, 'closed');
+    await page.getByTestId('conv-item').filter({ hasText: name }).first().click();
+    await expect(page.getByTestId('messages')).toContainText('Рады помочь!');
 
     const admin = await adminPage(browser);
     await nav(admin.page, 'Webhooks');

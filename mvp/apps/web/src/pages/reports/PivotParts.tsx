@@ -353,6 +353,7 @@ export function FilterPopover({
   measures,
   opened,
   onClose,
+  onApply,
   onChange,
   onMap,
   children,
@@ -362,6 +363,8 @@ export function FilterPopover({
   measures: MeasureInfo[];
   opened: boolean;
   onClose(): void;
+  /** «Применить» — закрыть окно сразу (без защиты от «щелчка снаружи» сразу после открытия). */
+  onApply(): void;
   onChange(f: Filter): void;
   onMap(): void;
   children: ReactNode;
@@ -491,7 +494,7 @@ export function FilterPopover({
                     <Button size="compact-xs" variant="subtle" color="gray" onClick={() => setValues([])}>
                       {t.pivot.clearSel}
                     </Button>
-                    <Button size="compact-xs" onClick={onClose} data-testid="pivot-filter-apply">
+                    <Button size="compact-xs" onClick={onApply} data-testid="pivot-filter-apply">
                       {t.pivot.apply}
                     </Button>
                   </Group>
@@ -591,7 +594,7 @@ export function FilterPopover({
                   </Button>
                 )}
                 <Group justify="flex-end">
-                  <Button size="compact-xs" onClick={onClose}>
+                  <Button size="compact-xs" onClick={onApply}>
                     {t.pivot.apply}
                   </Button>
                 </Group>

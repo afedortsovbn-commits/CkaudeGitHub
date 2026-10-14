@@ -100,6 +100,8 @@ test.describe.serial('Ф18: акция по газу и сроки по кана
   test('отчёт «Акция по газу» показывает заявления с номером карты и скидкой', async ({ page }) => {
     await login(page, ADMIN.email, ADMIN.password);
     await nav(page, 'Отчёты');
+    // Д-041: в разделе две вкладки — «Конструктор» и «Готовые отчёты».
+    await page.getByTestId('reports-tab-ready').click();
     await page.getByTestId('report-kind').click();
     await page.getByRole('option', { name: /Акция по газу/ }).click();
     await expect(page.getByTestId('report-table')).toContainText(card, { timeout: 15_000 });

@@ -825,6 +825,7 @@ export function ReportBuilder() {
                       onClose={() => {
                         if (Date.now() - openedAt.current > 400) setOpenFilter(null);
                       }}
+                      onApply={() => setOpenFilter(null)}
                       onChange={(nf) => setFilter(f.field, nf)}
                       onMap={() => {
                         setOpenFilter(null);
