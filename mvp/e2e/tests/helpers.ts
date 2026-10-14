@@ -19,15 +19,20 @@ export async function nav(page: Page, name: string) {
   const menu = page.getByRole('navigation');
   const link = menu.getByRole('link', { name, exact: true });
   // Ф16: разделы сгруппированы, свёрнутые группы прячут пункты — раскрыть группы, если пункт не виден.
-  const closed = menu.locator('[data-testid^="nav-group-"]:not([data-expanded])');
+  // Раскрыта одна группа (Д-047): раскрытие следующей сворачивает прежнюю — перебираем группы по порядку.
+  const groups = menu.locator('[data-testid^="nav-group-"]');
   // Меню может перестроиться (например, после входа — переход на стартовую страницу с узким меню): короткие
   // попытки и повторная проверка, а не ожидание исчезнувшей группы.
-  for (let i = 0; i < 10; i++) {
+  for (let i = 0; i < 12; i++) {
     if (await link.first().isVisible()) break;
-    if (!(await closed.count())) break;
-    await closed
+    const n = await groups.count();
+    if (!n || i >= n) break;
+    const g = groups.nth(i);
+    if ((await g.getAttribute('data-expanded')) === null)
+      await g.click({ timeout: 2000 }).catch(() => undefined);
+    await link
       .first()
-      .click({ timeout: 2000 })
+      .waitFor({ state: 'visible', timeout: 600 })
       .catch(() => undefined);
   }
   await link.click();

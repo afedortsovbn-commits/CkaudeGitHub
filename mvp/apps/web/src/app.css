@@ -224,3 +224,14 @@
 .mantine-Notification-closeButton {
   pointer-events: auto;
 }
+
+/* Обращение ждёт в очереди — красная точка перед именем клиента (Д-048). */
+.cc-queue-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: var(--mantine-color-red-6);
+  vertical-align: middle;
+}

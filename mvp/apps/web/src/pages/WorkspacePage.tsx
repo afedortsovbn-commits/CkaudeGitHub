@@ -49,7 +49,7 @@ import { errorText, get, openAttachment, patch, post, recordingUrl, upload } fro
 import { useAuth } from '../lib/auth';
 import { type Row, options, useAction, useList, useRequired } from '../lib/data';
 import { notify, onRealtime, useRealtime } from '../lib/realtime';
-import { setFocusMode } from '../lib/focus';
+import { setFocusMode, useCompactMenu } from '../lib/focus';
 import { ExternalDataPanel } from './IvrAdminPages';
 import { renderTemplate, SlashList, useSlashTemplates } from '../components/AssistPanel';
 import { HintPanel } from '../components/HintPanel';
@@ -209,12 +209,16 @@ const fade = (h: number, s: number, l: number, a: number) =>
  * завершено, а карточка не закрыта. Они всегда сверху.
  */
 const STAGE: Record<string, { rank: number; bg: string; hint: string }> = {
+  // Ждёт в очереди — в любом виде списка выше всех, оранжевым и с красной точкой (Д-048).
+  queued: { rank: -1, bg: fade(28, 100, 55, 0.16), hint: t.workspace.vOcheredi },
   offered: { rank: 0, bg: fade(0, 85, 62, 0.13), hint: t.workspace.stageOffered },
   talk: { rank: 0, bg: fade(0, 85, 62, 0.11), hint: t.workspace.stageTalk },
   wrapup: { rank: 1, bg: fade(45, 95, 55, 0.16), hint: t.workspace.stageWrapup },
 };
 const stageOf = (c: Row): string | null =>
-  c.status === 'offered' ? 'offered' : ((c.stage as string | null | undefined) ?? null);
+  c.status === 'offered' || c.status === 'queued'
+    ? String(c.status)
+    : ((c.stage as string | null | undefined) ?? null);
 
 function List({
   tab,
@@ -241,7 +245,7 @@ function List({
   const list = useList(
     `/conversations?tab=${tab}${important ? '&important=true' : ''}${callback ? '&callback=true' : ''}`,
   );
-  // Необработанные — сверху (порядок внутри группы — как пришёл с сервера).
+  // В очереди и необработанные — сверху (порядок внутри группы — как пришёл с сервера).
   const rows = useMemo(
     () =>
       (list.data ?? [])
@@ -358,6 +362,7 @@ function List({
                 w={wide ? 220 : undefined}
                 style={{ flex: wide ? 'none' : 1 }}
               >
+                {c.status === 'queued' && <span className="cc-queue-dot" data-testid="queue-dot" />}
                 {String(c.contactName)}
               </Text>
               {wide && (
@@ -368,7 +373,7 @@ function List({
               )}
               {wide && badges}
               <Text size="xs" c="dimmed" style={{ flex: 'none' }}>
-                {tab === 'queue' ? since(c.createdAt) : time(c.lastMessageAt)}
+                {tab === 'queue' || c.status === 'queued' ? since(c.createdAt) : time(c.lastMessageAt)}
               </Text>
             </Group>
             {!wide && (
@@ -378,7 +383,7 @@ function List({
               </Text>
             )}
             {!wide && badges}
-            {tab === 'queue' && manualTake && (
+            {(tab === 'queue' || c.status === 'queued') && manualTake && (
               <Button
                 size="compact-xs"
                 mt={6}
@@ -2264,6 +2269,7 @@ const PANEL_H = 'calc(100vh - 88px)';
 const WORK_STATUSES = ['active', 'hold', 'waiting_customer'];
 
 export function WorkspacePage() {
+  useCompactMenu();
   const { me, can } = useAuth();
   // Виды списка — в порядке из интерфейса роли; первый открывается по умолчанию.
   const wsUi = me?.ui?.workspace;

@@ -36,6 +36,7 @@ import { TakeTestModal } from '../components/TestAttempt';
 import { authBlobUrl, get, post } from '../lib/api';
 import { useAction } from '../lib/data';
 import { t } from '../lib/i18n';
+import { useCompactMenu } from '../lib/focus';
 
 /** Блоки урока (см. courses.controller.ts); Д-040 — слайды и интерактивные блоки. */
 export type Block =
@@ -276,6 +277,7 @@ function CourseCard({ c }: { c: MyCourse }) {
 
 /** Моё обучение: назначенные и доступные курсы. */
 export function MyCoursesPage() {
+  useCompactMenu();
   const q = useQuery({ queryKey: ['/my-courses'], queryFn: () => get<MyCourse[]>('/my-courses') });
   const list = q.data ?? [];
   return (
@@ -677,6 +679,7 @@ export function toSlides(blocks: Block[]): Slide[] {
 
 /** Прохождение курса: список уроков слева, урок справа; ситуации, тест, отметки. */
 export function CourseLessonPage() {
+  useCompactMenu();
   const { id } = useParams();
   const nav = useNavigate();
   const qc = useQueryClient();

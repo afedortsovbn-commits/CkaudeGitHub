@@ -60,6 +60,7 @@ import {
 import { FieldCatalog, FilterPopover, filterSummary, ZoneBox } from './PivotParts';
 import { PivotTable } from './PivotTable';
 import { StationLassoMap } from './StationLassoMap';
+import { useCompactMenu } from '../../lib/focus';
 
 const PivotChart = lazy(() => import('./PivotChart'));
 
@@ -209,6 +210,7 @@ const fmtN = (n: number) =>
  * таблица или график. Лёгкие отчёты строятся сразу при изменении; сложные — после предупреждения с оценкой.
  */
 export function ReportBuilder() {
+  useCompactMenu();
   const catalog = useQuery({
     queryKey: ['/reports/pivot/model'],
     queryFn: () => get<Catalog>('/reports/pivot/model'),

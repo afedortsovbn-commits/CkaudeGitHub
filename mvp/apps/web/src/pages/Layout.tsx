@@ -33,7 +33,7 @@ import { StaffMessageInbox } from '../components/StaffMessageInbox';
 import { SoftphoneCall, SoftphoneStatus } from '../components/Softphone';
 import { AiAssistant } from '../components/AiAssistant';
 import { useRealtime } from '../lib/realtime';
-import { useFocusMode } from '../lib/focus';
+import { useFocusMode, usePageCompact } from '../lib/focus';
 import { pref } from '../lib/pref';
 import { ConnectionAlert } from '../components/ConnectionAlert';
 import { TestDueBadge } from '../components/TestAttempt';
@@ -85,10 +85,9 @@ function Item({ m, path, compact }: { m: MenuItem; path: string; compact: boolea
       aria-label={m.label}
       leftSection={icon}
       active={isActive(m, path)}
-      // Отдельный экран (панель мониторинга): значок «развернуть» и свой цвет — видно, что это другое представление.
+      // Отдельный экран (панель мониторинга): значок «развернуть» — видно, что это другое представление.
       {...(m.screen
         ? {
-            c: 'teal.8',
             rightSection: compact ? undefined : <IconArrowsMaximize size={14} />,
             title: t.nav.screenHint,
             'data-screen': true,
@@ -114,8 +113,9 @@ function Menu({ items, path, compact }: { items: MenuItem[]; path: string; compa
       MENU_GROUPS.map((g) => g.id).filter((id) => id !== 'work' && id !== 'apps'),
     ),
   );
+  // Раскрыта одна группа: раскрытие новой сворачивает прежнюю.
   const toggle = (id: string) => {
-    const next = closed.includes(id) ? closed.filter((x) => x !== id) : [...closed, id];
+    const next = closed.includes(id) ? MENU_GROUPS.map((g) => g.id).filter((x) => x !== id) : [...closed, id];
     setClosed(next);
     pref.set('cc.nav.closedGroups', next);
   };
@@ -181,7 +181,8 @@ export function Layout() {
   // Узкое меню (только иконки): только по кнопке сотрудника, одинаково во всех разделах; запоминается в браузере.
   const [railPref, setRailPref] = useState<boolean>(() => pref.get('cc.nav.rail', false));
   // Режим обработки обращения на рабочем месте — меню на время свёрнуто до значков (выбор сотрудника не меняется).
-  const focus = useFocusMode();
+  // То же на страницах, которым нужно всё место (useCompactMenu).
+  const focus = useFocusMode() || usePageCompact();
   const [focusMenuOpen, setFocusMenuOpen] = useState(false);
   useEffect(() => {
     if (!focus) setFocusMenuOpen(false);
