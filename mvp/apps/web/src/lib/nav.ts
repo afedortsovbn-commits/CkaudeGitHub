@@ -377,7 +377,8 @@ export interface RoleUi {
 export const allowed = (m: MenuItem, perms: Iterable<string>): boolean => {
   if (!m.perms) return true;
   const set = new Set(perms);
-  return m.perms.some((p) => set.has(p));
+  // Раздел «только на чтение» (Д-085) тоже открывает пункт меню.
+  return m.perms.some((p) => set.has(p) || set.has(`${p}:read`));
 };
 
 /**

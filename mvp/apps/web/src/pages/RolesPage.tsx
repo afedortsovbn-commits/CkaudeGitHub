@@ -8,6 +8,7 @@ import {
   Group,
   Modal,
   Paper,
+  SegmentedControl,
   Select,
   Stack,
   Switch,
@@ -15,6 +16,7 @@ import {
   Text,
   Textarea,
   TextInput,
+  Tooltip,
   UnstyledButton,
 } from '@mantine/core';
 import { useQuery } from '@tanstack/react-query';
@@ -29,7 +31,10 @@ interface PermInfo {
   code: string;
   title: string;
   description: string;
+  /** Можно выдать «только на чтение» (Д-085). */
+  readOnly?: boolean;
 }
+const READ = ':read';
 interface Catalog {
   groups: { code: string; title: string; permissions: PermInfo[] }[];
   umbrellas: Record<string, string[]>;
@@ -105,7 +110,12 @@ export function RolesPage() {
   const roles = useQuery({ queryKey: ['/roles'], queryFn: () => get<RoleRow[]>('/roles') });
   const catalog = useQuery({ queryKey: ['/roles/catalog'], queryFn: () => get<Catalog>('/roles/catalog') });
   const codes = useMemo(
-    () => new Set((catalog.data?.groups ?? []).flatMap((g) => g.permissions.map((p) => p.code))),
+    () =>
+      new Set(
+        (catalog.data?.groups ?? []).flatMap((g) =>
+          g.permissions.flatMap((p) => (p.readOnly ? [p.code, `${p.code}${READ}`] : [p.code])),
+        ),
+      ),
     [catalog.data],
   );
   const [selected, setSelected] = useState<string | null>(null);
@@ -318,12 +328,21 @@ function PermissionsEditor({
   onChange(v: string[]): void;
 }) {
   const set = new Set(value);
+  // Раздел отмечен — полным правом или «только чтение» (Д-085).
+  const has = (c: string) => set.has(c) || set.has(`${c}${READ}`);
   const toggle = (codes: string[], on: boolean) => {
     const next = new Set(value);
     for (const c of codes) {
+      next.delete(`${c}${READ}`);
       if (on) next.add(c);
       else next.delete(c);
     }
+    onChange([...next].sort());
+  };
+  const setRead = (code: string, read: boolean) => {
+    const next = new Set(value);
+    next.delete(read ? code : `${code}${READ}`);
+    next.add(read ? `${code}${READ}` : code);
     onChange([...next].sort());
   };
   return (
@@ -335,7 +354,7 @@ function PermissionsEditor({
       )}
       {catalog.groups.map((g) => {
         const codes = g.permissions.map((p) => p.code);
-        const n = codes.filter((c) => set.has(c)).length;
+        const n = codes.filter((c) => has(c)).length;
         return (
           <Paper key={g.code} withBorder p="sm">
             <Group justify="space-between" mb={6}>
@@ -360,24 +379,41 @@ function PermissionsEditor({
                   (m) => m.label,
                 );
                 return (
-                  <Checkbox
-                    key={p.code}
-                    checked={set.has(p.code)}
-                    onChange={(e) => toggle([p.code], e.currentTarget.checked)}
-                    label={p.title}
-                    description={
-                      <>
-                        {p.description}
-                        {opens.length > 0 && (
-                          <Text span size="xs" c="blue.7" display="block">
-                            {t.roles.opensSections}
-                            {opens.join(', ')}
-                          </Text>
-                        )}
-                      </>
-                    }
-                    data-testid={`perm-${p.code}`}
-                  />
+                  <Box key={p.code}>
+                    <Checkbox
+                      checked={has(p.code)}
+                      onChange={(e) => toggle([p.code], e.currentTarget.checked)}
+                      label={p.title}
+                      description={
+                        <>
+                          {p.description}
+                          {opens.length > 0 && (
+                            <Text span size="xs" c="blue.7" display="block">
+                              {t.roles.opensSections}
+                              {opens.join(', ')}
+                            </Text>
+                          )}
+                        </>
+                      }
+                      data-testid={`perm-${p.code}`}
+                    />
+                    {p.readOnly && has(p.code) && (
+                      <Tooltip label={t.roles.accessHint} withArrow openDelay={300}>
+                        <SegmentedControl
+                          size="xs"
+                          ml={30}
+                          mt={4}
+                          value={set.has(`${p.code}${READ}`) ? 'read' : 'full'}
+                          onChange={(v) => setRead(p.code, v === 'read')}
+                          data={[
+                            { value: 'full', label: t.roles.accessFull },
+                            { value: 'read', label: t.roles.accessRead },
+                          ]}
+                          data-testid={`perm-access-${p.code}`}
+                        />
+                      </Tooltip>
+                    )}
+                  </Box>
                 );
               })}
             </Box>

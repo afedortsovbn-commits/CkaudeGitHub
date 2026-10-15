@@ -38,4 +38,5 @@ export const layout = {
     supervisor: 'Супервизор',
     responsible: '2-я линия',
   },
+  readOnlySection: 'Раздел открыт только для просмотра: изменения в нём недоступны вашей роли.',
 };

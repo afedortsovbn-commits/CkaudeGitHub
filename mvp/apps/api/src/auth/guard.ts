@@ -9,7 +9,7 @@ import {
 import { Reflector } from '@nestjs/core';
 import type { FastifyRequest } from 'fastify';
 import { ApiError } from '../lib/errors';
-import type { Principal } from '@cc/auth';
+import { type Principal, readCode } from '@cc/auth';
 import { APP_CONTEXT, type AppContext } from '../context';
 import {
   ApiKeyStore,
@@ -70,7 +70,16 @@ export class AuthGuard implements CanActivate {
     req.principal = principal;
     const perms = this.reflector.getAllAndOverride<string[] | undefined>(PERMS, targets);
     if (perms?.length && !perms.some((p) => principal.permissions.has(p))) {
-      throw new ApiError(403, 'forbidden', 'Недостаточно прав');
+      // Д-085: раздел «только на чтение» — пропускаются только запросы просмотра.
+      const view = req.method === 'GET' || req.method === 'HEAD';
+      if (view && perms.some((p) => principal.permissions.has(readCode(p)))) return true;
+      throw new ApiError(
+        403,
+        'forbidden',
+        perms.some((p) => principal.permissions.has(readCode(p)))
+          ? 'Раздел открыт только для чтения — изменения недоступны'
+          : 'Недостаточно прав',
+      );
     }
     return true;
   }

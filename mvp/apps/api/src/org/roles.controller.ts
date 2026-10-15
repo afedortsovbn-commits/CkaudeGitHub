@@ -5,6 +5,7 @@ import {
   expandPermissions,
   PERMISSION_GROUPS,
   type Principal,
+  READONLY_CODES,
   UMBRELLA_PERMISSIONS,
 } from '@cc/auth';
 import { randomBytes } from 'node:crypto';
@@ -16,7 +17,7 @@ import { audit } from '../lib/audit';
 import { one, rows, toApi, withTx } from '../lib/db';
 import { ApiError, badRequest, notFound, parse } from '../lib/errors';
 
-const KNOWN = new Set([...CATALOG_CODES, ...Object.keys(UMBRELLA_PERMISSIONS)]);
+const KNOWN = new Set([...CATALOG_CODES, ...READONLY_CODES, ...Object.keys(UMBRELLA_PERMISSIONS)]);
 const perm = z.string().refine(
   (c) => KNOWN.has(c),
   (c) => ({ message: `Неизвестное право: ${c}` }),

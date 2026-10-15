@@ -11,6 +11,8 @@ export interface PermissionInfo {
   title: string;
   /** Что именно разрешает (подсказка в редакторе роли). */
   description: string;
+  /** Раздел можно выдать «только на чтение» (Д-085): просмотр без изменений. */
+  readOnly?: boolean;
 }
 
 export interface PermissionGroup {
@@ -82,17 +84,20 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
         title: 'График работы',
         description:
           'Смены, потребность в операторах, пожелания сотрудников, составление и публикация графика',
+        readOnly: true,
       },
       {
         code: 'staff.broadcast',
         title: 'Рассылка сотрудникам',
         description: 'Сообщения всем или ролям; видно, кто прочитал',
+        readOnly: true,
       },
       {
         code: 'tests.manage',
         title: 'Тестирование сотрудников',
         description:
           'Тесты и вопросы по темам, назначение со сроком, результаты по сотрудникам и темам, рейтинг вопросов',
+        readOnly: true,
       },
       {
         code: 'rating.view',
@@ -109,34 +114,45 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
         code: 'channels.manage',
         title: 'Каналы',
         description: 'Веб-чат, Telegram, почта, телефония, отзывы',
+        readOnly: true,
       },
       {
         code: 'ivr.manage',
         title: 'Сценарии IVR и аудиобиблиотека',
         description: 'Голосовые меню, записи и фразы',
+        readOnly: true,
       },
-      { code: 'bots.manage', title: 'Боты', description: 'Текстовые сценарии чат-ботов' },
+      { code: 'bots.manage', title: 'Боты', description: 'Текстовые сценарии чат-ботов', readOnly: true },
       {
         code: 'announcements.manage',
         title: 'Объявления о сбоях',
         description: 'Сообщения клиентам о сбоях',
+        readOnly: true,
       },
       {
         code: 'autoreplies.manage',
         title: 'Автоответы',
         description: 'Приветствие, «вы в очереди», «все заняты», нерабочее время',
+        readOnly: true,
       },
       {
         code: 'templates.manage',
         title: 'Общие шаблоны ответов',
         description: 'Шаблоны для всех операторов',
+        readOnly: true,
       },
-      { code: 'kb.manage', title: 'База знаний', description: 'Статьи-подсказки и рубрики' },
-      { code: 'assist.manage', title: 'Подсказки: провайдеры', description: 'Источники подсказок оператору' },
+      { code: 'kb.manage', title: 'База знаний', description: 'Статьи-подсказки и рубрики', readOnly: true },
+      {
+        code: 'assist.manage',
+        title: 'Подсказки: провайдеры',
+        description: 'Источники подсказок оператору',
+        readOnly: true,
+      },
       {
         code: 'integrations.manage',
         title: 'Интеграции',
         description: 'Запросы к внешним системам из сценариев',
+        readOnly: true,
       },
     ],
   },
@@ -148,16 +164,19 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
         code: 'org.manage',
         title: 'Предприятия, подразделения, темы',
         description: 'Оргструктура, темы и поля карточки',
+        readOnly: true,
       },
       {
         code: 'objects.manage',
         title: 'Объекты (АЗС)',
         description: 'Справочник объектов и его синхронизация',
+        readOnly: true,
       },
       {
         code: 'dictionaries.manage',
         title: 'Справочники',
         description: 'Очереди, расписания, навыки, теги, результаты, причины перерыва, маршрутизация',
+        readOnly: true,
       },
       {
         code: 'admin.matrix',
@@ -175,13 +194,25 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
         code: 'admin.users',
         title: 'Сотрудники и роли',
         description: 'Учётные записи, роли и права, области видимости',
+        readOnly: true,
       },
-      { code: 'settings.manage', title: 'Системные настройки', description: 'Параметры системы, обновления' },
-      { code: 'apikeys.manage', title: 'Ключи API', description: 'Доступ внешних систем по API' },
+      {
+        code: 'settings.manage',
+        title: 'Системные настройки',
+        description: 'Параметры системы, обновления',
+        readOnly: true,
+      },
+      {
+        code: 'apikeys.manage',
+        title: 'Ключи API',
+        description: 'Доступ внешних систем по API',
+        readOnly: true,
+      },
       {
         code: 'webhooks.manage',
         title: 'Webhooks и внешний бот',
         description: 'Уведомления внешним системам, Bot Gateway',
+        readOnly: true,
       },
       {
         code: 'config.transfer',
@@ -198,6 +229,7 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
         code: 'system.update',
         title: 'Обновление системы',
         description: 'Установка файла обновления: перечень изменений, остановки блоков, ход обновления',
+        readOnly: true,
       },
     ],
   },
@@ -240,6 +272,16 @@ export const UMBRELLA_PERMISSIONS: Record<string, string[]> = {
 
 export const CATALOG_CODES: string[] = PERMISSION_GROUPS.flatMap((g) => g.permissions.map((p) => p.code));
 
+/**
+ * Д-085. Раздел «только на чтение»: в роли пишется `<право>:read`. Такое право открывает раздел в меню и
+ * пропускает запросы просмотра (GET) к API раздела; изменения (POST/PUT/PATCH/DELETE) — только с полным правом.
+ */
+export const READ_SUFFIX = ':read';
+export const readCode = (code: string): string => `${code}${READ_SUFFIX}`;
+export const READONLY_CODES: string[] = PERMISSION_GROUPS.flatMap((g) =>
+  g.permissions.filter((p) => p.readOnly).map((p) => readCode(p.code)),
+);
+
 /** Права сотрудника с раскрытыми общими правами (общее право тоже остаётся в наборе). */
 export function expandPermissions(perms: Iterable<string>): Set<string> {
   const out = new Set(perms);
@@ -254,6 +296,9 @@ export function expandPermissions(perms: Iterable<string>): Set<string> {
  */
 export function compressPermissions(perms: Iterable<string>): string[] {
   const set = expandPermissions(perms);
+  // Полное право перекрывает «только чтение» того же раздела.
+  for (const c of [...set])
+    if (c.endsWith(READ_SUFFIX) && set.has(c.slice(0, -READ_SUFFIX.length))) set.delete(c);
   for (const [umbrella, children] of Object.entries(UMBRELLA_PERMISSIONS)) {
     if (children.every((c) => set.has(c))) {
       set.add(umbrella);

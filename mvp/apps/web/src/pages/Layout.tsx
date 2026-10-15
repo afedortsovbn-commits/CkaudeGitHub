@@ -1,5 +1,6 @@
 import {
   ActionIcon,
+  Alert,
   AppShell,
   Badge,
   Box,
@@ -202,6 +203,11 @@ export function Layout() {
     document.title = cur ? `${cur.label} — ${t.appName}` : t.appName;
   }, [cur]);
   const CurIcon = cur?.icon;
+  // Д-085: раздел открыт только на чтение — плашка над страницей (изменения сервер не примет).
+  const readOnlyHere =
+    !!cur?.perms &&
+    !can(...cur.perms) &&
+    cur.perms.some((p) => (me?.permissions ?? []).includes(`${p}:read`));
   // Значок вкладки — по роли (свои роли без стандартного кода — по правам).
   const roleKey = [
     ...(me?.roles ?? []),
@@ -334,6 +340,11 @@ export function Layout() {
         <BrowserWarning />
         <UpdateBanner />
         <StaffMessageInbox />
+        {readOnlyHere && (
+          <Alert color="gray" variant="light" py={6} mb="xs" data-testid="readonly-banner">
+            {t.layout.readOnlySection}
+          </Alert>
+        )}
         <Outlet />
         {phone && <SoftphoneCall />}
         {phone && userId && <SupervisorNotices userId={userId} />}
