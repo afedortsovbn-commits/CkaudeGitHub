@@ -45,6 +45,15 @@ export function TemplatesPage() {
   const [q, setQ] = useState('');
   const [inactive, setInactive] = useState(false);
   const [editing, setEditing] = useState<Row | 'new' | null>(null);
+  // Д-091: щелчок по строке раскрывает текст шаблона целиком (ещё щелчок — свернуть).
+  const [open, setOpen] = useState<Set<string>>(new Set());
+  const flip = (id: string) =>
+    setOpen((o) => {
+      const n = new Set(o);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
   const list = useList(
     `/templates?line=${line}&scope=${line === 'second' ? 'all' : scope}${inactive ? '&active=all' : ''}${q ? `&q=${encodeURIComponent(q)}` : ''}`,
   );
@@ -121,11 +130,23 @@ export function TemplatesPage() {
         </Table.Thead>
         <Table.Tbody>
           {(list.data ?? []).map((r) => (
-            <Table.Tr key={r.id} style={{ opacity: r.isActive ? 1 : 0.5 }}>
-              <Table.Td>{String(r.title)}</Table.Td>
+            <Table.Tr
+              key={r.id}
+              style={{ opacity: r.isActive ? 1 : 0.5, cursor: 'pointer', verticalAlign: 'top' }}
+              onClick={() => flip(r.id)}
+              title={open.has(r.id) ? undefined : t.automation.templateOpenHint}
+              data-testid="template-row"
+              data-open={open.has(r.id) || undefined}
+            >
+              <Table.Td fw={open.has(r.id) ? 600 : undefined}>{String(r.title)}</Table.Td>
               <Table.Td>{r.shortcut ? <Code>/{String(r.shortcut)}</Code> : '—'}</Table.Td>
-              <Table.Td style={{ maxWidth: 420 }}>
-                <Text size="sm" lineClamp={2}>
+              <Table.Td style={{ maxWidth: open.has(r.id) ? 640 : 420 }}>
+                <Text
+                  size="sm"
+                  lineClamp={open.has(r.id) ? undefined : 2}
+                  style={open.has(r.id) ? { whiteSpace: 'pre-wrap' } : undefined}
+                  className={open.has(r.id) ? 'cc-reveal' : undefined}
+                >
                   {String(r.body)}
                 </Text>
               </Table.Td>
@@ -141,7 +162,7 @@ export function TemplatesPage() {
               </Table.Td>
               <Table.Td>
                 {mayEdit(r) && (
-                  <Group gap="xs" justify="flex-end">
+                  <Group gap="xs" justify="flex-end" onClick={(e) => e.stopPropagation()}>
                     <Button size="xs" variant="light" onClick={() => setEditing(r)}>
                       {t.edit}
                     </Button>
@@ -340,12 +361,17 @@ function Articles() {
           w={320}
           data-testid="kb-search"
         />
+        {/* Д-090: фильтр тем шире, список раскрывается выше — видно больше тем сразу. */}
         <Select
           placeholder={t.automation.rubrika}
           data={options(cats.data)}
           value={cat}
           onChange={setCat}
           clearable
+          w={380}
+          maxDropdownHeight={520}
+          comboboxProps={{ width: 440, position: 'bottom-start' }}
+          data-testid="kb-category"
         />
         {admin && (
           <>
@@ -371,9 +397,15 @@ function Articles() {
         </Table.Thead>
         <Table.Tbody>
           {(list.data ?? []).map((r) => (
-            <Table.Tr key={r.id} style={{ opacity: r.isActive ? 1 : 0.5 }}>
+            // Д-090: статья открывается щелчком в любом месте строки.
+            <Table.Tr
+              key={r.id}
+              style={{ opacity: r.isActive ? 1 : 0.5, cursor: 'pointer' }}
+              onClick={() => setViewing(r)}
+              data-testid="kb-row"
+            >
               <Table.Td>
-                <Text size="sm" fw={500} style={{ cursor: 'pointer' }} onClick={() => setViewing(r)}>
+                <Text size="sm" fw={500}>
                   {String(r.title)}
                 </Text>
                 <Text size="xs" c="dimmed" lineClamp={1}>
@@ -384,7 +416,7 @@ function Articles() {
               <Table.Td>{new Date(String(r.updatedAt)).toLocaleDateString('ru-RU')}</Table.Td>
               <Table.Td>
                 {admin && (
-                  <Group gap="xs" justify="flex-end">
+                  <Group gap="xs" justify="flex-end" onClick={(e) => e.stopPropagation()}>
                     <Button size="xs" variant="light" onClick={() => setEditing(r)}>
                       {t.edit}
                     </Button>
@@ -404,7 +436,20 @@ function Articles() {
         </Table.Tbody>
       </Table>
       {viewing && (
-        <Modal opened onClose={() => setViewing(null)} title={String(viewing.title)} size="lg">
+        <Modal
+          opened
+          onClose={() => setViewing(null)}
+          title={<Text fw={700}>{String(viewing.title)}</Text>}
+          size="xl"
+          centered
+          transitionProps={{ transition: 'pop', duration: 220 }}
+          data-testid="kb-view"
+        >
+          {viewing.categoryName ? (
+            <Badge variant="light" mb="sm">
+              {String(viewing.categoryName)}
+            </Badge>
+          ) : null}
           <Text style={{ whiteSpace: 'pre-wrap' }}>{String(viewing.body)}</Text>
         </Modal>
       )}

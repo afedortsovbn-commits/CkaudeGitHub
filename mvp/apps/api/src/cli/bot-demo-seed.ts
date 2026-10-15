@@ -277,7 +277,7 @@ export async function seedBotDemo(tx: PoolClient, o: { llmUrl: string }): Promis
     await tx.query(`INSERT INTO kb_category (id, name, sort_order) VALUES ($1, $2, $3)`, [id, name, sort]);
     return id;
   };
-  const cBonus = await cat('Бонусная программа', 1);
+  const cBonus = await cat('Программа «Заправка»', 3); // Д-090: темы базы знаний — как в справочниках
   const cCards = await cat('Топливные карты', 2);
   const art = async (
     category: string,

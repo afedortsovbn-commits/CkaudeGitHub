@@ -26,10 +26,10 @@ export const automation = {
   obshchiyShablonVidenVsem: 'Общий шаблон (виден всем операторам)',
   bazaZnaniy: 'База знаний',
   stati: 'Статьи',
-  rubriki: 'Рубрики',
+  rubriki: 'Темы',
   poryadok: 'Порядок',
   poiskPoStatyamPolnotekstovyy: 'Поиск по статьям (полнотекстовый)',
-  rubrika: 'Рубрика',
+  rubrika: 'Тема',
   novayaStatya: 'Новая статья',
   statya: 'Статья',
   izmenena: 'Изменена',
@@ -100,4 +100,5 @@ export const automation = {
   lineSecondHint:
     'Шаблоны и примеры ответов 2-й линии — общие для всех предприятий и подразделений, с привязкой к теме или подтеме. Их видят ответственные при закрытии обращения; создавать можно и прямо из ответа.',
   author: 'Автор',
+  templateOpenHint: 'Щёлкните, чтобы прочитать шаблон целиком',
 };
