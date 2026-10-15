@@ -2,6 +2,7 @@ import {
   ActionIcon,
   AppShell,
   Badge,
+  Box,
   Burger,
   Button,
   Divider,
@@ -41,6 +42,7 @@ import { softphone } from '../lib/softphone';
 import { useAuth, type Me } from '../lib/auth';
 import { applyRoleFavicon } from '../lib/favicon';
 import { t } from '../lib/i18n';
+import omniLogo from '../assets/omni-logo.png';
 import { buildMenu, groupMenu, MENU, MENU_GROUPS, type MenuItem } from '../lib/nav';
 
 /** Меню из небольшого числа пунктов — без групп (оператору группы только мешают). */
@@ -245,9 +247,16 @@ export function Layout() {
               size="sm"
               data-testid="menu-toggle"
             />
-            <Text fw={700} visibleFrom="xs">
-              {t.appName}
-            </Text>
+            {/* Д-067: логотип «OMNI» вместо надписи «Контакт-центр». */}
+            <Box
+              component="img"
+              src={omniLogo}
+              alt={t.appName}
+              h={28}
+              w="auto"
+              visibleFrom="xs"
+              data-testid="app-logo"
+            />
             {cur && (
               <Group
                 gap={6}
