@@ -75,7 +75,6 @@ export const tests = {
   assignTitle: 'Назначить тест',
   assignTest: 'Тест',
   assignPeople: 'Сотрудники',
-  assignPeopleHint: 'Из справочника сотрудников; отметка роли — все сотрудники с этой ролью',
   assignDue: 'Пройти до',
   assignComment: 'Комментарий (необязательно)',
   assignSubmit: 'Назначить',

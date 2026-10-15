@@ -284,7 +284,8 @@ function TestEditor({
           value={v.description}
           onChange={(e) => setV({ ...v, description: e.currentTarget.value })}
         />
-        <Group grow align="flex-start">
+        {/* Д-086: поля выровнены по нижнему краю — пояснение к темам не сдвигает поле тем ниже соседних. */}
+        <Group grow align="flex-end">
           <TreePicker
             multiple
             size="sm"
@@ -305,7 +306,7 @@ function TestEditor({
             data-testid="test-pass"
           />
           <Switch
-            mt={28}
+            mb={8}
             label={t.tests.active}
             checked={v.isActive}
             onChange={(e) => setV({ ...v, isActive: e.currentTarget.checked })}
@@ -804,7 +805,6 @@ function AssignTab() {
             value={who}
             onChange={setWho}
             label={t.tests.assignPeople}
-            description={t.tests.assignPeopleHint}
             withAsterisk
             error={req.error(!who.length)}
             testId="assign-people"

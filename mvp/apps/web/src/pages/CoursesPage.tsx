@@ -26,7 +26,7 @@ import { TreePicker } from '../components/TreePicker';
 import { get, patch, post, upload } from '../lib/api';
 import { type Row, useAction, useList, useRequired } from '../lib/data';
 import { t } from '../lib/i18n';
-import { AssetImage, type Block } from './MyCoursesPage';
+import { AssetImage, AssetVideo, type Block } from './MyCoursesPage';
 import { usePeopleTree } from './TestsPage';
 
 const COLORS = ['green', 'blue', 'violet', 'orange', 'teal', 'grape', 'cyan', 'red'];
@@ -106,7 +106,9 @@ function LessonEditor({
   const uploadImage = useAction(async (f: { file: File; i: number }) => {
     const r = await upload<{ id: string }>('/courses/assets', f.file);
     setBlocks((bs) =>
-      bs.map((b, j) => (j === f.i && b.type === 'image' ? { ...b, assetId: r.id, url: undefined } : b)),
+      bs.map((b, j) =>
+        j === f.i && (b.type === 'image' || b.type === 'video') ? { ...b, assetId: r.id, url: undefined } : b,
+      ),
     );
   });
   const set = (i: number, b: Block) => setBlocks((bs) => bs.map((x, j) => (j === i ? b : x)));
@@ -189,6 +191,7 @@ function LessonEditor({
                   {
                     text: t.courses.blockText,
                     image: t.courses.blockImage,
+                    video: t.courses.blockVideo,
                     tip: t.courses.blockTip,
                     steps: t.courses.blockSteps,
                     quote: t.courses.blockQuote,
@@ -275,6 +278,30 @@ function LessonEditor({
                   style={{ flex: 1 }}
                 />
               </Group>
+            )}
+            {b.type === 'video' && (
+              <Stack gap={6}>
+                <AssetVideo id={b.assetId} url={b.url} />
+                <Group align="flex-end">
+                  <FileButton
+                    onChange={(file) => file && uploadImage.mutate({ file, i })}
+                    accept="video/webm,video/mp4"
+                  >
+                    {(props) => (
+                      <Button {...props} size="xs" variant="light" loading={uploadImage.isPending}>
+                        {t.courses.blockVideoUpload}
+                      </Button>
+                    )}
+                  </FileButton>
+                  <TextInput
+                    size="xs"
+                    label={t.courses.blockCaption}
+                    value={b.caption ?? ''}
+                    onChange={(e) => set(i, { ...b, caption: e.currentTarget.value })}
+                    style={{ flex: 1 }}
+                  />
+                </Group>
+              </Stack>
             )}
             {b.type === 'tip' && (
               <Group align="flex-end">
@@ -771,7 +798,6 @@ function AssignTab() {
             value={who}
             onChange={setWho}
             label={t.courses.assignPeople}
-            description={t.courses.assignPeopleHint}
             withAsterisk
             error={req.error(!who.length)}
             testId="course-assign-people"

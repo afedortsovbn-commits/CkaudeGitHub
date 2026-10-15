@@ -7,6 +7,7 @@ import {
   Card,
   Group,
   Image,
+  Loader,
   List,
   Paper,
   Progress,
@@ -57,6 +58,7 @@ export type Block =
   | { type: 'case'; title?: string; situation: string; action: string; result: string }
   | { type: 'text'; title?: string; text: string }
   | { type: 'image'; assetId?: string; url?: string; caption?: string }
+  | { type: 'video'; assetId?: string; url?: string; title?: string; caption?: string }
   | { type: 'tip'; text: string; tone?: 'info' | 'warning' | 'success' }
   | { type: 'steps'; title?: string; items: string[] }
   | { type: 'quote'; text: string; author?: string }
@@ -158,6 +160,32 @@ export function AssetImage({
   }, [id, url]);
   if (!src) return null;
   return <Image src={src} alt={alt ?? ''} h={h} fit={fit} radius="md" />;
+}
+
+/** Д-089: видеоурок из файлов курса — загружается с авторизацией, играет во всю ширину слайда. */
+export function AssetVideo({ id, url }: { id?: string; url?: string }) {
+  const [src, setSrc] = useState<string | null>(url ?? null);
+  useEffect(() => {
+    let alive = true;
+    if (url) setSrc(url);
+    else if (id)
+      void authBlobUrl(`/courses/assets/${id}`)
+        .then((u) => alive && setSrc(u))
+        .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, [id, url]);
+  if (!src) return <Loader size="sm" my="xl" />;
+  return (
+    <video
+      src={src}
+      controls
+      preload="metadata"
+      style={{ width: '100%', maxHeight: '62vh', borderRadius: 8, background: '#fff' }}
+      data-testid="lesson-video"
+    />
+  );
 }
 
 /** Текст урока: абзацы, списки («- »), **жирный**. */
@@ -275,11 +303,36 @@ function CourseCard({ c }: { c: MyCourse }) {
   );
 }
 
+/** Д-088: прокрутка списка курсов на момент перехода в курс — при возврате экран тот же. */
+let listScroll = 0;
+
 /** Моё обучение: назначенные и доступные курсы. */
 export function MyCoursesPage() {
   useCompactMenu();
   const q = useQuery({ queryKey: ['/my-courses'], queryFn: () => get<MyCourse[]>('/my-courses') });
   const list = q.data ?? [];
+  const restored = useRef(false);
+  const ready = !!q.data;
+  useEffect(() => {
+    if (!ready || restored.current) return;
+    restored.current = true;
+    const target = listScroll;
+    if (!target) return;
+    // Обложки курсов догружаются позже — страница дорастает; прокручиваем, пока не встанем на место (≤ 2 с).
+    let n = 0;
+    const timer = setInterval(() => {
+      window.scrollTo({ top: target });
+      if (Math.abs(window.scrollY - target) < 2 || ++n > 20) clearInterval(timer);
+    }, 100);
+    return () => clearInterval(timer);
+  }, [ready]);
+  // Позиция запоминается при уходе со страницы — до того, как она исчезнет (позже прокрутка уже сброшена).
+  useLayoutEffect(
+    () => () => {
+      listScroll = window.scrollY;
+    },
+    [],
+  );
   return (
     <Stack>
       <Title order={3}>{t.courses.myTitle}</Title>
@@ -401,6 +454,17 @@ function BlockView({
       return (
         <Box ta="center">
           <AssetImage id={b.assetId} url={b.url} alt={b.caption} h={200} fit="contain" />
+          {b.caption && (
+            <Text size="xs" c="dimmed" mt={4}>
+              {b.caption}
+            </Text>
+          )}
+        </Box>
+      );
+    case 'video':
+      return (
+        <Box ta="center">
+          <AssetVideo id={b.assetId} url={b.url} />
           {b.caption && (
             <Text size="xs" c="dimmed" mt={4}>
               {b.caption}

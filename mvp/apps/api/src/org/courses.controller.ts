@@ -102,6 +102,16 @@ const Block = z.discriminatedUnion('type', [
       caption: z.string().max(500).optional(),
     })
     .strict(),
+  // Д-089: видеоурок (MP4 в файлах курса) — «рисунок на доске + диктор».
+  z
+    .object({
+      type: z.literal('video'),
+      assetId: uuid.optional(),
+      url: z.string().max(1000).optional(),
+      title: z.string().max(200).optional(),
+      caption: z.string().max(500).optional(),
+    })
+    .strict(),
   z
     .object({
       type: z.literal('tip'),
@@ -214,7 +224,7 @@ export class CoursesController {
 
   // ---------------------------------------------------------------- картинки курсов
 
-  /** Картинка или файл курса (raw-тело, имя — заголовок x-filename). Доступен всем сотрудникам по id. */
+  /** Картинка, PDF или видео курса (raw-тело, имя — заголовок x-filename). Доступен всем сотрудникам по id. */
   @Post('courses/assets')
   @RequirePerm('tests.manage')
   async uploadAsset(@CurrentUser() p: Principal, @Req() req: FastifyRequest) {
@@ -226,7 +236,8 @@ export class CoursesController {
       .slice(0, 200)
       .replace(/[\\/]/g, '_');
     const contentType = String(req.headers['content-type'] ?? 'application/octet-stream').split(';')[0]!;
-    if (!/^(image\/|application\/pdf)/.test(contentType)) throw badRequest('Допустимы картинки и PDF');
+    if (!/^(image\/|application\/pdf|video\/(webm|mp4)$)/.test(contentType))
+      throw badRequest('Допустимы картинки, PDF и видео (WebM, MP4)');
     const id = newId();
     const key = `courses/${id}`;
     await this.ctx.storage.put(key, body, contentType);
