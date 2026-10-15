@@ -30,7 +30,7 @@ import {
   IconSchool,
 } from '@tabler/icons-react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Fragment, useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router';
 import { TakeTestModal } from '../components/TestAttempt';
 import { authBlobUrl, get, post } from '../lib/api';
@@ -718,6 +718,21 @@ export function CourseLessonPage() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [total]);
+  // Д-057: карточка урока — ровно до низа экрана (по её фактическому верху), слайд внутри без своей высоты:
+  // двухстрочное описание урока или плашка «курс пройден» больше не выталкивают страницу в прокрутку.
+  const viewRef = useRef<HTMLDivElement>(null);
+  const [viewMin, setViewMin] = useState<number>();
+  useLayoutEffect(() => {
+    const fit = () => {
+      const el = viewRef.current;
+      if (!el) return;
+      const top = el.getBoundingClientRect().top + window.scrollY;
+      setViewMin(Math.max(360, Math.floor(window.innerHeight - top - 16)));
+    };
+    fit();
+    window.addEventListener('resize', fit);
+    return () => window.removeEventListener('resize', fit);
+  }, [course, lessons, lesson?.id]);
   const assignmentId = course?.assignment && !course.assignment.completedAt ? course.assignment.id : null;
   const save = useAction(async (body: { read?: boolean; answers?: Record<string, string> }) => {
     const r = await post<{ completed: boolean; courseCompleted: boolean }>(
@@ -853,7 +868,15 @@ export function CourseLessonPage() {
             ))}
           </Stack>
         </Paper>
-        <Paper withBorder p="lg" radius="md" style={{ flex: 1, minWidth: 0 }} data-testid="lesson-view">
+        <Paper
+          ref={viewRef}
+          withBorder
+          p="lg"
+          radius="md"
+          mih={viewMin ?? 'calc(100vh - 130px)'}
+          style={{ flex: 1, minWidth: 0 }}
+          data-testid="lesson-view"
+        >
           <Stack gap="md">
             <Group justify="space-between" align="flex-start" wrap="nowrap">
               <Box style={{ minWidth: 0 }}>
@@ -901,7 +924,7 @@ export function CourseLessonPage() {
             {/* Виден один слайд — без прокрутки страницы; ответы на ситуации помнятся (состояние урока). */}
             {slides.map((sl, si) =>
               si === slide ? (
-                <Box key={`${lesson.id}:${si}`} mih="calc(100vh - 290px)" data-testid="lesson-slide">
+                <Box key={`${lesson.id}:${si}`} data-testid="lesson-slide">
                   <Stack gap="md" className="cc-slide-in">
                     {sl.title && (
                       <Title order={4} c="violet.8">
@@ -919,7 +942,7 @@ export function CourseLessonPage() {
             )}
             {/* Д-055: итог урока — последним слайдом (серого блока под слайдом нет). */}
             {slide === slides.length && (
-              <Box key={`${lesson.id}:final`} mih="calc(100vh - 290px)" data-testid="lesson-slide">
+              <Box key={`${lesson.id}:final`} data-testid="lesson-slide">
                 <Stack
                   gap="lg"
                   className="cc-slide-in"
