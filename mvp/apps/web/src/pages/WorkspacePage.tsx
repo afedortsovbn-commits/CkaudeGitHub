@@ -246,15 +246,18 @@ function List({
   const list = useList(
     `/conversations?tab=${tab}${important ? '&important=true' : ''}${callback ? '&callback=true' : ''}`,
   );
+  // Очередь подмешивается в любой вид списка (в т. ч. «Мои» и с фильтрами) — её всегда видно сверху (Д-061).
+  const queue = useList('/conversations?tab=queue', tab !== 'queue');
   // В очереди и необработанные — сверху (порядок внутри группы — как пришёл с сервера).
-  const rows = useMemo(
-    () =>
-      (list.data ?? [])
-        .map((c, i) => ({ c, i, rank: STAGE[stageOf(c) ?? '']?.rank ?? 2 }))
-        .sort((a, b) => a.rank - b.rank || a.i - b.i)
-        .map((x) => x.c),
-    [list.data],
-  );
+  const rows = useMemo(() => {
+    const own = list.data ?? [];
+    const ids = new Set(own.map((c) => c.id));
+    const extra = tab === 'queue' ? [] : (queue.data ?? []).filter((c) => !ids.has(c.id));
+    return [...extra, ...own]
+      .map((c, i) => ({ c, i, rank: STAGE[stageOf(c) ?? '']?.rank ?? 2 }))
+      .sort((a, b) => a.rank - b.rank || a.i - b.i)
+      .map((x) => x.c);
+  }, [list.data, queue.data, tab]);
   const take = useAction((id: string) => post(`/conversations/${id}/take`), t.workspace.dialogVzyatVRabotu);
   const accept = useAction(
     (id: string) => post(`/conversations/${id}/accept`),
@@ -337,57 +340,13 @@ function List({
             ) : null}
           </Group>
         );
-        return (
-          <Card
-            key={c.id}
-            withBorder
-            padding="xs"
-            title={stage?.hint}
-            className={['cc-item', hot ? 'cc-hot' : '', isSel ? 'cc-selected' : ''].join(' ')}
-            data-urgent={(hot && !!c.isUrgent) || undefined}
-            data-selected={isSel || undefined}
-            style={{
-              cursor: 'pointer',
-              background: stage ? `${stage.bg}, var(--mantine-color-body)` : undefined,
-            }}
-            onClick={() => onSelect(c.id)}
-            data-testid="conv-item"
-            data-stage={stageOf(c) ?? undefined}
-            py={wide ? 4 : undefined}
-          >
-            <Group justify="space-between" wrap="nowrap" gap="sm">
-              <Text
-                fw={600}
-                size="sm"
-                truncate
-                w={wide ? 220 : undefined}
-                style={{ flex: wide ? 'none' : 1 }}
-              >
-                {c.status === 'queued' && <span className="cc-queue-dot" data-testid="queue-dot" />}
-                {String(c.contactName)}
-              </Text>
-              {wide && (
-                <Text size="xs" c="dimmed" truncate style={{ flex: 1, minWidth: 0 }}>
-                  {c.lastDirection === 'out' ? t.workspace.vy : ''}
-                  {String(c.lastMessage ?? '')}
-                </Text>
-              )}
-              {wide && badges}
-              <Text size="xs" c="dimmed" style={{ flex: 'none' }}>
-                {tab === 'queue' || c.status === 'queued' ? since(c.createdAt) : time(c.lastMessageAt)}
-              </Text>
-            </Group>
-            {!wide && (
-              <Text size="xs" c="dimmed" lineClamp={2}>
-                {c.lastDirection === 'out' ? t.workspace.vy : ''}
-                {String(c.lastMessage ?? '')}
-              </Text>
-            )}
-            {!wide && badges}
+        // Кнопки строки: в широком виде — в конце строки, в узком — под ней (Д-061: не растягивать на всю ширину).
+        const actions = (
+          <>
             {(tab === 'queue' || c.status === 'queued') && manualTake && (
               <Button
                 size="compact-xs"
-                mt={6}
+                mt={wide ? 0 : 6}
                 data-testid="take"
                 onClick={(e) => {
                   e.stopPropagation();
@@ -398,7 +357,7 @@ function List({
               </Button>
             )}
             {c.status === 'offered' && c.assigneeId === me?.id && (
-              <Group gap={4} mt={6}>
+              <Group gap={4} mt={wide ? 0 : 6}>
                 <Button
                   size="compact-xs"
                   color="green"
@@ -424,6 +383,57 @@ function List({
                 </Button>
               </Group>
             )}
+          </>
+        );
+        return (
+          <Card
+            key={c.id}
+            withBorder
+            padding="xs"
+            title={stage?.hint}
+            className={['cc-item', hot ? 'cc-hot' : '', isSel ? 'cc-selected' : ''].join(' ')}
+            data-urgent={(hot && !!c.isUrgent) || undefined}
+            data-selected={isSel || undefined}
+            style={{
+              cursor: 'pointer',
+              background: stage ? `${stage.bg}, var(--mantine-color-body)` : undefined,
+            }}
+            onClick={() => onSelect(c.id)}
+            data-testid="conv-item"
+            data-stage={stageOf(c) ?? undefined}
+            py={wide ? 8 : undefined}
+          >
+            <Group justify="space-between" wrap="nowrap" gap="sm">
+              <Text
+                fw={600}
+                size="sm"
+                truncate
+                w={wide ? 220 : undefined}
+                style={{ flex: wide ? 'none' : 1 }}
+              >
+                {c.status === 'queued' && <span className="cc-queue-dot" data-testid="queue-dot" />}
+                {String(c.contactName)}
+              </Text>
+              {wide && (
+                <Text size="xs" c="dimmed" truncate style={{ flex: 1, minWidth: 0 }}>
+                  {c.lastDirection === 'out' ? t.workspace.vy : ''}
+                  {String(c.lastMessage ?? '')}
+                </Text>
+              )}
+              {wide && badges}
+              <Text size="xs" c="dimmed" style={{ flex: 'none' }}>
+                {tab === 'queue' || c.status === 'queued' ? since(c.createdAt) : time(c.lastMessageAt)}
+              </Text>
+              {wide && actions}
+            </Group>
+            {!wide && (
+              <Text size="xs" c="dimmed" lineClamp={2}>
+                {c.lastDirection === 'out' ? t.workspace.vy : ''}
+                {String(c.lastMessage ?? '')}
+              </Text>
+            )}
+            {!wide && badges}
+            {!wide && actions}
           </Card>
         );
       })}
