@@ -49,6 +49,31 @@ export async function upload<T>(path: string, file: File): Promise<T> {
   return data as T;
 }
 
+/** Часть большого файла (обновление системы, Д-065): PUT сырыми байтами, ответ — JSON, ошибка — с кодом сервера. */
+export async function putChunk<T>(path: string, chunk: Blob): Promise<T> {
+  const doIt = () =>
+    fetch(`/api/v1${path}`, {
+      method: 'PUT',
+      credentials: 'same-origin',
+      headers: {
+        'content-type': 'application/octet-stream',
+        ...(accessToken ? { authorization: `Bearer ${accessToken}` } : {}),
+      },
+      body: chunk,
+    });
+  let r = await doIt();
+  if (r.status === 401 && (await refreshSession())) r = await doIt();
+  const data = (await r.json().catch(() => ({}))) as Record<string, unknown>;
+  if (!r.ok)
+    throw new ApiError(
+      r.status,
+      String(data.error ?? 'error'),
+      String(data.message ?? r.statusText),
+      data.details,
+    );
+  return data as T;
+}
+
 /** Открыть вложение (скачивание с авторизацией через Bearer). */
 export async function openAttachment(id: string): Promise<void> {
   const r = await fetch(`/api/v1/attachments/${id}`, {

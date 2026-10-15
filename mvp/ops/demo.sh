@@ -18,6 +18,8 @@ CMD="${1:-up}"
 TAG="${TAG:-dev}"
 export API_TAG="$TAG" MEDIA_TAG="${MEDIA_TAG:-$TAG}" MOCK_TELEGRAM_TAG="$TAG"
 export COMPOSE_PROFILES="${COMPOSE_PROFILES:-test}" SEED_DEMO=true
+# Д-065: служба обновления на стенде — в пробном режиме (система не меняется), каталог развёртывания — этот.
+export CC_DEPLOY_DIR="${CC_DEPLOY_DIR:-$(pwd)}" UPDATER_DRY_RUN="${UPDATER_DRY_RUN:-true}"
 export BOOTSTRAP_ADMIN_PASSWORD="${BOOTSTRAP_ADMIN_PASSWORD:-Admin12345!}" DEMO_PASSWORD="${DEMO_PASSWORD:-Demo12345!}"
 # Вход в один клик (/demo-login?as=<email>): api входит с известным паролем демо-учётки — только на стенде.
 export DEMO_ADMIN_PASSWORD="$BOOTSTRAP_ADMIN_PASSWORD"

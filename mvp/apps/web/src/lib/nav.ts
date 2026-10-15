@@ -20,6 +20,7 @@ import {
   IconHierarchy,
   IconHistory,
   IconFileImport,
+  IconCloudUpload,
   IconInbox,
   IconKey,
   IconListTree,
@@ -353,6 +354,13 @@ export const MENU: MenuItem[] = [
     perms: ['data.import'],
     group: 'system',
     icon: IconFileImport,
+  },
+  {
+    to: '/system-update',
+    label: t.sysUpdate.navTitle,
+    perms: ['system.update'],
+    group: 'system',
+    icon: IconCloudUpload,
   },
   { to: '/audit', label: t.nav.audit, perms: ['admin.audit'], group: 'system', icon: IconHistory },
 ];

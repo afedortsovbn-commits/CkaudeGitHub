@@ -276,6 +276,9 @@ services:
       NATS_STREAM_REPLICAS: 3
       S3_ENDPOINT: http://s3:8333
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-https://localhost}
+      # Д-065: файл обновления принимается частями по 8 МБ в том updates (общий со службой обновления).
+      MAX_UPLOAD_MB: 16
+    volumes: ['updates:/updates']
     networks: [cc]
     stop_grace_period: 35s
     depends_on:
@@ -290,6 +293,29 @@ services:
       traefik.http.services.api-reports.loadbalancer.healthcheck.path: /readyz
       traefik.http.services.api-reports.loadbalancer.healthcheck.interval: 1s
       traefik.http.services.api-reports.loadbalancer.healthcheck.timeout: 1s
+
+  # Служба обновления (Д-065, ops/updater): выполняет обновления, подтверждённые в интерфейсе («Система →
+  # Обновление системы»), через ops/release.sh. Управляет стеком через docker.sock, поэтому каталог развёртывания
+  # смонтирован по тому же пути, что на сервере (CC_DEPLOY_DIR — абсолютный путь к каталогу с infra/ и ops/).
+  # UPDATER_DRY_RUN=true (демо-стенд) — пробный режим: файл проверяется, образы загружаются, система не меняется.
+  updater:
+    logging: *logging
+    image: cc/updater:${UPDATER_TAG:-dev}
+    build: { context: ../../ops/updater }
+    restart: unless-stopped
+    working_dir: ${CC_DEPLOY_DIR:-/opt/contact-center}
+    environment:
+      DATABASE_URL: postgres://cc:${POSTGRES_PASSWORD:-cc_dev_password}@postgres:5432/cc
+      DEPLOY_DIR: ${CC_DEPLOY_DIR:-/opt/contact-center}
+      UPDATES_DIR: /updates
+      UPDATER_DRY_RUN: ${UPDATER_DRY_RUN:-false}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${CC_DEPLOY_DIR:-/opt/contact-center}:${CC_DEPLOY_DIR:-/opt/contact-center}
+      - updates:/updates
+    networks: [cc]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
 
   worker:
     logging: *logging
@@ -664,6 +690,8 @@ networks:
     name: cc
 
 volumes:
+  # Д-065: файлы обновления (api-reports принимает, служба updater устанавливает).
+  updates:
   sipcerts:
   ast1spool:
   ast2spool:

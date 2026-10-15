@@ -14,7 +14,7 @@ http:
     # Тяжёлые запросы (отчёты, выгрузка в Excel, загрузка обращений из Excel) — отдельному экземпляру API с ограничением процессора и памяти:
     # даже очень большой отчёт не замедляет чаты, звонки и рабочие места (основные экземпляры api).
     api-reports:
-      rule: PathPrefix(`/api/v1/reports`) || Path(`/api/v1/tickets/export`) || PathPrefix(`/api/v1/import`)
+      rule: PathPrefix(`/api/v1/reports`) || Path(`/api/v1/tickets/export`) || PathPrefix(`/api/v1/import`) || PathPrefix(`/api/v1/system-update`)
       priority: 1000
       entryPoints: [websecure]
       tls: {}

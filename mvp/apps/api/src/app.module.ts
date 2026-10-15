@@ -31,6 +31,7 @@ import { PrivacyController } from './privacy/privacy.controller';
 import { PivotController } from './reports/pivot/pivot.controller';
 import { ReportsController } from './reports/reports.controller';
 import { ReleaseController } from './release/release.controller';
+import { SystemUpdateController } from './release/system-update.controller';
 import { NotificationsController } from './tickets/notifications.controller';
 import { StaffMessagesController } from './org/staff-messages.controller';
 import { TestsController } from './org/tests.controller';
@@ -79,6 +80,7 @@ export class AppModule {
         PivotController,
         ReportsController,
         ReleaseController,
+        SystemUpdateController,
         PrivacyController,
         ObjectSyncController,
         ScheduleController,

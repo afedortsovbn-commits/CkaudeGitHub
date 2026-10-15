@@ -45,6 +45,7 @@ import { WallboardPage } from './pages/WallboardPage';
 import { StaffMessagesPage } from './pages/StaffMessagesPage';
 import { TestsPage } from './pages/TestsPage';
 import { ImportPage } from './pages/ImportPage';
+import { SystemUpdatePage } from './pages/SystemUpdatePage';
 import { CoursesPage } from './pages/CoursesPage';
 import { CourseLessonPage, MyCoursesPage } from './pages/MyCoursesPage';
 import { RatingsPage } from './pages/RatingsPage';
@@ -126,6 +127,7 @@ function App() {
         <Route path="notify" element={<NotifyPage />} />
         <Route path="audit" element={<AuditPage />} />
         <Route path="import" element={<ImportPage />} />
+        <Route path="system-update" element={<SystemUpdatePage />} />
         <Route path="profile" element={<ProfilePage />} />
         <Route path="privacy" element={<PrivacyPage />} />
         <Route path="*" element={<HomePage />} />
