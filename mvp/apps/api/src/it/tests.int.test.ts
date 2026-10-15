@@ -221,4 +221,50 @@ describe.skipIf(!ADMIN_URL)('Тестирование сотрудников (и
     expect(mine.status).toBe(200);
     expect(mine.body.distribution).toHaveLength(5);
   });
+
+  it('Д-062: сборный тест — случайные вопросы из нескольких тестов, назначение и прохождение', async () => {
+    const mk = (title: string, n: number) =>
+      call('POST', '/tests', 'sup', {
+        title,
+        questions: Array.from({ length: n }, (_, i) => ({
+          text: `${title}: вопрос ${i + 1}`,
+          options: [
+            { text: 'да', correct: true },
+            { text: 'нет', correct: false },
+          ],
+        })),
+      });
+    const a = await mk('Источник А', 4);
+    const b = await mk('Источник Б', 3);
+    expect(a.status).toBe(201);
+    const c = await call('POST', '/tests', 'sup', {
+      title: 'Сборный А+Б',
+      passScore: 60,
+      sourceTestIds: [a.body.id, b.body.id],
+      questionCount: 5,
+    });
+    expect(c.status, JSON.stringify(c.body)).toBe(201);
+    expect(c.body).toMatchObject({ poolSize: 7, questionCount: 5, questions: [] });
+    // Из сборного сборный не собрать.
+    expect((await call('POST', '/tests', 'sup', { title: 'x', sourceTestIds: [c.body.id] })).status).toBe(400);
+    const row = (await call('GET', '/tests', 'sup')).body.find((x: { id: string }) => x.id === c.body.id);
+    expect(row.questions).toBe(5);
+    const as = await call('POST', '/tests-assignments', 'sup', {
+      testId: c.body.id,
+      userIds: [id.op2],
+      dueDate: day(3),
+    });
+    expect(as.status, JSON.stringify(as.body)).toBe(201);
+    const st = await call('POST', `/my-tests/${c.body.id}/start`, 'op2');
+    expect(st.status).toBe(201);
+    expect(st.body.questions).toHaveLength(5);
+    const titles = st.body.questions.map((q: { text: string }) => q.text.split(':')[0]);
+    expect(titles.every((x: string) => x === 'Источник А' || x === 'Источник Б')).toBe(true);
+    const answers = st.body.questions.map((q: { id: string; options: { id: string; text: string }[] }) => ({
+      questionId: q.id,
+      optionIds: [q.options.find((o) => o.text === 'да')!.id],
+    }));
+    const fin = await call('POST', `/my-tests/attempts/${st.body.attemptId}/finish`, 'op2', { answers });
+    expect(fin.body).toMatchObject({ total: 5, correct: 5, passed: true });
+  });
 });

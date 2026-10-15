@@ -45,6 +45,9 @@ const TestBody = z
     passScore: z.number().int().min(1).max(100).default(100),
     isActive: z.boolean().default(true),
     questions: z.array(QuestionBody).max(300).default([]),
+    // Д-062: сборный тест — вопросы из этих тестов (своих вопросов нет), в попытке — questionCount случайных.
+    sourceTestIds: z.array(uuid).max(200).default([]),
+    questionCount: z.number().int().min(1).max(300).nullable().default(null),
   })
   .strict();
 const AssignBody = z
@@ -68,6 +71,20 @@ const TOPIC_LABEL = `COALESCE(pp.name || ' › ', '') || tp.name`;
 const TOPIC_NAMES = (ids: string) =>
   `(SELECT COALESCE(array_agg(${TOPIC_LABEL} ORDER BY ${TOPIC_LABEL}), '{}') FROM topic tp
       LEFT JOIN topic pp ON pp.id = tp.parent_id WHERE tp.id = ANY(${ids}))`;
+
+/** Вопросы, из которых собирается попытка теста `t`: свои или (сборный тест, Д-062) — тестов-источников. */
+const POOL = (t: string) =>
+  `q.is_active AND q.test_id = ANY(CASE WHEN cardinality(${t}.source_test_ids) > 0 THEN ${t}.source_test_ids
+     ELSE ARRAY[${t}.id] END)`;
+/** Сколько вопросов будет в попытке: все из набора или не больше question_count. */
+const QCOUNT = (t: string) =>
+  `(SELECT LEAST(count(*)::int, COALESCE(${t}.question_count, 2147483647)) FROM knowledge_question q WHERE ${POOL(t)})`;
+/** Группы списка тестов (Д-063): темы «тема / подтема» и курс обучения, к которому относится тест. */
+const GROUPS = `(SELECT COALESCE(json_agg(json_build_object('topic', COALESCE(pp.name, tp.name),
+                   'sub', CASE WHEN pp.id IS NULL THEN NULL ELSE tp.name END)), '[]')
+                   FROM topic tp LEFT JOIN topic pp ON pp.id = tp.parent_id WHERE tp.id = ANY(t.topic_ids)) AS topic_groups,
+              COALESCE((SELECT c.title FROM course_lesson l JOIN course c ON c.id = l.course_id WHERE l.test_id = t.id LIMIT 1),
+                       (SELECT c.title FROM course c WHERE t.title = 'Итоговый тест: ' || c.title LIMIT 1)) AS course_title`;
 
 interface QuestionRow {
   id: string;
@@ -98,8 +115,9 @@ export class TestsController {
     const list = await rows(
       this.ctx.pool,
       `SELECT t.id, t.title, t.description, t.topic_ids, t.pass_score, t.is_active, t.created_at, t.updated_at,
+              t.source_test_ids, t.question_count, ${GROUPS},
               ${TOPIC_NAMES('t.topic_ids')} AS topic_names,
-              (SELECT count(*)::int FROM knowledge_question q WHERE q.test_id = t.id AND q.is_active) AS questions,
+              ${QCOUNT('t')} AS questions,
               (SELECT count(*)::int FROM test_assignment a WHERE a.test_id = t.id AND a.cancelled_at IS NULL) AS assigned,
               (SELECT count(*)::int FROM test_assignment a WHERE a.test_id = t.id AND a.cancelled_at IS NULL
                   AND a.passed_at IS NOT NULL) AS passed,
@@ -118,7 +136,9 @@ export class TestsController {
   async get(@Param('id') id: string) {
     const t = await one(
       this.ctx.pool,
-      `SELECT t.id, t.title, t.description, t.topic_ids, t.pass_score, t.is_active, ${TOPIC_NAMES('t.topic_ids')} AS topic_names
+      `SELECT t.id, t.title, t.description, t.topic_ids, t.pass_score, t.is_active, t.source_test_ids, t.question_count,
+              ${TOPIC_NAMES('t.topic_ids')} AS topic_names,
+              (SELECT count(*)::int FROM knowledge_question q WHERE ${POOL('t')}) AS pool_size
          FROM knowledge_test t WHERE t.id = $1`,
       [parse(uuid, id)],
     );
@@ -137,12 +157,24 @@ export class TestsController {
     const b = parse(TestBody, body);
     const id = newId();
     await withTx(this.ctx.pool, async (tx) => {
+      const topicIds = await this.checkSources(tx, id, b);
       await tx.query(
-        `INSERT INTO knowledge_test (id, title, description, topic_ids, pass_score, is_active, created_by)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-        [id, b.title, b.description, b.topicIds, b.passScore, b.isActive, p.id],
+        `INSERT INTO knowledge_test (id, title, description, topic_ids, pass_score, is_active, created_by,
+                                     source_test_ids, question_count)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+        [
+          id,
+          b.title,
+          b.description,
+          topicIds,
+          b.passScore,
+          b.isActive,
+          p.id,
+          b.sourceTestIds,
+          b.questionCount,
+        ],
       );
-      await this.saveQuestions(tx, id, b.questions);
+      await this.saveQuestions(tx, id, b.sourceTestIds.length ? [] : b.questions);
       await audit(tx, p, 'create', 'knowledge_test', id, null, {
         title: b.title,
         questions: b.questions.length,
@@ -161,18 +193,39 @@ export class TestsController {
         parse(uuid, id),
       ]);
       if (!before) throw notFound('Тест');
+      const topicIds = await this.checkSources(tx, id, b);
       await tx.query(
         `UPDATE knowledge_test SET title = $2, description = $3, topic_ids = $4, pass_score = $5, is_active = $6,
-                updated_at = now() WHERE id = $1`,
-        [id, b.title, b.description, b.topicIds, b.passScore, b.isActive],
+                source_test_ids = $7, question_count = $8, updated_at = now() WHERE id = $1`,
+        [id, b.title, b.description, topicIds, b.passScore, b.isActive, b.sourceTestIds, b.questionCount],
       );
-      await this.saveQuestions(tx, id, b.questions);
+      await this.saveQuestions(tx, id, b.sourceTestIds.length ? [] : b.questions);
       await audit(tx, p, 'update', 'knowledge_test', id, before, {
         title: b.title,
         questions: b.questions.length,
       });
     });
     return this.get(id);
+  }
+
+  /**
+   * Сборный тест (Д-062): источники — существующие обычные тесты (не сборные и не он сам), в них есть вопросы.
+   * Темы сборного теста, если не заданы, — все темы источников. Возвращает темы для сохранения.
+   */
+  private async checkSources(tx: PoolClient, id: string, b: z.infer<typeof TestBody>): Promise<string[]> {
+    if (!b.sourceTestIds.length) return b.topicIds;
+    const src = await rows<{ id: string; combined: boolean; topic_ids: string[]; n: number }>(
+      tx,
+      `SELECT t.id, cardinality(t.source_test_ids) > 0 AS combined, t.topic_ids,
+              (SELECT count(*)::int FROM knowledge_question q WHERE q.test_id = t.id AND q.is_active) AS n
+         FROM knowledge_test t WHERE t.id = ANY($1::uuid[])`,
+      [b.sourceTestIds],
+    );
+    if (src.length !== new Set(b.sourceTestIds).size) throw badRequest('Тест-источник не найден');
+    if (src.some((r) => r.id === id || r.combined))
+      throw badRequest('Сборный тест собирается только из обычных тестов');
+    if (!src.reduce((a, r) => a + r.n, 0)) throw badRequest('В выбранных тестах нет вопросов');
+    return b.topicIds.length ? b.topicIds : [...new Set(src.flatMap((r) => r.topic_ids))];
   }
 
   private async saveQuestions(tx: PoolClient, testId: string, qs: z.infer<typeof QuestionBody>[]) {
@@ -239,7 +292,7 @@ export class TestsController {
       `SELECT a.id, a.test_id, t.title AS test_title, a.user_id, u.full_name, to_char(a.due_date, 'YYYY-MM-DD') AS due_date,
               a.passed_at, a.cancelled_at, a.created_at, a.comment, ab.full_name AS assigned_by_name,
               t.pass_score, ${TOPIC_NAMES('t.topic_ids')} AS topic_names,
-              (SELECT count(*)::int FROM knowledge_question kq WHERE kq.test_id = t.id AND kq.is_active) AS questions,
+              ${QCOUNT('t')} AS questions,
               (SELECT count(*)::int FROM test_attempt x WHERE x.user_id = a.user_id AND x.test_id = a.test_id
                   AND x.finished_at IS NOT NULL AND x.started_at >= a.created_at) AS attempts,
               (SELECT max(x.score) FROM test_attempt x WHERE x.user_id = a.user_id AND x.test_id = a.test_id
@@ -272,8 +325,7 @@ export class TestsController {
     return withTx(this.ctx.pool, async (tx) => {
       const t = await one<{ title: string; is_active: boolean; questions: number }>(
         tx,
-        `SELECT title, is_active, (SELECT count(*)::int FROM knowledge_question q WHERE q.test_id = t.id AND q.is_active) AS questions
-           FROM knowledge_test t WHERE id = $1`,
+        `SELECT title, is_active, ${QCOUNT('t')} AS questions FROM knowledge_test t WHERE id = $1`,
         [b.testId],
       );
       if (!t) throw notFound('Тест');
@@ -567,9 +619,18 @@ export class TestsController {
   async start(@CurrentUser() p: Principal, @Param('testId') testId: string) {
     parse(uuid, testId);
     return withTx(this.ctx.pool, async (tx) => {
-      const t = await one<{ title: string; description: string; pass_score: number; is_active: boolean }>(
+      const t = await one<{
+        title: string;
+        description: string;
+        pass_score: number;
+        is_active: boolean;
+        random: boolean;
+        question_count: number | null;
+      }>(
         tx,
-        'SELECT title, description, pass_score, is_active FROM knowledge_test WHERE id = $1',
+        `SELECT title, description, pass_score, is_active, question_count,
+                cardinality(source_test_ids) > 0 OR question_count IS NOT NULL AS random
+           FROM knowledge_test WHERE id = $1`,
         [testId],
       );
       if (!t) throw notFound('Тест');
@@ -583,10 +644,13 @@ export class TestsController {
       // Тест урока курса (Д-014) доступен любому сотруднику без назначения теста.
       if (!assignment && !hasPerm(p, 'tests.manage') && !(await isLessonTest(tx, testId)))
         throw new ApiError(403, 'forbidden', 'Этот тест вам не назначен');
+      // Обычный тест — все вопросы по порядку; сборный или с числом вопросов — случайные (Д-062).
       const qs = await rows<QuestionRow>(
         tx,
-        `SELECT id, text, options FROM knowledge_question WHERE test_id = $1 AND is_active ORDER BY sort_order, created_at`,
-        [testId],
+        `SELECT q.id, q.text, q.options FROM knowledge_question q JOIN knowledge_test t ON t.id = $1
+          WHERE ${POOL('t')}
+          ORDER BY ${t.random ? 'random()' : 'q.sort_order, q.created_at'} LIMIT $2`,
+        [testId, t.question_count ?? 100000],
       );
       if (!qs.length) throw badRequest('В тесте нет вопросов');
       const id = newId();

@@ -235,3 +235,11 @@
   background: var(--mantine-color-red-6);
   vertical-align: middle;
 }
+
+/* Заголовок группы в списке тестов (Д-063). */
+.cc-test-group {
+  border-radius: var(--mantine-radius-sm);
+}
+.cc-test-group:hover {
+  background: var(--mantine-color-default-hover);
+}
