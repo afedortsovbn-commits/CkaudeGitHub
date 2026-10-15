@@ -52,14 +52,15 @@
     transform 0.18s ease,
     box-shadow 0.18s ease;
 }
+/* Д-078: выбранная заметно «над» остальными — крупнее, с глубокой тенью, слегка перекрывает соседние. */
 .cc-item.cc-selected {
   position: relative;
-  z-index: 1;
-  transform: scale(1.03);
+  z-index: 2;
+  transform: scale(1.05);
   border-color: transparent;
   box-shadow:
-    0 12px 28px rgba(0, 0, 0, 0.2),
-    0 3px 8px rgba(0, 0, 0, 0.12);
+    0 18px 40px rgba(0, 0, 0, 0.28),
+    0 6px 14px rgba(0, 0, 0, 0.16);
 }
 
 /* Особо важное / срочное у оператора 1-й линии — просто красным, без мерцания. */
@@ -70,8 +71,8 @@
 .cc-item.cc-hot.cc-selected {
   box-shadow:
     0 0 0 1px var(--mantine-color-red-5),
-    0 12px 28px rgba(0, 0, 0, 0.2),
-    0 3px 8px rgba(0, 0, 0, 0.12);
+    0 18px 40px rgba(0, 0, 0, 0.28),
+    0 6px 14px rgba(0, 0, 0, 0.16);
 }
 
 /* Сообщение о проблеме связи в шапке — мерцает, пока проблема не ушла. */
@@ -242,4 +243,9 @@
 }
 .cc-test-group:hover {
   background: var(--mantine-color-default-hover);
+}
+
+/* Д-078: при прокрутке к выбранной карточке оставлять место под её тень и увеличение. */
+.cc-item {
+  scroll-margin: 14px;
 }

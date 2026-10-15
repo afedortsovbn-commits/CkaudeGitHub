@@ -36,7 +36,9 @@ import {
   IconChevronsLeft,
   IconChevronsRight,
   IconFilter,
+  IconLayoutSidebarRightExpand,
   IconMap2,
+  IconMessages,
   IconPaperclip,
   IconSend,
   IconSparkles,
@@ -64,6 +66,7 @@ import { OrgPicker, TopicPicker } from '../components/DictPickers';
 import { COMMON_FIELD_KEYS, isCommonField } from '../lib/common-fields';
 import { t } from '../lib/i18n';
 import { orderTabs } from '../lib/nav';
+import { useRevealSelected } from '../lib/reveal';
 
 const CHANNEL: Record<string, string> = {
   webchat: t.workspace.sayt,
@@ -267,9 +270,11 @@ function List({
     (id: string) => post(`/conversations/${id}/decline`),
     t.workspace.obrashchenieOtkloneno,
   );
+  const box = useRef<HTMLDivElement>(null);
+  useRevealSelected(box, selected);
   return (
-    // Отступы — чтобы выбранная карточка (чуть крупнее, с тенью) не обрезалась краями списка.
-    <Stack gap={wide ? 4 : 6} p={6}>
+    // Отступы — чтобы выбранная карточка (крупнее, с тенью) не обрезалась краями списка.
+    <Stack gap={wide ? 4 : 6} px={wide ? 6 : 14} py={wide ? 6 : 10} ref={box}>
       {rows.length === 0 && (
         <Text c="dimmed" size="sm" ta="center" mt="md">
           {t.workspace.netObrashcheniy}
@@ -710,12 +715,12 @@ function Messages({ conv, typing, onTyping }: { conv: Row; typing: boolean; onTy
   const height = voice
     ? hintsOpen
       ? 140
-      : 'calc(100vh - 210px)'
+      : 'calc(100vh - 198px)'
     : showHints
       ? hintsOpen
         ? 'calc(50vh - 110px)'
-        : 'calc(100vh - 375px)'
-      : 'calc(100vh - 330px)';
+        : 'calc(100vh - 363px)'
+      : 'calc(100vh - 318px)';
   return (
     <Stack h="100%" gap="xs">
       <ScrollArea h={height} viewportRef={viewport} type="auto">
@@ -2072,16 +2077,16 @@ function ConversationCard({
                     {t.workspace.escalateFlags}
                   </Text>
                   <Group gap="lg">
-                    <Switch
-                      size="sm"
+                    <Checkbox
+                      size="md"
                       color="red"
                       label={t.workspace.osoboVazhnoe2}
                       checked={!!conv.isImportant}
                       onChange={(e) => upd.mutate({ isImportant: e.currentTarget.checked })}
                       data-testid="esc-important"
                     />
-                    <Switch
-                      size="sm"
+                    <Checkbox
+                      size="md"
                       color="red"
                       label={t.workspace.srochnoe2}
                       checked={!!conv.isUrgent}
@@ -2303,7 +2308,7 @@ function CallsPanel({ convId }: { convId: string }) {
 }
 
 /** Высота панелей рабочего места: экран минус шапка и отступы. */
-const PANEL_H = 'calc(100vh - 88px)';
+const PANEL_H = 'calc(100vh - 76px)';
 /** Статусы, в которых обращение «в работе» у оператора (режим обработки). */
 const WORK_STATUSES = ['active', 'hold', 'waiting_customer'];
 
@@ -2432,7 +2437,15 @@ export function WorkspacePage() {
   // кадре). Если сотрудник потом открыл список, поздние обновления статуса его уже не прячут.
   const autoHidden = useRef(new Set<string>());
   const pendingAuto = !!answered && answered === selected && !autoHidden.current.has(answered);
-  const focus = working && (listHidden || pendingAuto);
+  // Д-074: переписку и правый блок (обращение и клиент) можно закрыть по отдельности — оставшийся блок
+  // расширяется; закрыта переписка — виден список. Другое обращение открывается с обоими блоками.
+  const [chatHidden, setChatHidden] = useState(false);
+  const [cardHidden, setCardHidden] = useState(false);
+  useEffect(() => {
+    setChatHidden(false);
+    setCardHidden(false);
+  }, [selected]);
+  const focus = working && (listHidden || pendingAuto) && !chatHidden;
   // Обращение закрыто, передано или открыто чужое/закрытое — список снова виден.
   useEffect(() => {
     if (conv.data && String(conv.data.id) === selected && !working) setListHidden(false);
@@ -2492,12 +2505,40 @@ export function WorkspacePage() {
       notifications.show({ color: 'red', title: t.error, message: errorText(e), autoClose: 8000 }),
   });
 
-  const hasConv = !!conv.data;
-  const cols = !hasConv ? '1fr 0fr 0fr' : focus ? '0fr 7fr 5fr' : '3fr 5fr 4fr';
+  // Д-072: раскладка зависит от выбора, а не от загрузки — при переключении на другое обращение список не
+  // растягивается на миг во всю ширину, пока грузится карточка.
+  const hasConv = !!selected && !conv.isError;
+  const cols = !hasConv
+    ? '1fr 0fr 0fr'
+    : focus
+      ? cardHidden
+        ? '0fr 1fr 0fr'
+        : '0fr 7fr 5fr'
+      : chatHidden
+        ? '4fr 0fr 8fr'
+        : cardHidden
+          ? '3fr 9fr 0fr'
+          : '3fr 5fr 4fr';
+  const hideChat = () => {
+    if (cardHidden) return closeConv();
+    setChatHidden(true);
+    setListHidden(false);
+  };
+  const hideCard = () => (chatHidden ? closeConv() : setCardHidden(true));
+  // Д-076: одна кнопка начала работы — «Взять», пока клиент ждёт в очереди; «Перехватить», когда с ним уже
+  // общается другой оператор или бот.
+  const canTake = conv.data?.status === 'queued' && (!loadMode || can('supervisor.monitor'));
+  const canTakeover =
+    !canTake &&
+    !!conv.data &&
+    can('conversations.takeover') &&
+    conv.data.assigneeId !== me?.id &&
+    ['queued', 'offered', 'active', 'bot'].includes(String(conv.data.status));
   return (
     <Box
       className="cc-ws"
-      style={{ gridTemplateColumns: cols }}
+      // Д-073: панели — до низа экрана (поверх нижнего отступа страницы, без прокрутки страницы).
+      style={{ gridTemplateColumns: cols, marginBottom: -12 }}
       data-testid="ws-grid"
       data-wide={!hasConv || undefined}
     >
@@ -2665,7 +2706,7 @@ export function WorkspacePage() {
         <Box />
       )}
       <Box>
-        {conv.data ? (
+        {conv.data && !chatHidden ? (
           <Stack gap="xs" className="cc-slide-in" key={String(conv.data.id)}>
             <Group justify="space-between" wrap="nowrap">
               <Group gap="xs" wrap="nowrap" style={{ minWidth: 0 }}>
@@ -2678,28 +2719,32 @@ export function WorkspacePage() {
                     }
                     withArrow
                   >
-                    <Indicator
-                      disabled={!focus || !nQueue}
-                      label={nQueue}
-                      size={16}
-                      color="orange"
-                      offset={4}
-                      classNames={{ indicator: 'cc-blink' }}
-                      // Счётчик поверх кнопки не перехватывает щелчок — нажимается кнопка.
-                      styles={{ indicator: { pointerEvents: 'none' } }}
+                    {/* Д-077: число обращений в очереди — рядом со стрелкой, а не поверх неё. */}
+                    <Button
+                      variant={focus ? 'light' : 'subtle'}
+                      color="gray"
+                      size="compact-md"
+                      px={6}
+                      onClick={() => setListHidden(!focus)}
+                      aria-label={focus ? t.workspace.focusShowList : t.workspace.focusHideList}
+                      data-testid="focus-toggle-list"
+                      data-focus={focus || undefined}
+                      rightSection={
+                        focus && nQueue ? (
+                          <Badge
+                            size="sm"
+                            circle={nQueue < 10}
+                            color="orange"
+                            variant="filled"
+                            className="cc-blink"
+                          >
+                            {nQueue}
+                          </Badge>
+                        ) : undefined
+                      }
                     >
-                      <ActionIcon
-                        variant={focus ? 'light' : 'subtle'}
-                        color="gray"
-                        size="lg"
-                        onClick={() => setListHidden(!focus)}
-                        aria-label={focus ? t.workspace.focusShowList : t.workspace.focusHideList}
-                        data-testid="focus-toggle-list"
-                        data-focus={focus || undefined}
-                      >
-                        {focus ? <IconChevronsRight size={18} /> : <IconChevronsLeft size={18} />}
-                      </ActionIcon>
-                    </Indicator>
+                      {focus ? <IconChevronsRight size={18} /> : <IconChevronsLeft size={18} />}
+                    </Button>
                   </Tooltip>
                 )}
                 <Box style={{ minWidth: 0 }}>
@@ -2720,7 +2765,7 @@ export function WorkspacePage() {
                   </Text>
                 </Box>
               </Group>
-              {conv.data.status === 'queued' && (!loadMode || can('supervisor.monitor')) && (
+              {canTake && (
                 <Button
                   size="xs"
                   onClick={() =>
@@ -2734,9 +2779,8 @@ export function WorkspacePage() {
                   {t.workspace.vzyat}
                 </Button>
               )}
-              {can('conversations.takeover') &&
-                conv.data.assigneeId !== me?.id &&
-                ['queued', 'offered', 'active', 'bot'].includes(String(conv.data.status)) && (
+              {canTakeover && (
+                <Tooltip label={t.workspace.takeoverHint} withArrow>
                   <Button
                     size="xs"
                     color="orange"
@@ -2750,7 +2794,8 @@ export function WorkspacePage() {
                   >
                     {t.workspace.perekhvatit}
                   </Button>
-                )}
+                </Tooltip>
+              )}
               {conv.data.status === 'offered' && conv.data.assigneeId === me?.id && (
                 <Group gap={4}>
                   <Button
@@ -2782,12 +2827,26 @@ export function WorkspacePage() {
                   </Button>
                 </Group>
               )}
-              <Tooltip label={t.workspace.closeConv} withArrow>
+              {cardHidden && (
+                <Tooltip label={t.workspace.showCard} withArrow>
+                  <ActionIcon
+                    variant="light"
+                    color="gray"
+                    size="lg"
+                    onClick={() => setCardHidden(false)}
+                    aria-label={t.workspace.showCard}
+                    data-testid="show-card"
+                  >
+                    <IconLayoutSidebarRightExpand size={18} />
+                  </ActionIcon>
+                </Tooltip>
+              )}
+              <Tooltip label={cardHidden ? t.workspace.closeConv : t.workspace.hideChat} withArrow>
                 <ActionIcon
                   variant="subtle"
                   color="gray"
-                  onClick={closeConv}
-                  aria-label={t.workspace.closeConv}
+                  onClick={hideChat}
+                  aria-label={cardHidden ? t.workspace.closeConv : t.workspace.hideChat}
                   data-testid="conv-close-view"
                 >
                   <IconX size={18} />
@@ -2809,57 +2868,85 @@ export function WorkspacePage() {
         ) : null}
       </Box>
       <Box>
-        {conv.data && (
-          <Tabs
-            defaultValue={rightTabs[0]?.value ?? 'card'}
+        {conv.data && !cardHidden && (
+          // Д-075: обращение и клиент — в серой рамке, как список обращений.
+          <Paper
+            withBorder
+            radius="md"
+            p="xs"
+            bg="gray.0"
+            h={PANEL_H}
             className="cc-slide-in"
             key={String(conv.data.id)}
+            data-testid="conv-card-panel"
           >
-            <Tabs.List mb="xs">
-              {rightTabs.map((x) => (
-                <Tabs.Tab key={x.value} value={x.value} data-testid={x.testId}>
-                  {x.value === 'contact' && nPrev > 0 ? (
-                    <Tooltip label={t.workspace.prevCount(nPrev)} withArrow>
-                      <Indicator
-                        label={nPrev}
-                        size={16}
-                        offset={-2}
-                        position="top-end"
-                        color="blue"
-                        data-testid="prev-count"
-                      >
-                        <Box pr={10} pt={4}>
-                          {x.label}
-                        </Box>
-                      </Indicator>
-                    </Tooltip>
-                  ) : (
-                    x.label
-                  )}
-                </Tabs.Tab>
-              ))}
-              <Box style={{ flex: 1 }} />
-              <Tooltip label={t.workspace.closeConv} withArrow>
-                <ActionIcon
-                  variant="subtle"
-                  color="gray"
-                  onClick={closeConv}
-                  aria-label={t.workspace.closeConv}
-                  mt={4}
-                >
-                  <IconX size={16} />
-                </ActionIcon>
-              </Tooltip>
-            </Tabs.List>
-            <ScrollArea h="calc(100vh - 140px)" type="auto" offsetScrollbars>
-              <Tabs.Panel value="card">
-                <ConversationCard conv={conv.data} onDone={closeConv} />
-              </Tabs.Panel>
-              <Tabs.Panel value="contact">
-                <ContactCard conv={conv.data} onOpen={setSelected} />
-              </Tabs.Panel>
-            </ScrollArea>
-          </Tabs>
+            <Tabs
+              defaultValue={rightTabs[0]?.value ?? 'card'}
+              h="100%"
+              style={{ display: 'flex', flexDirection: 'column' }}
+            >
+              <Tabs.List mb="xs">
+                {chatHidden && (
+                  <Tooltip label={t.workspace.showChat} withArrow>
+                    <ActionIcon
+                      variant="light"
+                      color="gray"
+                      size="lg"
+                      mr={4}
+                      onClick={() => setChatHidden(false)}
+                      aria-label={t.workspace.showChat}
+                      data-testid="show-chat"
+                    >
+                      <IconMessages size={18} />
+                    </ActionIcon>
+                  </Tooltip>
+                )}
+                {rightTabs.map((x) => (
+                  <Tabs.Tab key={x.value} value={x.value} data-testid={x.testId}>
+                    {x.value === 'contact' && nPrev > 0 ? (
+                      <Tooltip label={t.workspace.prevCount(nPrev)} withArrow>
+                        <Indicator
+                          label={nPrev}
+                          size={16}
+                          offset={-2}
+                          position="top-end"
+                          color="blue"
+                          data-testid="prev-count"
+                        >
+                          <Box pr={10} pt={4}>
+                            {x.label}
+                          </Box>
+                        </Indicator>
+                      </Tooltip>
+                    ) : (
+                      x.label
+                    )}
+                  </Tabs.Tab>
+                ))}
+                <Box style={{ flex: 1 }} />
+                <Tooltip label={chatHidden ? t.workspace.closeConv : t.workspace.hideCard} withArrow>
+                  <ActionIcon
+                    variant="subtle"
+                    color="gray"
+                    onClick={hideCard}
+                    aria-label={chatHidden ? t.workspace.closeConv : t.workspace.hideCard}
+                    mt={4}
+                    data-testid="card-close-view"
+                  >
+                    <IconX size={16} />
+                  </ActionIcon>
+                </Tooltip>
+              </Tabs.List>
+              <ScrollArea style={{ flex: 1, minHeight: 0 }} type="auto" offsetScrollbars>
+                <Tabs.Panel value="card">
+                  <ConversationCard conv={conv.data} onDone={closeConv} />
+                </Tabs.Panel>
+                <Tabs.Panel value="contact">
+                  <ContactCard conv={conv.data} onOpen={setSelected} />
+                </Tabs.Panel>
+              </ScrollArea>
+            </Tabs>
+          </Paper>
         )}
       </Box>
     </Box>

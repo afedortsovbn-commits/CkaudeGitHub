@@ -18,7 +18,6 @@ import {
   ScrollArea,
   Select,
   Stack,
-  Switch,
   Table,
   Tabs,
   Text,
@@ -38,6 +37,7 @@ import { t } from '../lib/i18n';
 import { OrgPicker, TopicPicker } from '../components/DictPickers';
 import { COMMON_FIELD_KEYS, isCommonField } from '../lib/common-fields';
 import { defaultFilter, filterQuery, type TicketFilter, TicketFilters } from '../components/TicketFilters';
+import { useRevealSelected } from '../lib/reveal';
 import {
   IconAlertTriangle,
   IconArrowForwardUp,
@@ -466,32 +466,34 @@ function TicketCard({
       data-new={fresh || undefined}
     >
       {wide ? (
-        <Group wrap="nowrap" gap="sm">
-          <Box w={300} style={{ flex: 'none', overflow: 'hidden' }}>
+        // Д-081: строка в два уровня — номер, тема / подтема и срок сверху, клиент и суть под ними.
+        <Group wrap="nowrap" gap="md" align="flex-start">
+          <Box style={{ flex: 'none' }} miw={90}>
             {numberAndFlags}
           </Box>
-          <Text size="xs" truncate c={c} style={{ flex: 2, minWidth: 0 }}>
-            {String(tk.topicName)} · {String(tk.enterpriseName)} / {String(tk.departmentName)}
-          </Text>
-          <Text
-            size="xs"
-            truncate
-            c={dim ? 'dimmed' : 'dark.4'}
-            style={{ flex: 3, minWidth: 0 }}
-            data-testid="ticket-item-summary"
-          >
-            {String(tk.contactName)}: {String(tk.summary)}
-          </Text>
-          <Box style={{ flex: 'none' }}>
-            <Deadline t={tk} />
-          </Box>
-          {Number(tk.returnsCount) > 0 && (
-            <Text size="xs" c={dim ? 'dimmed' : 'orange'} style={{ flex: 'none' }}>
-              {t.tickets.vozvratov}
-              {String(tk.returnsCount)}
+          <Box style={{ flex: 1, minWidth: 0 }}>
+            <Text size="sm" fw={600} truncate c={c} data-testid="ticket-item-topic">
+              {String(tk.topicName)}
+              <Text span size="xs" fw={400} c="dimmed">
+                {'  '}· {String(tk.enterpriseName)} / {String(tk.departmentName)}
+              </Text>
             </Text>
-          )}
-          <Box style={{ flex: 'none' }}>{stateMarks}</Box>
+            <Text size="xs" lineClamp={2} c={dim ? 'dimmed' : 'dark.4'} data-testid="ticket-item-summary">
+              {String(tk.contactName)}: {String(tk.summary)}
+            </Text>
+          </Box>
+          <Stack gap={4} align="flex-end" style={{ flex: 'none' }}>
+            <Group gap="sm" wrap="nowrap">
+              <Deadline t={tk} />
+              {stateMarks}
+            </Group>
+            {Number(tk.returnsCount) > 0 && (
+              <Text size="xs" c={dim ? 'dimmed' : 'orange'}>
+                {t.tickets.vozvratov}
+                {String(tk.returnsCount)}
+              </Text>
+            )}
+          </Stack>
         </Group>
       ) : (
         <>
@@ -545,8 +547,8 @@ function TicketFlags({ t: tk }: { t: Row }) {
   if (!can.flags) return null;
   return (
     <Group gap="lg" mb="xs" data-testid="ticket-flags">
-      <Switch
-        size="sm"
+      <Checkbox
+        size="md"
         color="red"
         label={t.workspace.osoboVazhnoe2}
         checked={!!tk.isImportant}
@@ -554,8 +556,8 @@ function TicketFlags({ t: tk }: { t: Row }) {
         onChange={(e) => save.mutate({ isImportant: e.currentTarget.checked })}
         data-testid="ticket-flag-important"
       />
-      <Switch
-        size="sm"
+      <Checkbox
+        size="md"
         color="red"
         label={t.workspace.srochnoe2}
         checked={urgent}
@@ -703,15 +705,30 @@ export function CabinetPage({ inTabs = false }: { inTabs?: boolean }) {
   const [dialog, setDialog] = useState<Dialog>(null);
   const [exporting, setExporting] = useState(false);
   const list = useList(`/tickets?view=cabinet${filterQuery(f)}`, ready);
+  // Д-080: пока обращение выбрано, порядок списка не меняется (открытое перестаёт быть «новым» и иначе уезжает
+  // вниз — выбранная карточка «пропадает»); новые обращения встают сверху. Без выбора — порядок сервера.
+  const [frozen, setFrozen] = useState<string[] | null>(null);
+  const rows = useMemo(() => {
+    const data = list.data ?? [];
+    if (!frozen) return data;
+    const pos = new Map(frozen.map((id, i) => [id, i]));
+    return [...data].sort((a, b) => (pos.get(a.id) ?? -1) - (pos.get(b.id) ?? -1));
+  }, [list.data, frozen]);
   const preview = useQuery({
     queryKey: [`/tickets/${selected}`],
     queryFn: () => get<Row>(`/tickets/${selected}`),
     enabled: !!selected,
   });
+  const opened = !!selected && !preview.isError;
+  const listBox = useRef<HTMLDivElement>(null);
+  useRevealSelected(listBox, selected);
   // Выбранное обращение пропало из списка (фильтр, закрыто) — снова список на всю ширину (Д-050).
   useEffect(() => {
     if (selected && list.data && !list.data.some((r) => r.id === selected)) setSelected(null);
   }, [list.data, selected]);
+  useEffect(() => {
+    if (!selected) setFrozen(null);
+  }, [selected]);
   // Щелчок: обращение больше не «Новое»; «Новое» (или возвращённое) — берётся в работу (M-TKT-03).
   const openTicket = useTicketAction(
     (tid: string) => post(`/tickets/${tid}/open`),
@@ -725,6 +742,7 @@ export function CabinetPage({ inTabs = false }: { inTabs?: boolean }) {
     if ((d.can as Record<string, boolean> | undefined)?.open) openTicket.mutate(String(d.id));
   }, [preview.data, picked, openTicket]);
   const pick = (id: string) => {
+    setFrozen((cur) => cur ?? rows.map((r) => r.id));
     setSelected(id);
     setPicked(true);
     void post(`/tickets/${id}/seen`)
@@ -752,8 +770,9 @@ export function CabinetPage({ inTabs = false }: { inTabs?: boolean }) {
     // справа появляется краткая информация.
     <Box
       className="cc-ws"
-      style={{ gridTemplateColumns: preview.data ? '5fr 7fr' : '1fr 0fr' }}
-      data-wide={!preview.data || undefined}
+      // Раскладка — по выбору, а не по загрузке: при переключении список не растягивается на миг (Д-080).
+      style={{ gridTemplateColumns: opened ? '5fr 7fr' : '1fr 0fr' }}
+      data-wide={!opened || undefined}
     >
       <Box>
         <Box mb="xs">
@@ -765,20 +784,14 @@ export function CabinetPage({ inTabs = false }: { inTabs?: boolean }) {
           />
         </Box>
         <ScrollBlock h={`calc(100vh - ${200 + tabsH}px)`} testId="ticket-list-scroll">
-          <Stack gap={6} p={8} data-testid="ticket-list">
-            {(list.data ?? []).length === 0 && (
+          <Stack gap={6} px={opened ? 18 : 8} py={10} data-testid="ticket-list" ref={listBox}>
+            {rows.length === 0 && (
               <Text c="dimmed" size="sm">
                 {t.tickets.netTiketov}
               </Text>
             )}
-            {(list.data ?? []).map((tk) => (
-              <TicketCard
-                key={tk.id}
-                t={tk}
-                selected={selected === tk.id}
-                onOpen={pick}
-                wide={!preview.data}
-              />
+            {rows.map((tk) => (
+              <TicketCard key={tk.id} t={tk} selected={selected === tk.id} onOpen={pick} wide={!opened} />
             ))}
           </Stack>
         </ScrollBlock>
