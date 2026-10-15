@@ -46,6 +46,7 @@ import { workspace } from './i18n/workspace';
 import { wallboard } from './i18n/wallboard';
 import { staffMessages } from './i18n/staffMessages';
 import { tests } from './i18n/tests';
+import { dataImport } from './i18n/dataImport';
 
 /** Строки интерфейса. Русский — основной язык; структура позволяет добавить другие (M-NFR-08). */
 const ru = {
@@ -189,6 +190,7 @@ const ru = {
   wallboard,
   staffMessages,
   tests,
+  dataImport,
   reviews,
 };
 

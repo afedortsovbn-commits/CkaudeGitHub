@@ -11,10 +11,10 @@ http:
       tls: {}
       service: api@docker
       middlewares: [retry, compress]
-    # Тяжёлые запросы (отчёты, выгрузка в Excel) — отдельному экземпляру API с ограничением процессора и памяти:
+    # Тяжёлые запросы (отчёты, выгрузка в Excel, загрузка обращений из Excel) — отдельному экземпляру API с ограничением процессора и памяти:
     # даже очень большой отчёт не замедляет чаты, звонки и рабочие места (основные экземпляры api).
     api-reports:
-      rule: PathPrefix(`/api/v1/reports`) || Path(`/api/v1/tickets/export`)
+      rule: PathPrefix(`/api/v1/reports`) || Path(`/api/v1/tickets/export`) || PathPrefix(`/api/v1/import`)
       priority: 1000
       entryPoints: [websecure]
       tls: {}

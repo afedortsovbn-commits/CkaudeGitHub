@@ -44,6 +44,7 @@ import { ObjectSyncPage } from './pages/ObjectSyncPage';
 import { WallboardPage } from './pages/WallboardPage';
 import { StaffMessagesPage } from './pages/StaffMessagesPage';
 import { TestsPage } from './pages/TestsPage';
+import { ImportPage } from './pages/ImportPage';
 import { CoursesPage } from './pages/CoursesPage';
 import { CourseLessonPage, MyCoursesPage } from './pages/MyCoursesPage';
 import { RatingsPage } from './pages/RatingsPage';
@@ -124,6 +125,7 @@ function App() {
         <Route path="settings" element={<SettingsPage />} />
         <Route path="notify" element={<NotifyPage />} />
         <Route path="audit" element={<AuditPage />} />
+        <Route path="import" element={<ImportPage />} />
         <Route path="profile" element={<ProfilePage />} />
         <Route path="privacy" element={<PrivacyPage />} />
         <Route path="*" element={<HomePage />} />

@@ -19,6 +19,7 @@ import {
   IconHeadset,
   IconHierarchy,
   IconHistory,
+  IconFileImport,
   IconInbox,
   IconKey,
   IconListTree,
@@ -345,6 +346,13 @@ export const MENU: MenuItem[] = [
     perms: ['settings.manage'],
     group: 'system',
     icon: IconApps,
+  },
+  {
+    to: '/import',
+    label: t.dataImport.navTitle,
+    perms: ['data.import'],
+    group: 'system',
+    icon: IconFileImport,
   },
   { to: '/audit', label: t.nav.audit, perms: ['admin.audit'], group: 'system', icon: IconHistory },
 ];

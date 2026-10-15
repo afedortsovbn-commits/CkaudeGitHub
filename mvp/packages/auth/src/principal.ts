@@ -52,6 +52,8 @@ export const PERMISSIONS = [
   'apikeys.manage',
   'webhooks.manage',
   'config.transfer',
+  'data.import',
+  'system.update',
 ] as const;
 export type Permission = (typeof PERMISSIONS)[number];
 

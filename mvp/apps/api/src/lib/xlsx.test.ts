@@ -1,6 +1,6 @@
 import { inflateRawSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
-import { buildXlsx } from './xlsx';
+import { buildWorkbook, buildXlsx, readXlsx, XS } from './xlsx';
 
 /** Разбор zip без сжатия: имя файла → содержимое (для проверки собранного .xlsx). */
 function unzip(buf: Buffer): Map<string, string> {
@@ -44,5 +44,29 @@ describe('выгрузка в Excel (.xlsx)', () => {
     expect(sheet).toContain('Клиент &lt;жалуется&gt; &amp; &quot;просит&quot;\nвторая строка');
     expect(sheet).toContain('<autoFilter ref="A1:B3"/>');
     expect(files.get('xl/workbook.xml')).toContain('name="Обращения"');
+  });
+});
+
+describe('чтение .xlsx (Д-064)', () => {
+  it('книга из нескольких листов читается обратно: текст, числа, пустые ячейки, цвет не мешает', () => {
+    const buf = buildWorkbook([
+      {
+        name: 'Обращения',
+        header: ['Код', 'Суть', 'Сумма'],
+        rows: [
+          ['803048', 'Клиент <жалуется> & "просит"\nвторая строка', 12.5],
+          ['', null, 3],
+        ],
+        style: (ri, ci) => (ri === 0 && ci === 1 ? XS.error : XS.normal),
+      },
+      { name: 'Описание полей', header: ['Колонка'], rows: [['Код']], filter: false },
+    ]);
+    const sheets = readXlsx(buf);
+    expect(sheets.map((s) => s.name)).toEqual(['Обращения', 'Описание полей']);
+    expect(sheets[0]!.rows[0]).toEqual(['Код', 'Суть', 'Сумма']);
+    expect(sheets[0]!.rows[1]).toEqual(['803048', 'Клиент <жалуется> & "просит"\nвторая строка', '12.5']);
+    expect(sheets[0]!.rows[2]).toEqual(['', '', '3']);
+    expect(sheets[1]!.rows[1]).toEqual(['Код']);
+    expect(buf.toString('latin1')).toContain('FFFFC7CE');
   });
 });

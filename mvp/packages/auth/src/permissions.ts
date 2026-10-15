@@ -189,6 +189,16 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
         description: 'Перенос конфигурации между стендами',
       },
       { code: 'admin.audit', title: 'Журнал аудита', description: 'Кто, что и когда изменил' },
+      {
+        code: 'data.import',
+        title: 'Загрузка обращений',
+        description: 'Шаблон Excel, пакетная загрузка истории и правка существующих обращений',
+      },
+      {
+        code: 'system.update',
+        title: 'Обновление системы',
+        description: 'Установка файла обновления: перечень изменений, остановки блоков, ход обновления',
+      },
     ],
   },
   {
