@@ -63,7 +63,6 @@ import {
 import { FieldCatalog, FilterPopover, filterSummary, ZoneBox } from './PivotParts';
 import { PivotTable } from './PivotTable';
 import { StationLassoMap } from './StationLassoMap';
-import { useCompactMenu } from '../../lib/focus';
 
 const PivotChart = lazy(() => import('./PivotChart'));
 
@@ -157,7 +156,6 @@ const TEMPLATES: { id: string; config: () => Partial<Config> }[] = [
       values: ['csat.avg', 'csat.count'],
       grain: 'month',
       view: 'combo',
-      compare: 'year',
       ...base('year'),
     }),
   },
@@ -173,6 +171,8 @@ const DEFAULT: Config = {
   compare: 'none',
   view: 'cross',
   subtotals: true,
+  // Д-083: длинные подписи по умолчанию сокращаются.
+  textMode: 'cut',
   sort: null,
 };
 
@@ -180,7 +180,8 @@ function loadConfig(): Config {
   try {
     const raw = localStorage.getItem(STORE_KEY);
     if (raw) {
-      const c = { ...DEFAULT, ...(JSON.parse(raw) as Partial<Config>) };
+      // Д-083: сравнение с прошлым периодом при открытии конструктора всегда выключено — включают по нужде.
+      const c = { ...DEFAULT, ...(JSON.parse(raw) as Partial<Config>), compare: 'none' as const };
       // Быстрый период пересчитывается на сегодня (вчерашние «последние 30 дней» — уже не те).
       return c.preset ? { ...c, ...presetRange(c.preset) } : c;
     }
@@ -213,7 +214,6 @@ const fmtN = (n: number) =>
  * таблица или график. Лёгкие отчёты строятся сразу при изменении; сложные — после предупреждения с оценкой.
  */
 export function ReportBuilder() {
-  useCompactMenu();
   const catalog = useQuery({
     queryKey: ['/reports/pivot/model'],
     queryFn: () => get<Catalog>('/reports/pivot/model'),
@@ -598,8 +598,8 @@ export function ReportBuilder() {
                     value: v,
                     label: t.pivot.textModes[v],
                   }))}
-                  value={cfg.textMode ?? 'full'}
-                  onChange={(v) => set('textMode', (v ?? 'full') as Config['textMode'])}
+                  value={cfg.textMode ?? 'cut'}
+                  onChange={(v) => set('textMode', (v ?? 'cut') as Config['textMode'])}
                   allowDeselect={false}
                   aria-label={t.pivot.textModeHint}
                   data-testid="pivot-text"
@@ -915,7 +915,7 @@ export function ReportBuilder() {
                     grid={grid}
                     sort={cfg.sort}
                     onSort={(s) => set('sort', s)}
-                    textMode={cfg.textMode ?? 'full'}
+                    textMode={cfg.textMode ?? 'cut'}
                   />
                 )
               )}

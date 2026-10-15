@@ -278,7 +278,8 @@ export function ZoneBox({
     ? `${drop.dragging.item.from.zone}:${drop.dragging.item.from.index}`
     : null;
   return (
-    <div className={cls} data-testid={`pivot-zone-${zone}`}>
+    // Д-083: принимает вся ячейка зоны (и её название), а не только полоса с чипами.
+    <div ref={drop.ref} className={cls} data-testid={`pivot-zone-${zone}`}>
       <div className="pivot-zone-title">
         {title}
         {drop.active && !drop.active.accepted && (
@@ -288,7 +289,7 @@ export function ZoneBox({
         )}
         {extra}
       </div>
-      <div ref={drop.ref} className="pivot-zone-chips">
+      <div className="pivot-zone-chips">
         {chips.length === 0 && <span className="pivot-zone-empty">{empty}</span>}
         {chips.map((c, i) => {
           const key = `${zone}:${i}`;

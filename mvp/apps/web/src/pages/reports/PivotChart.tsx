@@ -27,6 +27,9 @@ echarts.use([
 ]);
 
 const MAX_POINTS = 300;
+/** Д-083: подписи категорий на осях — не длиннее 15 символов (полностью — во всплывающей подсказке). */
+const AXIS_CUT = 15;
+const shortLabel = (v: string) => (v.length > AXIS_CUT ? `${v.slice(0, AXIS_CUT - 1)}…` : v);
 const PALETTE = [
   '#228be6',
   '#12b886',
@@ -120,8 +123,18 @@ export default function PivotChart({ res, nRows, view }: { res: Result; nRows: n
               }</b>`,
           },
           grid: { left: 140, right: 20, top: 10, bottom: 110 },
-          xAxis: { type: 'category', data: rowsD.series.map((s) => s.label), splitArea: { show: true } },
-          yAxis: { type: 'category', data: rowsD.categories.map((c) => c.label), splitArea: { show: true } },
+          xAxis: {
+            type: 'category',
+            data: rowsD.series.map((s) => s.label),
+            splitArea: { show: true },
+            axisLabel: { formatter: shortLabel },
+          },
+          yAxis: {
+            type: 'category',
+            data: rowsD.categories.map((c) => c.label),
+            splitArea: { show: true },
+            axisLabel: { formatter: shortLabel },
+          },
           visualMap: {
             min: 0,
             max: max || 1,
@@ -187,6 +200,7 @@ export default function PivotChart({ res, nRows, view }: { res: Result; nRows: n
       type: 'category',
       data: cats.map((c) => c.label),
       axisLabel: {
+        formatter: shortLabel,
         interval: cats.length <= 24 ? 0 : 'auto',
         rotate: !horizontal && cats.length > 6 ? 30 : 0,
         hideOverlap: cats.length > 24,
@@ -208,7 +222,11 @@ export default function PivotChart({ res, nRows, view }: { res: Result; nRows: n
         },
         xAxis: horizontal ? valueAxes : catAxis,
         yAxis: horizontal
-          ? { ...catAxis, inverse: true, axisLabel: { width: 170, overflow: 'truncate' } }
+          ? {
+              ...catAxis,
+              inverse: true,
+              axisLabel: { formatter: shortLabel, width: 170, overflow: 'truncate' },
+            }
           : valueAxes,
         dataZoom: zoom,
         series,

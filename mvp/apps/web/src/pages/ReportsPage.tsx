@@ -18,6 +18,7 @@ import { useMemo, useState } from 'react';
 import { authBlobUrl, errorText, get } from '../lib/api';
 import { t } from '../lib/i18n';
 import { ReportBuilder } from './reports/ReportBuilder';
+import { useCompactMenu } from '../lib/focus';
 
 interface CatalogItem {
   kind: string;
@@ -287,6 +288,8 @@ const TAB_KEY = 'cc.reports.tab';
 
 /** Раздел «Отчёты»: конструктор (Д-041) и готовые отчёты M-REP-03. Последняя вкладка запоминается. */
 export function ReportsPage() {
+  // Меню свёрнуто до значков на всём разделе (Д-084): переход на «Готовые отчёты» его не разворачивает.
+  useCompactMenu();
   const [tab, setTab] = useState<string>(() => {
     try {
       return localStorage.getItem(TAB_KEY) ?? 'builder';

@@ -98,7 +98,7 @@ export function PivotDnd({
     const pointerId = e.pointerId;
     const dragKey = item.from ? `${item.from.zone}:${item.from.index}` : null;
     let begun = false;
-    let snap: { target: DropTarget; rect: DOMRect; chips: DOMRect[]; reg: ZoneReg }[] = [];
+    let snap: { target: DropTarget; rect: DOMRect; box: DOMRect; chips: DOMRect[]; reg: ZoneReg }[] = [];
     let raf = 0;
     let last: DragState | null = null;
 
@@ -107,6 +107,8 @@ export function PivotDnd({
         target,
         reg,
         rect: reg.el.getBoundingClientRect(),
+        // Место под чипы внутри зоны — для полоски вставки в пустую зону.
+        box: (reg.el.querySelector<HTMLElement>('.pivot-zone-chips') ?? reg.el).getBoundingClientRect(),
         chips: [...reg.el.querySelectorAll<HTMLElement>('[data-pivot-chip]')]
           .filter((c) => c.dataset.pivotChip !== dragKey)
           .map((c) => c.getBoundingClientRect()),
@@ -132,7 +134,11 @@ export function PivotDnd({
         const lastChip = z.chips[z.chips.length - 1];
         bar = lastChip
           ? { left: lastChip.right + 3, top: lastChip.top, height: lastChip.height }
-          : { left: z.rect.left + 8, top: z.rect.top + 8, height: Math.min(28, z.rect.height - 16) };
+          : {
+              left: z.box.left + 8,
+              top: z.box.top + 4,
+              height: Math.min(28, Math.max(16, z.box.height - 8)),
+            };
       }
       return { item, x, y, over: z.target, accepted, index, bar };
     };
