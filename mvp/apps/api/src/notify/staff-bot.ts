@@ -265,7 +265,7 @@ export class StaffBot {
       minute: '2-digit',
     });
     const lines = [
-      `Контакт-центр · ${at} — ${level}`,
+      `OMNI · ${at} — ${level}`,
       ...ev.problems.map((x) => `• ${x.text}`),
       '',
       `Сейчас: звонков в очереди ${n.q_voice ?? 0}, чатов в очереди ${n.q_text ?? 0}, дольше всех ждёт ${

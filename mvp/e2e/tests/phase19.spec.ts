@@ -82,7 +82,7 @@ test.describe.serial('Ф19: уведомления, минимум операт�
     await expect(sup.getByTestId('tg-status')).toContainText('Привязан');
     // Уведомление «минимум операторов» — ещё и в Telegram (правило), «Панель» — сводка мониторинга.
     await tgSay('Панель');
-    await waitSent(/Контакт-центр/);
+    await waitSent(/OMNI ·/);
     await sup.context().close();
   });
 

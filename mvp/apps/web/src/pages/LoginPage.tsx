@@ -3,6 +3,7 @@ import {
   Button,
   Center,
   Group,
+  Image,
   Paper,
   PasswordInput,
   Stack,
@@ -16,6 +17,7 @@ import { TotpSetup } from '../components/TotpSetup';
 import { errorText } from '../lib/api';
 import { type MfaStep, useAuth } from '../lib/auth';
 import { t } from '../lib/i18n';
+import omniLogo from '../assets/omni-logo.png';
 
 export function LoginPage() {
   const { login, loginTotp } = useAuth();
@@ -54,7 +56,11 @@ export function LoginPage() {
           }}
         >
           <Stack>
-            <Title order={3}>{mfa?.setup ? t.mfa.setupTitle : t.appName}</Title>
+            {/* Д-069: логотип «OMNI» вместо заголовка «Контакт-центр». */}
+            <Center>
+              <Image src={omniLogo} alt={t.appName} h={44} w="auto" data-testid="login-logo" />
+            </Center>
+            {mfa?.setup && <Title order={3}>{t.mfa.setupTitle}</Title>}
             {error && <Alert color="red">{error}</Alert>}
             {!mfa && (
               <>

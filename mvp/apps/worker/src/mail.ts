@@ -1,6 +1,7 @@
 import type { MailPolicy, OutgoingMail } from '@cc/domain';
 import { LINK_PLACEHOLDER, unsubscribeUrl, withUnsubscribeHtml, withUnsubscribeText } from '@cc/domain';
 import type { SendMailOptions } from 'nodemailer';
+import { BRAND_LOGO_CID, BRAND_LOGO_PNG } from './brand-logo';
 
 export interface MailSettings {
   from: string;
@@ -29,7 +30,17 @@ export function buildMessage(
     ...(copyTo.length ? { bcc: copyTo } : {}),
     subject: mail.subject,
     text: withUnsubscribeText(body, unsub),
-    html: withUnsubscribeHtml(body, unsub),
+    // Д-069: логотип «OMNI» над текстом — вложением письма (внешние картинки почтовые программы блокируют).
+    html: withUnsubscribeHtml(body, unsub, { logoSrc: `cid:${BRAND_LOGO_CID}` }),
+    attachments: [
+      {
+        filename: 'omni-logo.png',
+        content: BRAND_LOGO_PNG,
+        contentType: 'image/png',
+        cid: BRAND_LOGO_CID,
+        contentDisposition: 'inline',
+      },
+    ],
     messageId: `<${mail.id}@cc.local>`,
     headers: {
       'List-Unsubscribe': `<${unsub}>`,

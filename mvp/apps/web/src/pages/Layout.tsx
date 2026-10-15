@@ -196,7 +196,7 @@ export function Layout() {
   useEffect(() => {
     menu.close();
   }, [loc.pathname]);
-  // Текущий раздел: заголовок вкладки браузера и название со значком в шапке рядом с «Контакт-центр».
+  // Текущий раздел: заголовок вкладки браузера и название со значком в шапке рядом с логотипом.
   const cur = items.find((m) => isActive(m, loc.pathname));
   useEffect(() => {
     document.title = cur ? `${cur.label} — ${t.appName}` : t.appName;

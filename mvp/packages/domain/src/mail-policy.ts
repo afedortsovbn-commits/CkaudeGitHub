@@ -35,15 +35,24 @@ export function withUnsubscribeText(body: string, url: string): string {
   return `${body}\n\n---\n${UNSUB_PHRASE}\nОтписаться от рассылки: ${url}\n`;
 }
 
-/** HTML-версия: абзацы из текста, фраза про отписку и крупная красная кнопка. */
-export function withUnsubscribeHtml(body: string, url: string): string {
+/** Название программного комплекса в письмах (Д-069): имя отправителя, подпись логотипа. */
+export const BRAND_NAME = 'OMNI';
+
+/**
+ * HTML-версия: абзацы из текста, фраза про отписку и крупная красная кнопка. `logoSrc` — адрес картинки логотипа
+ * (обычно `cid:` вложения письма): выводится над текстом письма (Д-069).
+ */
+export function withUnsubscribeHtml(body: string, url: string, opts: { logoSrc?: string } = {}): string {
   const paragraphs = body
     .split(/\n{2,}/)
     .map((p) => `<p style="margin:0 0 12px">${escapeHtml(p).replace(/\n/g, '<br>')}</p>`)
     .join('');
   const u = escapeHtml(url);
+  const logo = opts.logoSrc
+    ? `<p style="margin:0 0 20px"><img src="${escapeHtml(opts.logoSrc)}" alt="${BRAND_NAME}" height="36" style="height:36px;width:auto;border:0;display:block"></p>\n`
+    : '';
   return `<!doctype html><html><body style="font-family:Arial,sans-serif;font-size:15px;line-height:1.45;color:#111">
-${paragraphs}
+${logo}${paragraphs}
 <hr style="border:none;border-top:1px solid #ddd;margin:24px 0">
 <p style="color:#444;font-size:13px">${escapeHtml(UNSUB_PHRASE)}</p>
 <p style="margin:16px 0"><a href="${u}" style="display:inline-block;background:#d32f2f;color:#fff;font-size:18px;font-weight:bold;padding:14px 28px;border-radius:8px;text-decoration:none">Отписаться от рассылки</a></p>

@@ -51,7 +51,7 @@ import { sysUpdate } from './i18n/sysUpdate';
 
 /** Строки интерфейса. Русский — основной язык; структура позволяет добавить другие (M-NFR-08). */
 const ru = {
-  appName: 'Контакт-центр',
+  appName: 'OMNI',
   login: 'Вход',
   email: 'Email',
   password: 'Пароль',

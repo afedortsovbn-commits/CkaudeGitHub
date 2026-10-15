@@ -70,6 +70,15 @@ describe('письма: копии и отписка (Д-013)', () => {
     expect(String(built.text)).toContain('не подписывались на данные сообщения');
   });
 
+  it('логотип OMNI над текстом — вложением с Content-ID (Д-069)', async () => {
+    const built = buildMessage(mail, settings);
+    expect(String(built.html)).toContain('<img src="cid:omni-logo@cc.local" alt="OMNI"');
+    const att = (built.attachments ?? [])[0];
+    expect(att?.cid).toBe('omni-logo@cc.local');
+    expect((att?.content as Buffer).subarray(1, 4).toString()).toBe('PNG');
+    expect(await raw(mail)).toMatch(/^Content-ID: <omni-logo@cc\.local>$/m);
+  });
+
   it('без адресов копии — без bcc', () => {
     expect(buildMessage(mail, settings).bcc).toBeUndefined();
   });

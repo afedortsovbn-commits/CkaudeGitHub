@@ -333,7 +333,7 @@ services:
       SMTP_SECURE: ${TICKET_SMTP_SECURE:-false}
       SMTP_USER: ${TICKET_SMTP_USER:-}
       SMTP_PASSWORD: ${TICKET_SMTP_PASSWORD:-}
-      SMTP_FROM: ${TICKET_SMTP_FROM:-Контакт-центр <cc@cc.local>}
+      SMTP_FROM: ${TICKET_SMTP_FROM:-OMNI <cc@cc.local>}
       # Адрес системы для ссылок в письмах и в ходе внешнего бота (replyUrl).
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-https://localhost}
       # Webhooks (Ф9): потолок задержки повтора (с) и срок ожидания восстановления получателя (ч).

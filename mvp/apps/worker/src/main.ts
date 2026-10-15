@@ -39,7 +39,7 @@ const ConfigSchema = BaseConfigSchema.extend({
   SMTP_USER: z.preprocess((v) => (v === '' ? undefined : v), z.string().optional()),
   SMTP_PASSWORD: z.string().optional(),
   SMTP_TLS_INSECURE: z.enum(['true', 'false']).default('false'),
-  SMTP_FROM: z.string().default('Контакт-центр <cc@cc.local>'),
+  SMTP_FROM: z.string().default('OMNI <cc@cc.local>'),
   /** Адрес системы для ссылок в письмах. */
   PUBLIC_BASE_URL: z.preprocess(
     (v) => (v === '' ? undefined : v),

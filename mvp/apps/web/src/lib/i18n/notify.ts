@@ -75,7 +75,7 @@ export const notify = {
   emailResubscribe: 'Снова получать письма',
   emailResubscribed: 'Письма снова будут приходить',
   // Мини-приложение Telegram.
-  tgAppTitle: 'Контакт-центр',
+  tgAppTitle: 'OMNI',
   tgAppLoading: 'Вход через Telegram…',
   tgAppNoTelegram: 'Откройте эту страницу из бота Telegram контакт-центра (кнопка «Открыть панель»).',
   tgAppDenied: 'Telegram не привязан к сотруднику или нет доступа. Привяжите Telegram в профиле.',
