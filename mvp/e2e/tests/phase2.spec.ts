@@ -1,5 +1,5 @@
-import { type Browser, expect, type Page, test } from '@playwright/test';
-import { DEMO_PASSWORD, login, nav, listView, openChatWidget } from './helpers';
+import { type APIRequestContext, type Browser, expect, type Page, test } from '@playwright/test';
+import { ADMIN, DEMO_PASSWORD, login, nav, listView, openChatWidget } from './helpers';
 
 const stamp = Date.now().toString().slice(-6);
 
@@ -15,21 +15,86 @@ async function openWidget(browser: Browser) {
   return { page, w, ctx };
 }
 
+type Row = Record<string, unknown> & { id: string };
+
+async function api(request: APIRequestContext, email: string, password: string) {
+  const r = await request.post('/api/v1/auth/login', { data: { email, password } });
+  const headers = { authorization: `Bearer ${(await r.json()).accessToken as string}` };
+  return {
+    get: async <T>(path: string) => (await (await request.get(`/api/v1${path}`, { headers })).json()) as T,
+    send: (method: 'post' | 'patch', path: string, data: unknown) =>
+      request[method](`/api/v1${path}`, { headers, data }),
+  };
+}
+
+const OPERATOR = 'operator1@demo.local';
+/** Статус оператора до теста — вернуть после (e2e на живом стенде не меняют его состояние). */
+let prevStatus: { status: string; reasonId: string | null } | null = null;
+
+/** Закрыть открытые чаты оператора, чьи клиенты подходят под условие (тема «Сайт», «Решено на 1-й линии»). */
+async function closeChats(request: APIRequestContext, match: (contactName: string) => boolean) {
+  const op = await api(request, OPERATOR, DEMO_PASSWORD);
+  const a = await api(request, ADMIN.email, ADMIN.password);
+  const topic = (await a.get<Row[]>('/topics')).find((t) => t.name === 'Сайт')!;
+  const disp = (await a.get<Row[]>('/dict/dispositions')).find((d) => d.code === 'resolved')!;
+  for (const c of await op.get<Row[]>('/conversations?tab=mine')) {
+    if (c.status === 'offered' || !match(String(c.contactName ?? ''))) continue;
+    await a.send('patch', `/conversations/${c.id}`, { topicId: topic.id });
+    await a.send('post', `/conversations/${c.id}/close`, { dispositionId: disp.id });
+  }
+}
+
+/**
+ * Освободить оператора на живом стенде (Д-102). Тест рассчитан на сброшенный стенд: оператор не на линии, очередь
+ * пуста. Без сброса оператор «В работе», роутер сразу предлагает ему чаты из очереди, а чаты прошлых прогонов
+ * не закрыты — «Взять» упирается в «Достигнут лимит одновременных чатов». Поэтому: оператор — «Офлайн» (статус
+ * возвращается после теста), предложенные ему чаты — отклонить (вернутся в очередь), чаты прошлых прогонов e2e
+ * (клиенты «Клиент …») — закрыть. Обращения с настоящими именами (тестовые обращения владельца) не трогаем.
+ */
+async function freeOperator(request: APIRequestContext) {
+  const op = await api(request, OPERATOR, DEMO_PASSWORD);
+  const me = await op.get<{ status: string; reasonId: string | null }>('/agent-status/me');
+  if (me.status !== 'offline') {
+    // Уход с линии может запретить «Минимум операторов» (Д-011) — тогда тест идёт как есть.
+    const r = await op.send('post', '/agent-status', { status: 'offline' });
+    if (r.ok()) prevStatus = me;
+  }
+  for (const c of await op.get<Row[]>('/conversations?tab=mine')) {
+    if (c.status === 'offered') await op.send('post', `/conversations/${c.id}/decline`, {});
+  }
+  await closeChats(request, (name) => name.startsWith('Клиент '));
+}
+
 async function clientSays(w: ReturnType<Page['locator']>, text: string) {
   await w.getByTestId('cc-input').fill(text);
   await w.getByTestId('cc-send').click();
 }
 
 test.describe.serial('Ф2: чат на сайте → оператор', () => {
+  // Уборка (Д-102): своё повторное обращение не оставлять у оператора, вернуть его статус.
+  test.afterEach(async ({ request }) => {
+    await closeChats(request, (name) => name === `Клиент ${stamp}`);
+    if (!prevStatus) return;
+    const op = await api(request, OPERATOR, DEMO_PASSWORD);
+    const status = prevStatus.status === 'break' ? 'break' : 'ready';
+    await op.send('post', '/agent-status', {
+      status,
+      reasonId: status === 'break' ? prevStatus.reasonId : undefined,
+    });
+    prevStatus = null;
+  });
+
   test('клиент пишет → оператор берёт → переписка с файлом → закрытие с темой; повторное обращение видит историю', async ({
     page,
     browser,
+    request,
   }) => {
+    await freeOperator(request);
     const client = await openWidget(browser);
     await clientSays(client.w, `Здравствуйте, вопрос ${stamp}`);
     await expect(client.w.getByTestId('cc-msg-in').filter({ hasText: `вопрос ${stamp}` })).toBeVisible();
 
-    await login(page, 'operator1@demo.local', DEMO_PASSWORD);
+    await login(page, OPERATOR, DEMO_PASSWORD);
     await nav(page, '1-я линия (оператор)');
     await expect(page.getByTestId('rt-status')).toHaveText('онлайн');
     await listView(page, 'queue');
