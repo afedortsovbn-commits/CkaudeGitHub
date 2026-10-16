@@ -33,6 +33,33 @@ interface ChannelRow {
     app_secret?: string;
     prechat_fields?: PrechatField[];
     show_typing?: boolean;
+    /** Д-096: другие способы связи в виджете — телефон, Telegram, Viber. */
+    contact_phone?: string;
+    contact_telegram?: string;
+    contact_viber?: string;
+  };
+}
+
+/**
+ * Ссылки «другие способы связи» (Д-096): @имя → t.me, домен без схемы → https://, номер для Viber → viber://chat.
+ * Пусто — способ не показывается.
+ */
+export function contactLinks(c: ChannelRow['config']) {
+  const s = (x?: string) => (x ?? '').trim();
+  const phone = s(c.contact_phone);
+  const tg = s(c.contact_telegram);
+  const vb = s(c.contact_viber);
+  // Только безопасные схемы ссылок (никаких javascript:): остальное считается адресом сайта.
+  const web = (x: string) => (/^(https?|tg|viber):/i.test(x) ? x : `https://${x.replace(/^\/+/, '')}`);
+  return {
+    phone: phone ? { label: phone, href: `tel:${phone.replace(/[^+\d]/g, '')}` } : null,
+    telegram: tg ? { label: tg, href: tg.startsWith('@') ? `https://t.me/${tg.slice(1)}` : web(tg) } : null,
+    viber: vb
+      ? {
+          label: vb,
+          href: /^\+?[\d\s()-]{7,}$/.test(vb) ? `viber://chat?number=${encodeURIComponent(vb.replace(/[^+\d]/g, ''))}` : web(vb),
+        }
+      : null,
   };
 }
 
@@ -148,6 +175,7 @@ export class ClientChatController {
       maxFileMb: ch.config.max_file_mb ?? this.ctx.config.MAX_UPLOAD_MB,
       prechatFields: prechatFields(ch),
       showTyping: ch.config.show_typing !== false,
+      contacts: contactLinks(ch.config),
     };
   }
 
@@ -240,6 +268,53 @@ export class ClientChatController {
       sessionKey: identity.value,
     });
     return { token, contactId };
+  }
+
+  /** Оператор, который сейчас ведёт переписку с клиентом (Д-095): имя и фото; оператора нет — null. */
+  private async currentAgent(contactId: string, channelId: string) {
+    return one<{ id: string; name: string; photo_key: string | null; v: string | null }>(
+      this.ctx.pool,
+      `SELECT u.id, split_part(u.full_name, ' ', 2) AS name, u.photo_key,
+              extract(epoch FROM u.photo_updated_at)::bigint::text AS v
+         FROM conversation c JOIN app_user u ON u.id = c.assignee_id
+        WHERE c.contact_id = $1 AND c.channel_id = $2
+          AND c.status IN ('active', 'hold', 'wrap_up', 'waiting_customer')
+        ORDER BY c.updated_at DESC LIMIT 1`,
+      [contactId, channelId],
+    );
+  }
+
+  @Get('agent')
+  async agent(@Req() req: ClientReq) {
+    const { contactId, channel } = await this.auth(req);
+    const a = await this.currentAgent(contactId, channel.id);
+    if (!a) return { agent: null };
+    return {
+      agent: {
+        id: a.id,
+        name: a.name || null,
+        // Фото — по токену клиента и только текущего оператора; v меняется при замене фото (кэш браузера).
+        photo: a.photo_key ? `agent/photo?a=${a.id}&v=${a.v ?? ''}` : null,
+      },
+    };
+  }
+
+  @Get('agent/photo')
+  async agentPhoto(@Req() req: ClientReq, @Res() reply: FastifyReply) {
+    const { contactId, channel } = await this.auth(req);
+    const a = await this.currentAgent(contactId, channel.id);
+    if (!a?.photo_key) throw new ApiError(404, 'not_found', 'Фото нет');
+    const ct = await one<{ photo_content_type: string | null }>(
+      this.ctx.pool,
+      'SELECT photo_content_type FROM app_user WHERE id = $1',
+      [a.id],
+    );
+    const obj = await this.ctx.storage.get(a.photo_key);
+    return reply
+      .header('content-type', ct?.photo_content_type ?? 'image/jpeg')
+      .header('x-content-type-options', 'nosniff')
+      .header('cache-control', 'private, max-age=3600')
+      .send(obj.body);
   }
 
   /** История клиента в этом канале (без внутренних заметок операторов); after — для догрузки после переподключения. */

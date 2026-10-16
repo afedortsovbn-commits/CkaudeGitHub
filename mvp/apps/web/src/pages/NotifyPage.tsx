@@ -18,6 +18,7 @@ import { useEffect, useState } from 'react';
 import { FormModal } from '../components/FormModal';
 import { del, get, patch, post, put } from '../lib/api';
 import { useAuth } from '../lib/auth';
+import { NotifyMatrixTab } from './NotifyMatrixTab';
 import { type Row, useAction, useList } from '../lib/data';
 import { t } from '../lib/i18n';
 
@@ -427,12 +428,15 @@ function MailTab() {
 
 /** Уведомления о событиях (Д-012), минимум операторов (Д-011), бот Telegram (Д-010), почта (Д-013). */
 export function NotifyPage() {
-  const [tab, setTab] = useState<string | null>('rules');
+  const [tab, setTab] = useState<string | null>('matrix');
   return (
     <Stack>
       <Title order={3}>{t.notify.pageTitle}</Title>
       <Tabs value={tab} onChange={setTab} keepMounted={false}>
         <Tabs.List>
+          <Tabs.Tab value="matrix" data-testid="notify-tab-matrix">
+            {t.notify.tabMatrix}
+          </Tabs.Tab>
           <Tabs.Tab value="rules" data-testid="notify-tab-rules">
             {t.notify.tabRules}
           </Tabs.Tab>
@@ -446,6 +450,9 @@ export function NotifyPage() {
             {t.notify.tabMail}
           </Tabs.Tab>
         </Tabs.List>
+        <Tabs.Panel value="matrix" pt="sm">
+          <NotifyMatrixTab />
+        </Tabs.Panel>
         <Tabs.Panel value="rules" pt="sm">
           <RulesTab />
         </Tabs.Panel>

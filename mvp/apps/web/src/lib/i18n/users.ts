@@ -28,6 +28,10 @@ export const users = {
   fio: 'ФИО',
   emailObyazatelenDlyaOtvetstvennykh: 'Email (обязателен для ответственных и кураторов)',
   telefon: 'Телефон',
+  telegram: 'Telegram (для уведомлений)',
+  telegramHint:
+    '@имя или номер чата. Чтобы бот мог писать, сотрудник привязывает Telegram в профиле (код боту) — или укажите номер чата',
+  telegramLinked: 'Привязан к боту — уведомления в Telegram приходят',
   osnovnoePredpriyatie: 'Основное предприятие',
   osnovnoePodrazdelenie: 'Основное подразделение',
   mozhetVkhoditVSistemu: 'Может входить в систему',

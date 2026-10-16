@@ -1,6 +1,6 @@
 /** Д-012 уведомления, Д-011 минимум операторов, Д-013 отписка: правила, настройки сотрудника, Telegram-очередь, проверки событий. */
 import { newId } from '@cc/contracts';
-import { checkAlerts, processTelegramQueue } from '@cc/domain';
+import { checkAlerts, emitNotice, processTelegramQueue } from '@cc/domain';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { ADMIN_URL, createTestApp } from './setup';
 
@@ -174,5 +174,82 @@ describe.skipIf(!ADMIN_URL)('Уведомления о событиях (Д-012,
       (await t.call('POST', '/api/v1/inbound/unsubscribe', undefined, { email: 'operator1@demo.local' }))
         .status,
     ).toBe(401);
+  });
+
+  it('Д-094: матрица «сотрудник × событие» — каналы, условие «если ответственный», копирование на всех', async () => {
+    const m = await t.call('GET', '/api/v1/notify/matrix', sup);
+    expect(m.status).toBe(200);
+    expect(m.body.events.map((e: { code: string }) => e.code)).toContain('ticket.open_reminder');
+    expect(m.body.users.find((u: { id: string }) => u.id === opId)).toMatchObject({ telegramOk: false });
+    expect((await t.call('GET', '/api/v1/notify/matrix', op)).status).toBe(403);
+    // Оператору — Telegram (контакта нет: ячейка будет красной) и интерфейс, только если он ответственный.
+    const put = await t.call('PUT', '/api/v1/notify/matrix/cell', sup, {
+      userId: opId,
+      event: 'ticket.overdue',
+      channels: ['ui', 'telegram'],
+      conditions: ['responsible'],
+    });
+    expect(put.status, JSON.stringify(put.body)).toBe(200);
+    const ticketId = newId();
+    const notice = (rel: string[]) =>
+      emitNotice(t.pool, {
+        event: 'ticket.overdue',
+        subject: 'Просрочен тикет',
+        dedupe: `mx-test:${ticketId}:${rel.length}`,
+        relations: { responsible: rel },
+      });
+    await notice([]);
+    const none = await t.pool.query(`SELECT 1 FROM notification WHERE user_id = $1 AND dedupe_key LIKE $2`, [
+      opId,
+      `mx-test:${ticketId}:0:%`,
+    ]);
+    expect(none.rowCount).toBe(0);
+    await notice([opId]);
+    const got = await t.pool.query<{ channel: string }>(
+      `SELECT channel FROM notification WHERE user_id = $1 AND dedupe_key LIKE $2 ORDER BY channel`,
+      [opId, `mx-test:${ticketId}:1:%`],
+    );
+    // Telegram не указан — уведомление в Telegram не создаётся, в программу — приходит.
+    expect(got.rows.map((r) => r.channel)).toEqual(['ui']);
+    // Telegram из справочника (номер чата) — теперь и в Telegram.
+    expect(
+      (await t.call('PATCH', `/api/v1/users/${opId}`, admin, { telegramContact: '700123456' })).status,
+    ).toBe(200);
+    expect((await t.call('PATCH', `/api/v1/users/${opId}`, admin, { telegramContact: 'a b' })).status).toBe(
+      400,
+    );
+    await emitNotice(t.pool, {
+      event: 'ticket.overdue',
+      subject: 'Просрочен тикет',
+      dedupe: `mx-test2:${ticketId}`,
+      relations: { responsible: [opId] },
+    });
+    const tg = await t.pool.query(
+      `SELECT 1 FROM notification WHERE user_id = $1 AND channel = 'telegram' AND dedupe_key LIKE $2`,
+      [opId, `mx-test2:${ticketId}:%`],
+    );
+    expect(tg.rowCount).toBe(1);
+    // Копирование строки оператора всем: у супервизора появляется та же ячейка.
+    const copy = await t.call('POST', '/api/v1/notify/matrix/copy', sup, { fromUserId: opId });
+    expect(copy.status, JSON.stringify(copy.body)).toBe(200);
+    expect(copy.body.users).toBeGreaterThan(1);
+    const after = await t.call('GET', '/api/v1/notify/matrix', sup);
+    expect(
+      after.body.cells.find(
+        (c: { userId: string; event: string }) => c.userId === supId && c.event === 'ticket.overdue',
+      ),
+    ).toMatchObject({ channels: ['ui', 'telegram'], conditions: ['responsible'] });
+    // Пустые каналы — ячейка удаляется.
+    await t.call('PUT', '/api/v1/notify/matrix/cell', sup, {
+      userId: supId,
+      event: 'ticket.overdue',
+      channels: [],
+    });
+    const cleared = await t.call('GET', '/api/v1/notify/matrix', sup);
+    expect(
+      cleared.body.cells.some(
+        (c: { userId: string; event: string }) => c.userId === supId && c.event === 'ticket.overdue',
+      ),
+    ).toBe(false);
   });
 });

@@ -25,7 +25,7 @@ import { OrgController } from './org/org.controller';
 import { ExternalAppsController } from './org/external-apps.controller';
 import { ScheduleController } from './schedule/schedule.controller';
 import { RolesController } from './org/roles.controller';
-import { UsersController } from './org/users.controller';
+import { StaffPhotoController, UsersController } from './org/users.controller';
 import { PingController } from './ping.controller';
 import { PrivacyController } from './privacy/privacy.controller';
 import { PivotController } from './reports/pivot/pivot.controller';
@@ -54,6 +54,7 @@ export class AppModule {
         ChannelsController,
         OrgController,
         UsersController,
+        StaffPhotoController,
         RolesController,
         ExternalAppsController,
         MatrixController,

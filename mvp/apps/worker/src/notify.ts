@@ -21,7 +21,7 @@ export class StaffNotifier {
     await ensureJobQueue(boss, ALERTS_QUEUE);
     await boss.work(ALERTS_QUEUE, async () => {
       const r = await checkAlerts(pool);
-      const n = r.belowMin + r.longWait + r.noFree + r.overdue + r.ticketOverdue + r.shifts;
+      const n = r.belowMin + r.longWait + r.noFree + r.overdue + r.ticketOverdue + r.shifts + r.openReminders;
       if (n) {
         logger.info(r, 'уведомления о событиях поставлены в очередь');
         this.wake?.();

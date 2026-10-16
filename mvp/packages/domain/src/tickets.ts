@@ -564,6 +564,7 @@ export async function createTicket(tx: PoolClient, i: CreateTicketInput): Promis
     data: { path: `/tickets/${id}`, ticketId: id },
     dedupe: `ticket_created:${id}`,
     high: t.is_important,
+    relations: { responsible: responsibleIds, curator: curatorIds, creator: [i.actorId] },
   });
   return t;
 }

@@ -1,6 +1,6 @@
 import { SupervisorThresholdsSchema } from '@cc/contracts';
-import type { Pool } from 'pg';
-import { emitNotice } from './notify';
+import type { Pool, PoolClient } from 'pg';
+import { emitNotice, matrixMatches } from './notify';
 import { operatorsOnLine, staffingRequiredAt } from './staffing';
 import { systemTimezone } from './tickets';
 
@@ -11,6 +11,7 @@ export interface AlertsResult {
   overdue: number;
   ticketOverdue: number;
   shifts: number;
+  openReminders: number;
 }
 
 /**
@@ -20,7 +21,15 @@ export interface AlertsResult {
  * нескольких экземплярах worker.
  */
 export async function checkAlerts(pool: Pool, now = new Date()): Promise<AlertsResult> {
-  const r: AlertsResult = { belowMin: 0, longWait: 0, noFree: 0, overdue: 0, ticketOverdue: 0, shifts: 0 };
+  const r: AlertsResult = {
+    belowMin: 0,
+    longWait: 0,
+    noFree: 0,
+    overdue: 0,
+    ticketOverdue: 0,
+    shifts: 0,
+    openReminders: 0,
+  };
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -116,9 +125,20 @@ export async function checkAlerts(pool: Pool, now = new Date()): Promise<AlertsR
         [now, tz],
       )
     ).rows[0]!.d;
-    const tickets = await client.query<{ id: string; number: number; days: number }>(
-      `SELECT id, number, ($1::date - due_date)::int AS days FROM ticket
-        WHERE status IN ('new', 'in_work', 'rework') AND due_date < $1::date ORDER BY due_date LIMIT 100`,
+    const tickets = await client.query<{
+      id: string;
+      number: number;
+      days: number;
+      created_by: string;
+      responsible: string[];
+      curator: string[];
+    }>(
+      `SELECT t.id, t.number, ($1::date - t.due_date)::int AS days, t.created_by,
+              COALESCE(array_agg(a.user_id) FILTER (WHERE a.kind = 'responsible'), '{}') AS responsible,
+              COALESCE(array_agg(a.user_id) FILTER (WHERE a.kind = 'curator'), '{}') AS curator
+         FROM ticket t LEFT JOIN ticket_assignee a ON a.ticket_id = t.id AND a.is_active
+        WHERE t.status IN ('new', 'in_work', 'rework') AND t.due_date < $1::date
+        GROUP BY t.id ORDER BY t.due_date LIMIT 100`,
       [today],
     );
     for (const t of tickets.rows)
@@ -128,7 +148,18 @@ export async function checkAlerts(pool: Pool, now = new Date()): Promise<AlertsR
         data: { path: `/tickets/${t.id}`, ticketId: t.id, priority: 'high' },
         dedupe: `ticket_overdue:${t.id}:${today}`,
         high: true,
+        relations: { responsible: t.responsible, curator: t.curator, creator: [t.created_by] },
       });
+
+    // Д-094: утром в рабочие дни (с 9:00) — сводка «есть незакрытые обращения на 2-й линии» каждому получателю.
+    const nowLocal = (
+      await client.query<{ h: number; dow: number }>(
+        `SELECT EXTRACT(HOUR FROM ($1::timestamptz AT TIME ZONE $2))::int AS h,
+                EXTRACT(ISODOW FROM ($1::timestamptz AT TIME ZONE $2))::int AS dow`,
+        [now, tz],
+      )
+    ).rows[0]!;
+    if (nowLocal.h >= 9 && nowLocal.dow <= 5) r.openReminders += await remindOpenTickets(client, today);
 
     // Напоминание о завтрашней смене — вечером (18:00 по времени системы), по опубликованному графику.
     const hour = Number(
@@ -170,4 +201,71 @@ export async function checkAlerts(pool: Pool, now = new Date()): Promise<AlertsR
     client.release();
   }
   return r;
+}
+
+/**
+ * Д-094: сводка о незакрытых тикетах 2-й линии — раз в день каждому получателю события `ticket.open_reminder`.
+ * Получатель по правилу (роли) или с условием «всегда» видит все незакрытые тикеты; с условиями «ответственный /
+ * куратор / создатель» — только свои. Нет таких тикетов — нет напоминания.
+ */
+export async function remindOpenTickets(client: PoolClient, today: string): Promise<number> {
+  const open = await client.query<{
+    id: string;
+    overdue: boolean;
+    created_by: string;
+    responsible: string[];
+    curator: string[];
+  }>(
+    `SELECT t.id, t.due_date < $1::date AS overdue, t.created_by,
+            COALESCE(array_agg(a.user_id) FILTER (WHERE a.kind = 'responsible'), '{}') AS responsible,
+            COALESCE(array_agg(a.user_id) FILTER (WHERE a.kind = 'curator'), '{}') AS curator
+       FROM ticket t LEFT JOIN ticket_assignee a ON a.ticket_id = t.id AND a.is_active
+      WHERE t.status <> 'closed' GROUP BY t.id`,
+    [today],
+  );
+  // Раз в день: отметка дня в настройках (несколько экземпляров worker уже разведены advisory-блокировкой).
+  const mark = await client.query(
+    `INSERT INTO system_setting (key, value) VALUES ('notify.open_reminder_day', to_jsonb($1::text))
+     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()
+       WHERE system_setting.value IS DISTINCT FROM EXCLUDED.value`,
+    [today],
+  );
+  if (!mark.rowCount || !open.rows.length) return 0;
+  const recipients = new Map<string, string[]>(); // сотрудник → условия (['all'] — все тикеты)
+  const rules = await client.query<{ id: string }>(
+    `SELECT DISTINCT u.id FROM notify_rule r JOIN app_user u ON u.is_active AND u.can_login
+        AND (u.id = ANY(r.user_ids) OR EXISTS (SELECT 1 FROM user_role ur WHERE ur.user_id = u.id AND ur.role_code = ANY(r.role_codes)))
+      WHERE r.event = 'ticket.open_reminder' AND r.is_active`,
+  );
+  for (const u of rules.rows) recipients.set(u.id, ['all']);
+  const matrix = await client.query<{ user_id: string; conditions: string[] }>(
+    `SELECT user_id, conditions FROM notify_matrix WHERE event = 'ticket.open_reminder' AND cardinality(channels) > 0`,
+  );
+  for (const m of matrix.rows)
+    if (!recipients.get(m.user_id)?.includes('all'))
+      recipients.set(m.user_id, [...(recipients.get(m.user_id) ?? []), ...m.conditions]);
+  let created = 0;
+  for (const [userId, conditions] of recipients) {
+    const mine = open.rows.filter((t) =>
+      matrixMatches(conditions, userId, {
+        responsible: t.responsible,
+        curator: t.curator,
+        creator: [t.created_by],
+      }),
+    );
+    if (!mine.length) continue;
+    const overdue = mine.filter((t) => t.overdue).length;
+    created += await emitNotice(client, {
+      event: 'ticket.open_reminder',
+      subject: `На 2-й линии не закрыто обращений: ${mine.length}${overdue ? `, из них просрочено: ${overdue}` : ''}`,
+      body: 'Откройте раздел «Обращения на 2-й линии», чтобы посмотреть список.',
+      data: { path: '/tickets', count: mine.length, overdue },
+      dedupe: `open_reminder:${today}`,
+      high: overdue > 0,
+      onlyUserIds: [userId],
+      // Условия получателя уже учтены при отборе тикетов — для отправки он «связан» со всеми своими тикетами.
+      relations: { responsible: [userId], curator: [userId], creator: [userId], assignee: [userId] },
+    });
+  }
+  return created;
 }

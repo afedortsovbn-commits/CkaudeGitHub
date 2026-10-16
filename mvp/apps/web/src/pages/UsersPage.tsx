@@ -36,6 +36,8 @@ interface UserDetail extends Row {
   seesUnclassified: boolean | null;
   totpEnabled: boolean;
   anonymizedAt: string | null;
+  telegramContact: string | null;
+  telegramLinked: boolean;
 }
 
 const UNCLASSIFIED_OPTIONS = [
@@ -198,6 +200,7 @@ function UserDrawer({ id, onClose }: { id: string; onClose(): void }) {
       fullName: form.fullName,
       email: form.email,
       phone: form.phone || null,
+      telegramContact: String(form.telegramContact ?? '').trim() || null,
       canLogin: !!form.canLogin,
       primaryEnterpriseId: form.primaryEnterpriseId || null,
       primaryDepartmentId: form.primaryDepartmentId || null,
@@ -256,6 +259,14 @@ function UserDrawer({ id, onClose }: { id: string; onClose(): void }) {
               label={t.users.telefon}
               value={String(form.phone ?? '')}
               onChange={(e) => set('phone', e.currentTarget.value)}
+            />
+            <TextInput
+              label={t.users.telegram}
+              description={user.telegramLinked ? t.users.telegramLinked : t.users.telegramHint}
+              placeholder="@username"
+              value={String(form.telegramContact ?? '')}
+              onChange={(e) => set('telegramContact', e.currentTarget.value)}
+              data-testid="user-telegram"
             />
             <Group grow>
               <MultiSelect
@@ -455,6 +466,7 @@ export function UsersPage() {
           { key: 'fullName', label: t.users.fio, required: true },
           { key: 'email', label: 'Email', required: true },
           { key: 'phone', label: t.users.telefon },
+          { key: 'telegramContact', label: t.users.telegram },
           { key: 'password', label: t.users.parolNeKoroche8, type: 'password' },
           {
             key: 'roles',

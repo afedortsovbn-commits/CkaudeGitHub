@@ -22,9 +22,11 @@ import {
   markUnsubscribed,
   NOTIFY_CHANNELS,
   NOTIFY_EVENTS,
+  NOTIFY_RELATIONS,
   resubscribe,
   saveStaffingMinimum,
   StaffTelegramApi,
+  TELEGRAM_CHAT_SQL,
   UNSUB_PHRASE,
 } from '@cc/domain';
 import { newId } from '@cc/contracts';
@@ -79,6 +81,27 @@ const StaffingBody = z
   .strict();
 
 const MANAGE = ['settings.manage', 'supervisor.monitor'] as const;
+
+const MatrixCell = z
+  .object({
+    userId: uuid,
+    event: z.string().refine((e) => e in NOTIFY_EVENTS, 'Неизвестное событие'),
+    channels: channels,
+    conditions: z
+      .array(z.enum(NOTIFY_RELATIONS as [string, ...string[]]))
+      .max(5)
+      .default(['all']),
+  })
+  .strict();
+const MatrixCopy = z
+  .object({
+    fromUserId: uuid,
+    /** Кому: по умолчанию — всем активным сотрудникам. */
+    toUserIds: z.array(uuid).max(5000).optional(),
+    /** Только одно событие (столбец); по умолчанию — вся строка. */
+    event: z.string().optional(),
+  })
+  .strict();
 
 /**
  * Уведомления о событиях (Д-012): каталог событий, правила (кому и каким каналом), настройки бота Telegram для
@@ -162,6 +185,104 @@ export class NotifyController {
       if (!before) throw notFound('Правило');
       await audit(tx, p, 'delete', 'notify_rule', id, before, null);
       return { ok: true };
+    });
+  }
+
+  // ---------- матрица «сотрудник × событие» (Д-094)
+
+  /** Сотрудники с предприятием, подразделением, ролями и контактами; события; заполненные ячейки. */
+  @Get('notify/matrix')
+  @RequirePerm(...MANAGE)
+  async matrix() {
+    const users = await rows(
+      this.ctx.pool,
+      `SELECT u.id, u.full_name, u.email, u.email_unsubscribed_at IS NOT NULL AS email_unsubscribed,
+              u.telegram_contact, u.telegram_chat_id IS NOT NULL AS telegram_linked,
+              ${TELEGRAM_CHAT_SQL.replace(/telegram_/g, 'u.telegram_')} IS NOT NULL AS telegram_ok,
+              u.primary_enterprise_id AS enterprise_id, e.name AS enterprise_name,
+              u.primary_department_id AS department_id, d.name AS department_name,
+              COALESCE((SELECT array_agg(r.name ORDER BY r.name) FROM user_role ur JOIN role r ON r.code = ur.role_code
+                         WHERE ur.user_id = u.id), '{}') AS role_names
+         FROM app_user u LEFT JOIN enterprise e ON e.id = u.primary_enterprise_id
+                         LEFT JOIN department d ON d.id = u.primary_department_id
+        WHERE u.is_active AND u.can_login
+        ORDER BY e.name NULLS LAST, d.name NULLS LAST, u.full_name`,
+    );
+    const cells = await rows(
+      this.ctx.pool,
+      `SELECT m.user_id, m.event, m.channels, m.conditions FROM notify_matrix m
+         JOIN app_user u ON u.id = m.user_id AND u.is_active AND u.can_login WHERE cardinality(m.channels) > 0`,
+    );
+    return {
+      events: Object.entries(NOTIFY_EVENTS).map(([code, d]) => ({ code, ...d })),
+      channels: NOTIFY_CHANNELS,
+      users: users.map((r) => toApi(r)),
+      cells: cells.map((r) => toApi(r)),
+    };
+  }
+
+  @Put('notify/matrix/cell')
+  @RequirePerm(...MANAGE)
+  @HttpCode(200)
+  async putCell(@CurrentUser() p: Principal, @Body() body: unknown) {
+    const b = parse(MatrixCell, body);
+    const conditions = b.conditions.includes('all') || !b.conditions.length ? ['all'] : b.conditions;
+    await withTx(this.ctx.pool, async (tx) => {
+      const before = await one(
+        tx,
+        `SELECT channels, conditions FROM notify_matrix WHERE user_id = $1 AND event = $2 FOR UPDATE`,
+        [b.userId, b.event],
+      );
+      if (!b.channels.length)
+        await tx.query(`DELETE FROM notify_matrix WHERE user_id = $1 AND event = $2`, [b.userId, b.event]);
+      else
+        await tx.query(
+          `INSERT INTO notify_matrix (user_id, event, channels, conditions, updated_by) VALUES ($1, $2, $3, $4, $5)
+           ON CONFLICT (user_id, event) DO UPDATE SET channels = EXCLUDED.channels, conditions = EXCLUDED.conditions,
+             updated_at = now(), updated_by = EXCLUDED.updated_by`,
+          [b.userId, b.event, b.channels, conditions, p.id],
+        );
+      await audit(tx, p, 'update', 'notify_matrix', b.userId, before, {
+        event: b.event,
+        channels: b.channels,
+        conditions,
+      });
+    });
+    return { ok: true };
+  }
+
+  /** «Скопировать на всех»: строка сотрудника (или одна ячейка) заменяет соответствующие ячейки у получателей. */
+  @Post('notify/matrix/copy')
+  @RequirePerm(...MANAGE)
+  @HttpCode(200)
+  async copyMatrix(@CurrentUser() p: Principal, @Body() body: unknown) {
+    const b = parse(MatrixCopy, body);
+    if (b.event && !(b.event in NOTIFY_EVENTS)) throw badRequest('Неизвестное событие');
+    return withTx(this.ctx.pool, async (tx) => {
+      const targets = (
+        await rows<{ id: string }>(
+          tx,
+          `SELECT id FROM app_user WHERE is_active AND can_login AND id <> $1
+              AND ($2::uuid[] IS NULL OR id = ANY($2::uuid[]))`,
+          [b.fromUserId, b.toUserIds ?? null],
+        )
+      ).map((r) => r.id);
+      const events = b.event ? [b.event] : Object.keys(NOTIFY_EVENTS);
+      await tx.query(
+        `DELETE FROM notify_matrix WHERE user_id = ANY($1::uuid[]) AND event = ANY($2::text[])`,
+        [targets, events],
+      );
+      const r = await tx.query(
+        `INSERT INTO notify_matrix (user_id, event, channels, conditions, updated_by)
+         SELECT t.id, m.event, m.channels, m.conditions, $4 FROM notify_matrix m CROSS JOIN unnest($2::uuid[]) AS t(id)
+          WHERE m.user_id = $1 AND m.event = ANY($3::text[]) AND cardinality(m.channels) > 0`,
+        [b.fromUserId, targets, events, p.id],
+      );
+      await audit(tx, p, 'copy', 'notify_matrix', b.fromUserId, null, {
+        users: targets.length,
+        events,
+      });
+      return { users: targets.length, cells: r.rowCount ?? 0 };
     });
   }
 

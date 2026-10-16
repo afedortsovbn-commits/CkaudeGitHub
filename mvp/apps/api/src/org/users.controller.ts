@@ -1,4 +1,5 @@
-import { Body, Controller, Get, HttpCode, Inject, Param, Patch, Post, Put, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Inject, Param, Patch, Post, Put, Query, Req, Res } from '@nestjs/common';
+import type { FastifyReply, FastifyRequest } from 'fastify';
 import { newId } from '@cc/contracts';
 import { z } from 'zod';
 import { CurrentUser, RequirePerm } from '../auth/guard';
@@ -8,7 +9,8 @@ import { APP_CONTEXT, type AppContext } from '../context';
 import { audit } from '../lib/audit';
 import { one, rows, toApi, withTx } from '../lib/db';
 import { handleUserDeactivated } from '@cc/domain';
-import { badRequest, notFound, parse } from '../lib/errors';
+import { ApiError, badRequest, notFound, parse } from '../lib/errors';
+import { PHOTO_RULES, photoProblems } from '../lib/image-info';
 import { assertAdminRemains } from './roles.controller';
 
 const uuid = z.string().uuid();
@@ -19,6 +21,14 @@ const UserCreate = z
     fullName: z.string().trim().min(1).max(200),
     email: z.string().trim().email().max(200),
     phone: z.string().trim().max(64).nullable().optional(),
+    /** Telegram для уведомлений (Д-094): @имя или номер чата. */
+    telegramContact: z
+      .string()
+      .trim()
+      .max(64)
+      .regex(/^(@?[A-Za-z0-9_]{3,32}|-?[0-9]{5,20})?$/, 'Telegram: @имя или номер чата')
+      .nullable()
+      .optional(),
     password: password.optional(),
     canLogin: z.boolean().default(true),
     primaryEnterpriseId: uuid.nullable().optional(),
@@ -41,7 +51,9 @@ const ScopeRules = z.array(
 
 const USER_COLS = `u.id, u.full_name, u.email, u.phone, u.can_login, u.is_active, u.primary_enterprise_id,
   u.primary_department_id, u.locked_until, u.created_at, u.updated_at, u.sees_unclassified,
-  u.totp_enabled_at IS NOT NULL AS totp_enabled, u.anonymized_at,
+  u.totp_enabled_at IS NOT NULL AS totp_enabled, u.anonymized_at, u.telegram_contact,
+  u.telegram_chat_id IS NOT NULL AS telegram_linked,
+  CASE WHEN u.photo_key IS NOT NULL THEN '/api/v1/staff/' || u.id || '/photo?v=' || extract(epoch FROM u.photo_updated_at)::bigint END AS photo_url,
   COALESCE((SELECT array_agg(role_code ORDER BY role_code) FROM user_role WHERE user_id = u.id), '{}') AS roles`;
 
 @Controller('api/v1/users')
@@ -131,8 +143,8 @@ export class UsersController {
       const row = await one(
         tx,
         `INSERT INTO app_user (id, full_name, email, phone, password_hash, can_login, primary_enterprise_id, primary_department_id,
-                               sees_unclassified)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id, full_name, email`,
+                               sees_unclassified, telegram_contact)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id, full_name, email`,
         [
           id,
           b.fullName,
@@ -143,6 +155,7 @@ export class UsersController {
           b.primaryEnterpriseId ?? null,
           b.primaryDepartmentId ?? null,
           b.seesUnclassified ?? null,
+          b.telegramContact || null,
         ],
       );
       await this.writeRoles(tx, id, b.roles);
@@ -354,6 +367,63 @@ export class UsersController {
     return this.get(id);
   }
 
+  // ---------- фото сотрудника (Д-095): показывается клиенту в чате на сайте
+
+  @Get('photo-rules')
+  photoRules() {
+    return PHOTO_RULES;
+  }
+
+  /** Загрузка фото (raw-тело): не подходит — 400 со списком причин, фото не меняется. */
+  @Post(':id/photo')
+  @HttpCode(200)
+  async uploadPhoto(@CurrentUser() p: Principal, @Param('id') id: string, @Req() req: FastifyRequest) {
+    parse(uuid, id);
+    const body = req.body;
+    if (!Buffer.isBuffer(body) || !body.length) throw badRequest('Пустой файл');
+    const declared = String(req.headers['content-type'] ?? '').split(';')[0]!.trim();
+    const problems = photoProblems(body, declared);
+    if (problems.length) throw new ApiError(400, 'photo_rejected', `Фото не принято: ${problems.join('; ')}`);
+    const key = `staff-photos/${id}-${Date.now()}`;
+    const type = declared === 'image/jpg' ? 'image/jpeg' : declared;
+    const before = await one<{ photo_key: string | null }>(
+      this.ctx.pool,
+      'SELECT photo_key FROM app_user WHERE id = $1',
+      [id],
+    );
+    if (!before) throw notFound('Сотрудник');
+    await this.ctx.storage.put(key, body, type);
+    await withTx(this.ctx.pool, async (tx) => {
+      await tx.query(
+        `UPDATE app_user SET photo_key = $2, photo_content_type = $3, photo_updated_at = now(), updated_at = now() WHERE id = $1`,
+        [id, key, type],
+      );
+      await audit(tx, p, 'photo.upload', 'app_user', id, null, { size: body.length, type });
+    });
+    if (before.photo_key) await this.ctx.storage.remove(before.photo_key).catch(() => undefined);
+    return this.get(id);
+  }
+
+  @Delete(':id/photo')
+  @HttpCode(200)
+  async deletePhoto(@CurrentUser() p: Principal, @Param('id') id: string) {
+    const before = await one<{ photo_key: string | null }>(
+      this.ctx.pool,
+      'SELECT photo_key FROM app_user WHERE id = $1',
+      [id],
+    );
+    if (!before) throw notFound('Сотрудник');
+    await withTx(this.ctx.pool, async (tx) => {
+      await tx.query(
+        `UPDATE app_user SET photo_key = NULL, photo_content_type = NULL, photo_updated_at = now(), updated_at = now() WHERE id = $1`,
+        [id],
+      );
+      await audit(tx, p, 'photo.delete', 'app_user', id, null, null);
+    });
+    if (before.photo_key) await this.ctx.storage.remove(before.photo_key).catch(() => undefined);
+    return this.get(id);
+  }
+
   private async writeRoles(tx: import('pg').PoolClient, id: string, roles: string[]) {
     if (!roles.length) return;
     const known = await rows<{ code: string }>(tx, 'SELECT code FROM role WHERE code = ANY($1)', [roles]);
@@ -366,5 +436,28 @@ export class UsersController {
     await tx.query('UPDATE auth_session SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL', [
       id,
     ]);
+  }
+}
+
+/** Фото сотрудника для показа в интерфейсе (любой вошедший сотрудник). */
+@Controller('api/v1/staff')
+export class StaffPhotoController {
+  constructor(@Inject(APP_CONTEXT) private readonly ctx: AppContext) {}
+
+  @Get(':id/photo')
+  async photo(@Param('id') id: string, @Res() reply: FastifyReply) {
+    parse(uuid, id);
+    const u = await one<{ photo_key: string | null; photo_content_type: string | null }>(
+      this.ctx.pool,
+      'SELECT photo_key, photo_content_type FROM app_user WHERE id = $1',
+      [id],
+    );
+    if (!u?.photo_key) throw notFound('Фото');
+    const obj = await this.ctx.storage.get(u.photo_key);
+    return reply
+      .header('content-type', u.photo_content_type ?? 'image/jpeg')
+      .header('x-content-type-options', 'nosniff')
+      .header('cache-control', 'private, max-age=86400')
+      .send(obj.body);
   }
 }

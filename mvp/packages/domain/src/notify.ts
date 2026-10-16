@@ -10,6 +10,13 @@ import type { Pool, PoolClient } from 'pg';
 export type NotifyChannel = 'ui' | 'email' | 'telegram';
 export const NOTIFY_CHANNELS: NotifyChannel[] = ['ui', 'email', 'telegram'];
 
+/**
+ * Условие получения в матрице уведомлений (Д-094): «всегда» или только если сотрудник связан с объектом события —
+ * ответственный или куратор тикета, создатель (передал на 2-ю линию), оператор, который ведёт обращение.
+ */
+export type NotifyRelation = 'all' | 'responsible' | 'curator' | 'creator' | 'assignee';
+export const NOTIFY_RELATIONS: NotifyRelation[] = ['all', 'responsible', 'curator', 'creator', 'assignee'];
+
 export interface NotifyEventDef {
   title: string;
   description: string;
@@ -19,7 +26,11 @@ export interface NotifyEventDef {
   /** Каналы, по которым система шлёт это событие всегда (колокольчик по тикетам, тестам, рассылкам) — в профиле
    *  они не выключаются, а правила/настройки добавляют только остальные каналы. */
   fixedChannels?: NotifyChannel[];
+  /** Условия, которые можно выбрать в матрице (кроме «всегда»): связь сотрудника с объектом события. */
+  relations?: Exclude<NotifyRelation, 'all'>[];
 }
+
+const TICKET_RELATIONS: Exclude<NotifyRelation, 'all'>[] = ['responsible', 'curator', 'creator'];
 
 export const NOTIFY_EVENTS: Record<string, NotifyEventDef> = {
   'operators.below_min': {
@@ -57,12 +68,21 @@ export const NOTIFY_EVENTS: Record<string, NotifyEventDef> = {
     description: 'Создан тикет 2-й линии (особо важные и срочные — с пометкой)',
     optIn: false,
     group: 'second',
+    relations: TICKET_RELATIONS,
   },
   'ticket.overdue': {
     title: 'Просрочен тикет 2-й линии',
     description: 'Раз в день по каждому просроченному тикету',
     optIn: false,
     group: 'second',
+    relations: TICKET_RELATIONS,
+  },
+  'ticket.open_reminder': {
+    title: 'Есть незакрытые обращения на 2-й линии',
+    description: 'Утром в рабочие дни (9:00) — сколько тикетов ещё не закрыто и сколько из них просрочено',
+    optIn: false,
+    group: 'second',
+    relations: TICKET_RELATIONS,
   },
   'break.violation': {
     title: 'Нарушение перерыва по графику',
@@ -123,7 +143,27 @@ export interface NoticeInput {
   /** Нет правил по событию — получатели по правам (прежнее поведение), только в интерфейс. */
   fallbackPerms?: string[];
   high?: boolean;
+  /** Кто связан с объектом события (для условий матрицы, Д-094): ответственные, кураторы, создатель, оператор. */
+  relations?: Partial<Record<Exclude<NotifyRelation, 'all'>, string[]>>;
+  /** Ограничить получателей (личная сводка, например напоминание о незакрытых тикетах). */
+  onlyUserIds?: string[];
 }
+
+/** Подходит ли строка матрицы под событие: «всегда» или сотрудник связан с объектом нужным образом. */
+export function matrixMatches(
+  conditions: string[],
+  userId: string,
+  relations: NoticeInput['relations'] = {},
+): boolean {
+  if (!conditions.length || conditions.includes('all')) return true;
+  return conditions.some((c) => (relations[c as Exclude<NotifyRelation, 'all'>] ?? []).includes(userId));
+}
+
+/**
+ * Чат Telegram сотрудника: привязанный кодом из профиля, иначе номер чата, указанный в справочнике сотрудников
+ * (Д-094; «@имя» боту недостаточно — бот не может написать первым, нужен номер чата или привязка).
+ */
+export const TELEGRAM_CHAT_SQL = `COALESCE(telegram_chat_id, CASE WHEN telegram_contact ~ '^-?[0-9]{5,}$' THEN telegram_contact END)`;
 
 /** Отправить уведомление по правилам события. Возвращает число созданных записей. */
 export async function emitNotice(db: Pool | PoolClient, n: NoticeInput): Promise<number> {
@@ -159,6 +199,14 @@ export async function emitNotice(db: Pool | PoolClient, n: NoticeInput): Promise
       );
       for (const u of users.rows) add(u.id, ['ui']);
     }
+    // Д-094: матрица «сотрудник × событие» — каналы и условия у каждого сотрудника.
+    const matrix = await db.query<{ user_id: string; channels: string[]; conditions: string[] }>(
+      `SELECT m.user_id, m.channels, m.conditions FROM notify_matrix m JOIN app_user u ON u.id = m.user_id
+        WHERE m.event = $1 AND cardinality(m.channels) > 0 AND u.is_active AND u.can_login`,
+      [n.event],
+    );
+    for (const m of matrix.rows)
+      if (matrixMatches(m.conditions, m.user_id, n.relations)) add(m.user_id, m.channels);
   }
   if (n.targetUserIds?.length) {
     const prefs = await db.query<{ user_id: string; channels: string[] }>(
@@ -172,6 +220,20 @@ export async function emitNotice(db: Pool | PoolClient, n: NoticeInput): Promise
         p.user_id,
         p.channels.filter((c) => !fixed.has(c)),
       );
+    // Д-094: каналы, назначенные сотруднику в матрице для события «по желанию», — вдобавок к его настройкам.
+    const matrix = await db.query<{ user_id: string; channels: string[] }>(
+      `SELECT user_id, channels FROM notify_matrix WHERE event = $1 AND user_id = ANY($2::uuid[])`,
+      [n.event, [...new Set(n.targetUserIds)]],
+    );
+    for (const m of matrix.rows)
+      add(
+        m.user_id,
+        m.channels.filter((c) => !fixed.has(c)),
+      );
+  }
+  if (n.onlyUserIds) {
+    const only = new Set(n.onlyUserIds);
+    for (const id of [...plan.keys()]) if (!only.has(id)) plan.delete(id);
   }
   if (!plan.size) return 0;
   const users = await db.query<{
@@ -179,9 +241,10 @@ export async function emitNotice(db: Pool | PoolClient, n: NoticeInput): Promise
     email: string | null;
     telegram_chat_id: string | null;
     email_unsubscribed_at: string | null;
-  }>(`SELECT id, email, telegram_chat_id, email_unsubscribed_at FROM app_user WHERE id = ANY($1::uuid[])`, [
-    [...plan.keys()],
-  ]);
+  }>(
+    `SELECT id, email, ${TELEGRAM_CHAT_SQL} AS telegram_chat_id, email_unsubscribed_at FROM app_user WHERE id = ANY($1::uuid[])`,
+    [[...plan.keys()]],
+  );
   let created = 0;
   for (const u of users.rows) {
     for (const channel of plan.get(u.id) ?? []) {
@@ -250,7 +313,8 @@ export async function processTelegramQueue(
   let sent = 0;
   await pool.query(
     `UPDATE notification n SET status = 'skipped', last_error = 'Telegram не привязан'
-       FROM app_user u WHERE u.id = n.user_id AND n.channel = 'telegram' AND n.status = 'pending' AND u.telegram_chat_id IS NULL`,
+       FROM app_user u WHERE u.id = n.user_id AND n.channel = 'telegram' AND n.status = 'pending'
+        AND ${TELEGRAM_CHAT_SQL.replace(/telegram_/g, 'u.telegram_')} IS NULL`,
   );
   for (;;) {
     if (o.shouldStop?.()) break;
@@ -266,8 +330,8 @@ export async function processTelegramQueue(
         WHERE n.id IN (SELECT id FROM notification
                         WHERE channel = 'telegram' AND status = 'pending' AND next_attempt_at <= now()
                         ORDER BY created_at LIMIT $1 FOR UPDATE SKIP LOCKED)
-          AND u.id = n.user_id AND u.telegram_chat_id IS NOT NULL
-        RETURNING n.id, n.subject, n.body, n.attempts, u.telegram_chat_id AS chat`,
+          AND u.id = n.user_id AND ${TELEGRAM_CHAT_SQL.replace(/telegram_/g, 'u.telegram_')} IS NOT NULL
+        RETURNING n.id, n.subject, n.body, n.attempts, ${TELEGRAM_CHAT_SQL.replace(/telegram_/g, 'u.telegram_')} AS chat`,
       [o.batch ?? 20, o.leaseSeconds ?? 120],
     );
     if (!claimed.rows.length) break;

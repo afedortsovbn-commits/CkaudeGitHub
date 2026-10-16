@@ -66,7 +66,14 @@ export function NotificationBell() {
   return (
     <Popover opened={opened} onChange={setOpened} width={360} position="bottom-end" withArrow>
       <Popover.Target>
-        <Indicator label={unread} size={16} disabled={!unread} color="red" data-testid="bell-count">
+        <Indicator
+          label={unread}
+          size={16}
+          disabled={!unread}
+          color="red"
+          classNames={{ indicator: unread ? 'cc-bell-blink' : undefined }}
+          data-testid="bell-count"
+        >
           <ActionIcon
             variant="subtle"
             size="lg"
