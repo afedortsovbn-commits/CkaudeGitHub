@@ -255,6 +255,41 @@ export function buildOpenApi(serverUrl: string): Obj {
           extra: { '409': { description: 'Внешний канал отключён' } },
         }),
       },
+      '/api/v1/ext/comments': {
+        post: op({
+          tag: 'Комментарии к новостям',
+          summary: 'Комментарий к новости → на модерацию (Д-100)',
+          description:
+            'Комментарий читателя попадает в «Модерацию комментариев» контакт-центра. Поля: externalId (id на сайте), ' +
+            'newsId, newsTitle, newsUrl, parentExternalId (ответ на комментарий), author {name, id}, text, postedAt. ' +
+            'Повтор с тем же externalId дубля не создаёт. Решение — событием `comment.moderated` (approved, rejected, ' +
+            'reply — ответ компании с текстом) или запросом решений.',
+          perm: 'comments',
+          status: '202',
+          ok: json(
+            {
+              type: 'object',
+              properties: {
+                id: { type: 'string', format: 'uuid' },
+                status: { type: 'string' },
+                duplicate: { type: 'boolean' },
+              },
+            },
+            'Принято на модерацию',
+          ),
+        }),
+      },
+      '/api/v1/ext/comments/decisions': {
+        get: op({
+          tag: 'Комментарии к новостям',
+          summary: 'Решения модераторов после времени since',
+          description:
+            'Опубликованные и отклонённые комментарии и ответы компании (isOfficial, text) — для сайта без webhooks.',
+          perm: 'comments',
+          params: [{ name: 'since', in: 'query', schema: { type: 'string', format: 'date-time' } }],
+          ok: json({ type: 'array', items: { type: 'object' } }, 'Решения'),
+        }),
+      },
     },
     webhooks: {
       webhookEvent: {

@@ -24,6 +24,7 @@ import { SecondLinePage, TicketPage } from './pages/TicketPages';
 import { DemoLoginPage } from './pages/DemoLoginPage';
 import { NotifyPage } from './pages/NotifyPage';
 import { ImprovementsPage } from './pages/ImprovementsPage';
+import { ModerationPage } from './pages/ModerationPage';
 import { TgPage } from './pages/TgPage';
 import { AppFramePage, ExternalAppsPage } from './pages/ExternalAppsPages';
 import { RolesPage } from './pages/RolesPage';
@@ -93,6 +94,7 @@ function App() {
         <Route path="ratings" element={<RatingsPage />} />
         <Route path="ai-journal" element={<AiJournalPage />} />
         <Route path="improvements" element={<ImprovementsPage />} />
+        <Route path="moderation" element={<ModerationPage />} />
         <Route path="tickets" element={<SecondLinePage />} />
         <Route path="tickets/:id" element={<TicketPage />} />
         {/* Бывший раздел «Контроль 2-й линии» — теперь вкладки раздела «2-я линия» (старые ссылки работают). */}

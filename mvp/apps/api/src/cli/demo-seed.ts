@@ -299,6 +299,42 @@ export async function seedDemo(tx: PoolClient, demoPassword: string): Promise<bo
     // 1000 — номер демо-страницы «Позвонить» и генератора вызовов SIPp; +375… — пример номера транка.
     config: JSON.stringify({ dids: ['1000', '+375170000000'], record: true }),
   });
+  // Д-100: комментарии к новостям мобильных сервисов, ждущие модерации (публичный канал).
+  const news = [
+    {
+      id: 'n-101',
+      title: 'С 1 ноября — новые условия программы «Заправка»',
+      url: 'https://m.belorusneft.by/news/101',
+    },
+    {
+      id: 'n-102',
+      title: 'На АЗС в Минске открылись кофейни нового формата',
+      url: 'https://m.belorusneft.by/news/102',
+    },
+  ];
+  const demoComments: [string, string, string, string][] = [
+    [
+      'n-101',
+      'Сергей',
+      'c-1',
+      'А бонусы, накопленные до 1 ноября, сгорят? В новости про это ничего не сказано.',
+    ],
+    ['n-101', 'Ольга', 'c-2', 'Отличная новость, спасибо! Давно ждали скидку на дизель.'],
+    ['n-101', 'Гость', 'c-3', 'Звоните 8-029-000-00-00, продам бонусные баллы дешево!!!'],
+    ['n-102', 'Андрей К.', 'c-4', 'Кофе вкусный, но на АЗС у МКАД очередь к кассе по 15 минут, кассир один.'],
+    ['n-102', 'Марина', 'c-5', 'Когда такие кофейни появятся в Гомеле?'],
+  ];
+  for (const [nid, author, ext, body] of demoComments) {
+    const n = news.find((x) => x.id === nid)!;
+    await ins('news_comment', {
+      external_id: `demo-${ext}`,
+      news_id: n.id,
+      news_title: n.title,
+      news_url: n.url,
+      author_name: author,
+      body,
+    });
+  }
   await ins('scope_template', {
     name: 'Только предприятие «Север»',
     rules: JSON.stringify([{ enterpriseIds: [ent.E1], departmentIds: null, topicIds: null }]),

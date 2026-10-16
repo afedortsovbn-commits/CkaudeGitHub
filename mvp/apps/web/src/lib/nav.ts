@@ -6,6 +6,7 @@ import {
   IconBroadcast,
   IconBuildingSkyscraper,
   IconBulb,
+  IconNews,
   IconCalendarTime,
   IconBellRinging,
   IconBook2,
@@ -120,6 +121,14 @@ export const MENU: MenuItem[] = [
     perms: ['conversations.work', 'tickets.work', 'rating.view'],
     group: 'work',
     icon: IconTrophy,
+  },
+  // Д-100: публичный канал — комментарии к новостям мобильных сервисов.
+  {
+    to: '/moderation',
+    label: t.moderation.navTitle,
+    perms: ['moderation.work'],
+    group: 'work',
+    icon: IconNews,
   },
   {
     to: '/my-courses',

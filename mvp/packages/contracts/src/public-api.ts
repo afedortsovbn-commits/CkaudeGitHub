@@ -12,6 +12,7 @@ export const API_KEY_PERMISSIONS = {
   'conversations.write': 'Запись результатов анализа: поля, теги, заметки',
   'bot.reply': 'Внешний бот: ответ клиенту и перевод на оператора',
   inbound: 'Внешний канал: приём сообщений сторонней системы как обращений',
+  comments: 'Комментарии к новостям: передача на модерацию и получение решений (Д-100)',
 } as const;
 export type ApiKeyPermission = keyof typeof API_KEY_PERMISSIONS;
 export const API_KEY_PERMISSION_LIST = Object.keys(API_KEY_PERMISSIONS) as ApiKeyPermission[];
@@ -39,6 +40,8 @@ export const WEBHOOK_EVENTS = {
   'ticket.commented': 'Комментарий к тикету',
   'ticket.client_message': 'Клиент написал в обращение с открытым тикетом',
   'ticket.needs_reassign': 'Тикет требует переназначения',
+  'comment.moderated':
+    'Комментарий к новости промодерирован: опубликован, отклонён или опубликован ответ компании',
 } as const;
 export type WebhookEventType = keyof typeof WEBHOOK_EVENTS;
 export const WEBHOOK_EVENT_TYPES = Object.keys(WEBHOOK_EVENTS) as WebhookEventType[];
@@ -82,7 +85,7 @@ export function publicEventOf(
     case 'conversation.call':
       return { type: 'call.state_changed', data };
     default:
-      if (e.type.startsWith('ticket.') && e.type in WEBHOOK_EVENTS)
+      if ((e.type.startsWith('ticket.') || e.type.startsWith('comment.')) && e.type in WEBHOOK_EVENTS)
         return { type: e.type as WebhookEventType, data };
       return null;
   }

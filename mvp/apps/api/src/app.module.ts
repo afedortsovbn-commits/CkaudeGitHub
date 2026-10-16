@@ -19,6 +19,7 @@ import { ImportController } from './import/import.controller';
 import { IvrController } from './ivr/ivr.controller';
 import { TtsController } from './ivr/tts.controller';
 import { ImprovementsController } from './automation/improvements.controller';
+import { ExtCommentsController, ModerationController } from './moderation/comments.controller';
 import { ChannelsController } from './org/channels.controller';
 import { DictController } from './org/dict.controller';
 import { MatrixController } from './org/matrix.controller';
@@ -73,6 +74,8 @@ export class AppModule {
         IvrController,
         TtsController,
         ImprovementsController,
+        ExtCommentsController,
+        ModerationController,
         AutomationController,
         TicketsController,
         NotificationsController,
