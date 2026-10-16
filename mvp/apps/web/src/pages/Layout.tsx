@@ -34,6 +34,7 @@ import { UpdateBanner } from '../components/UpdateBanner';
 import { StaffMessageInbox } from '../components/StaffMessageInbox';
 import { SoftphoneCall, SoftphoneStatus } from '../components/Softphone';
 import { AiAssistant } from '../components/AiAssistant';
+import { HelpButton } from '../components/Help';
 import { useRealtime } from '../lib/realtime';
 import { useFocusMode, usePageCompact } from '../lib/focus';
 import { pref } from '../lib/pref';
@@ -287,6 +288,7 @@ export function Layout() {
             {can('settings.manage', 'supervisor.monitor') && <AiAssistant />}
             {phone && <SoftphoneStatus />}
             <NotificationBell />
+            <HelpButton />
             {can('conversations.work') && <BreakReminder />}
             <Text
               size="sm"

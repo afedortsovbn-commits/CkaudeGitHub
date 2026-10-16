@@ -15,6 +15,7 @@ import { ivr } from './i18n/ivr';
 import { tts } from './i18n/tts';
 import { improvements } from './i18n/improvements';
 import { moderation } from './i18n/moderation';
+import { help } from './i18n/help';
 import { layout } from './i18n/layout';
 import { matrix } from './i18n/matrix';
 import { mergeContactModalUi } from './i18n/mergeContactModalUi';
@@ -165,6 +166,7 @@ const ru = {
   tts,
   improvements,
   moderation,
+  help,
   layout,
   matrix,
   hintPanel,
