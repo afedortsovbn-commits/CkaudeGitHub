@@ -12,6 +12,7 @@ import { dictPageUi } from './i18n/dictPageUi';
 import { flowEditor } from './i18n/flowEditor';
 import { integrations } from './i18n/integrations';
 import { ivr } from './i18n/ivr';
+import { tts } from './i18n/tts';
 import { layout } from './i18n/layout';
 import { matrix } from './i18n/matrix';
 import { mergeContactModalUi } from './i18n/mergeContactModalUi';
@@ -159,6 +160,7 @@ const ru = {
   flowEditor,
   integrations,
   ivr,
+  tts,
   layout,
   matrix,
   hintPanel,

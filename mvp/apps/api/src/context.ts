@@ -37,6 +37,8 @@ export const ApiConfigSchema = BaseConfigSchema.extend({
   SECRETS_KEY: z.string().min(16, 'SECRETS_KEY должен быть не короче 16 символов').optional(),
   /** Д-013: секрет вебхука отписки от почтового relay (POST /api/v1/inbound/unsubscribe). */
   INBOUND_SECRET: z.preprocess((v) => (v === '' ? undefined : v), z.string().min(8).optional()),
+  /** Д-097: сервис синтеза речи edge-tts (контейнер tts, профили test/demo). */
+  TTS_EDGE_URL: z.string().default('http://tts:8080'),
   // ---- Телефония (Ф5) ----
   /** Общий с Kamailio секрет короткоживущих SIP-паролей (auth_ephemeral); не задан — софтфон выключен. */
   SIP_SECRET: z.string().min(8).optional(),

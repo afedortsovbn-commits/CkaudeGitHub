@@ -6,7 +6,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 TAG="${1:-${API_TAG:-dev}}"
-APPS="${APPS:-api worker router realtime call-control connector-telegram connector-email connector-rocketdata web mock-selfservice}"
+APPS="${APPS:-api worker router realtime call-control connector-telegram connector-email connector-rocketdata web mock-selfservice tts}"
 pnpm install --frozen-lockfile ${PNPM_OFFLINE:+--offline} ${PNPM_STORE:+--store-dir "$PNPM_STORE"}
 pnpm build
 # Медиа (Asterisk, Kamailio) — свои образы из шаблонов конфигурации; обновляются осушением (ops/update-media.sh),
@@ -56,6 +56,13 @@ keep_previous_web_assets() {
 }
 
 for app in $APPS; do
+  # Д-097: синтез речи edge-tts — образ на Python, собирается из apps/tts (нужен интернет для pip).
+  if [ "$app" = tts ]; then
+    # Без интернета (закрытый контур) образ не собирается — это не ошибка сборки: сервис нужен только стенду.
+    if docker build -q -t "cc/tts:$TAG" apps/tts >/dev/null; then echo "собран образ cc/tts:$TAG"
+    else echo "tts: образ не собран (нужен интернет для pip) — синтез edge-tts будет недоступен"; fi
+    continue
+  fi
   if [ "$app" = web ]; then
     rm -rf out/web && mkdir -p out/web
     (cd apps/web && APP_VERSION="$TAG" pnpm exec vite build --logLevel warn)

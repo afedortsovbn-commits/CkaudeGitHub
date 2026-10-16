@@ -634,6 +634,14 @@ services:
     networks: [cc]
     # Управление приёмником webhooks из e2e (POST /control, GET /hooks/<имя>).
     ports: ['127.0.0.1:${MOCK_SELFSERVICE_PORT:-8082}:3000']
+  # Д-097: синтез речи edge-tts (голос «Светлана») для кнопки «Озвучить текст». Нужен интернет (онлайн-сервис
+  # Microsoft) — только демо-стенд (профили test, demo); выбор движка — «Аудиобиблиотека → Синтез речи».
+  tts:
+    logging: *logging
+    profiles: [test, demo]
+    image: cc/tts:${TTS_TAG:-${API_TAG:-dev}}
+    restart: unless-stopped
+    networks: [cc]
   mail:
     logging: *logging
     profiles: [test]

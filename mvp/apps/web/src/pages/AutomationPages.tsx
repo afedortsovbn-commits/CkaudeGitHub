@@ -18,6 +18,7 @@ import {
 } from '@mantine/core';
 import { useState } from 'react';
 import { DictPage } from '../components/DictPage';
+import { TtsButton } from '../components/TtsButton';
 import { TopicPicker } from '../components/DictPickers';
 import { patch, post } from '../lib/api';
 import { useAuth } from '../lib/auth';
@@ -552,12 +553,23 @@ const RULE_KINDS = [
 ];
 
 export function AutoRepliesPage() {
+  const { can } = useAuth();
   const channels = useList('/dict/channels');
   const schedules = useList('/dict/schedules');
   const textChannels = (channels.data ?? []).filter((c) => c.kind !== 'voice');
   return (
     <>
       <DictPage
+        rowActions={(r) =>
+          can('ivr.manage') && r.text ? (
+            <TtsButton
+              label={t.tts.buttonShort}
+              variant="subtle"
+              defaultName={`${t.tts.autoReply}${String(r.name ?? '')}`}
+              defaultText={String(r.text)}
+            />
+          ) : null
+        }
         kind="auto-replies"
         title={t.automation.pravilaAvtootvetov}
         columns={[

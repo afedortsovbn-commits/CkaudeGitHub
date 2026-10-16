@@ -18,6 +18,7 @@ import { notifications } from '@mantine/notifications';
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import { DictPage } from '../components/DictPage';
+import { TtsButton, TtsSettingsCard } from '../components/TtsButton';
 import { authBlobUrl, errorText, get, patch, post, upload } from '../lib/api';
 import { toIvrWav } from '../lib/audio-convert';
 import { useAuth } from '../lib/auth';
@@ -86,10 +87,12 @@ export function AudioLibraryPage() {
   };
   return (
     <>
+      {writable && <TtsSettingsCard />}
       <Group justify="space-between" mb="md">
         <span />
         <Group>
           <Switch label={t.showInactive} checked={all} onChange={(e) => setAll(e.currentTarget.checked)} />
+          {writable && <TtsButton size="sm" />}
           {writable && (
             <FileButton onChange={(f) => void doUpload(f)} accept="audio/*">
               {(props) => (
@@ -192,6 +195,15 @@ export function AudioLibraryPage() {
                       <Group gap="xs" justify="flex-end">
                         {f.audioId && <AudioPreview id={f.audioId} />}
                         {writable && (
+                          <TtsButton
+                            label={t.tts.buttonShort}
+                            variant="subtle"
+                            defaultName={f.label}
+                            defaultText={f.label}
+                            query={`kind=fragment&fragmentKey=${encodeURIComponent(f.key)}`}
+                          />
+                        )}
+                        {writable && (
                           <FileButton
                             onChange={(file) =>
                               void doUpload(file, `kind=fragment&fragmentKey=${encodeURIComponent(f.key)}`)
@@ -236,6 +248,15 @@ export function AudioLibraryPage() {
                     <Table.Td>
                       <Group gap="xs" justify="flex-end">
                         {f.audioId && <AudioPreview id={f.audioId} />}
+                        {writable && (
+                          <TtsButton
+                            label={t.tts.buttonShort}
+                            variant="subtle"
+                            defaultName={f.label}
+                            defaultText={f.label}
+                            query={`kind=fragment&fragmentKey=${encodeURIComponent(f.key)}`}
+                          />
+                        )}
                         {writable && (
                           <FileButton
                             onChange={(file) =>
@@ -295,73 +316,78 @@ export function AnnouncementsPage() {
   const flows = useList('/flows?kind=voice');
   const now = Date.now();
   return (
-    <DictPage
-      kind="announcements"
-      title={t.ivr.obyavleniyaOSboyakh}
-      writePerm={['announcements.manage', 'supervisor.monitor']}
-      columns={[
-        { key: 'name', label: t.ivr.nazvanie },
-        {
-          key: 'audioId',
-          label: t.ivr.fraza,
-          render: (r) => (
-            <Group gap="xs">
-              <AudioPreview id={String(r.audioId)} />
-              <Text size="sm">{String(audio.data?.find((a) => a.id === r.audioId)?.name ?? '')}</Text>
-            </Group>
-          ),
-        },
-        {
-          key: 'period',
-          label: t.ivr.period,
-          render: (r) => {
-            const live =
-              r.isActive &&
-              (!r.startsAt || Date.parse(String(r.startsAt)) <= now) &&
-              (!r.endsAt || Date.parse(String(r.endsAt)) > now);
-            return (
+    <>
+      <Group justify="flex-end" mb="xs">
+        <TtsButton defaultName={t.tts.announcement} />
+      </Group>
+      <DictPage
+        kind="announcements"
+        title={t.ivr.obyavleniyaOSboyakh}
+        writePerm={['announcements.manage', 'supervisor.monitor']}
+        columns={[
+          { key: 'name', label: t.ivr.nazvanie },
+          {
+            key: 'audioId',
+            label: t.ivr.fraza,
+            render: (r) => (
               <Group gap="xs">
-                <Text size="sm">
-                  {localDt(r.startsAt)} — {localDt(r.endsAt)}
-                </Text>
-                {live && <Badge color="red">{t.ivr.zvuchitSeychas}</Badge>}
+                <AudioPreview id={String(r.audioId)} />
+                <Text size="sm">{String(audio.data?.find((a) => a.id === r.audioId)?.name ?? '')}</Text>
               </Group>
-            );
+            ),
           },
-        },
-        {
-          key: 'flowIds',
-          label: t.ivr.stsenarii,
-          render: (r) =>
-            (r.flowIds as string[] | undefined)?.length
-              ? (r.flowIds as string[])
-                  .map((id) => flows.data?.find((f) => f.id === id)?.name ?? id)
-                  .join(', ')
-              : t.ivr.vse,
-        },
-      ]}
-      fields={[
-        { key: 'name', label: t.ivr.nazvanie, required: true },
-        {
-          key: 'audioId',
-          label: t.ivr.frazaIzAudiobiblioteki,
-          type: 'select',
-          required: true,
-          options: options(audio.data),
-        },
-        { key: 'startsAt', label: t.ivr.nachaloPustoSrazu, placeholder: t.ivr.ggggMmDdtchchMm },
-        { key: 'endsAt', label: t.ivr.okonchaniePustoPokaNe, placeholder: t.ivr.ggggMmDdtchchMm },
-        {
-          key: 'flowIds',
-          label: t.ivr.tolkoVStsenariyakhPusto,
-          type: 'multiselect',
-          options: options(flows.data),
-        },
-        { key: 'sortOrder', label: t.ivr.poryadok, type: 'number' },
-      ]}
-      toForm={(r) => ({ ...r, startsAt: toInput(r.startsAt), endsAt: toInput(r.endsAt) })}
-      fromForm={(v) => ({ ...v, startsAt: toIso(v.startsAt), endsAt: toIso(v.endsAt) })}
-    />
+          {
+            key: 'period',
+            label: t.ivr.period,
+            render: (r) => {
+              const live =
+                r.isActive &&
+                (!r.startsAt || Date.parse(String(r.startsAt)) <= now) &&
+                (!r.endsAt || Date.parse(String(r.endsAt)) > now);
+              return (
+                <Group gap="xs">
+                  <Text size="sm">
+                    {localDt(r.startsAt)} — {localDt(r.endsAt)}
+                  </Text>
+                  {live && <Badge color="red">{t.ivr.zvuchitSeychas}</Badge>}
+                </Group>
+              );
+            },
+          },
+          {
+            key: 'flowIds',
+            label: t.ivr.stsenarii,
+            render: (r) =>
+              (r.flowIds as string[] | undefined)?.length
+                ? (r.flowIds as string[])
+                    .map((id) => flows.data?.find((f) => f.id === id)?.name ?? id)
+                    .join(', ')
+                : t.ivr.vse,
+          },
+        ]}
+        fields={[
+          { key: 'name', label: t.ivr.nazvanie, required: true },
+          {
+            key: 'audioId',
+            label: t.ivr.frazaIzAudiobiblioteki,
+            type: 'select',
+            required: true,
+            options: options(audio.data),
+          },
+          { key: 'startsAt', label: t.ivr.nachaloPustoSrazu, placeholder: t.ivr.ggggMmDdtchchMm },
+          { key: 'endsAt', label: t.ivr.okonchaniePustoPokaNe, placeholder: t.ivr.ggggMmDdtchchMm },
+          {
+            key: 'flowIds',
+            label: t.ivr.tolkoVStsenariyakhPusto,
+            type: 'multiselect',
+            options: options(flows.data),
+          },
+          { key: 'sortOrder', label: t.ivr.poryadok, type: 'number' },
+        ]}
+        toForm={(r) => ({ ...r, startsAt: toInput(r.startsAt), endsAt: toInput(r.endsAt) })}
+        fromForm={(v) => ({ ...v, startsAt: toIso(v.startsAt), endsAt: toIso(v.endsAt) })}
+      />
+    </>
   );
 }
 

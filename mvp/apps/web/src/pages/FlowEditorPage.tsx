@@ -66,6 +66,7 @@ import { Link, useNavigate, useParams } from 'react-router';
 import { ApiError, errorText, get, patch, post } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { options, type Row, useAction, useList } from '../lib/data';
+import { TtsButton } from '../components/TtsButton';
 import { AudioPreview } from './IvrAdminPages';
 import { t } from '../lib/i18n';
 
@@ -382,6 +383,11 @@ function NodeParams({
         {((p[key] as string[]) ?? []).map((id) => (
           <AudioPreview key={id} id={id} />
         ))}
+        <TtsButton
+          label={t.tts.buttonShort}
+          variant="subtle"
+          onCreated={(id) => set(key, [...((p[key] as string[]) ?? []), id])}
+        />
       </Group>
     </Stack>
   );
