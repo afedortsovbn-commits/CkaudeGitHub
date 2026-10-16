@@ -1,5 +1,5 @@
 import { type Browser, expect, type Page, test } from '@playwright/test';
-import { DEMO_PASSWORD, login, nav, listView } from './helpers';
+import { DEMO_PASSWORD, login, nav, listView, openChatWidget } from './helpers';
 
 const stamp = Date.now().toString().slice(-6);
 
@@ -8,7 +8,7 @@ async function openWidget(browser: Browser) {
   const page = await ctx.newPage();
   await page.goto('/widget/demo.html');
   const w = page.locator('#cc-widget');
-  await w.getByTestId('cc-open').click();
+  await openChatWidget(w);
   await w.getByPlaceholder('Ваше имя (необязательно)').fill(`Клиент ${stamp}`);
   await w.getByRole('checkbox').check();
   await w.getByRole('button', { name: 'Начать чат' }).click();
@@ -94,7 +94,7 @@ test.describe.serial('Ф2: чат на сайте → оператор', () => {
     const p = await ctx.newPage();
     await p.goto('/widget/demo.html');
     const w = p.locator('#cc-widget');
-    await w.getByTestId('cc-open').click();
+    await openChatWidget(w);
     await expect(w.getByRole('button', { name: 'Начать чат' })).toBeDisabled();
     await ctx.close();
   });

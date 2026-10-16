@@ -1,4 +1,18 @@
-import { Body, Controller, Delete, Get, HttpCode, Inject, Param, Patch, Post, Put, Query, Req, Res } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  Inject,
+  Param,
+  Patch,
+  Post,
+  Put,
+  Query,
+  Req,
+  Res,
+} from '@nestjs/common';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { newId } from '@cc/contracts';
 import { z } from 'zod';
@@ -53,7 +67,7 @@ const USER_COLS = `u.id, u.full_name, u.email, u.phone, u.can_login, u.is_active
   u.primary_department_id, u.locked_until, u.created_at, u.updated_at, u.sees_unclassified,
   u.totp_enabled_at IS NOT NULL AS totp_enabled, u.anonymized_at, u.telegram_contact,
   u.telegram_chat_id IS NOT NULL AS telegram_linked,
-  CASE WHEN u.photo_key IS NOT NULL THEN '/api/v1/staff/' || u.id || '/photo?v=' || extract(epoch FROM u.photo_updated_at)::bigint END AS photo_url,
+  CASE WHEN u.photo_key IS NOT NULL THEN '/staff/' || u.id || '/photo?v=' || extract(epoch FROM u.photo_updated_at)::bigint END AS photo_url,
   COALESCE((SELECT array_agg(role_code ORDER BY role_code) FROM user_role WHERE user_id = u.id), '{}') AS roles`;
 
 @Controller('api/v1/users')
@@ -381,7 +395,9 @@ export class UsersController {
     parse(uuid, id);
     const body = req.body;
     if (!Buffer.isBuffer(body) || !body.length) throw badRequest('Пустой файл');
-    const declared = String(req.headers['content-type'] ?? '').split(';')[0]!.trim();
+    const declared = String(req.headers['content-type'] ?? '')
+      .split(';')[0]!
+      .trim();
     const problems = photoProblems(body, declared);
     if (problems.length) throw new ApiError(400, 'photo_rejected', `Фото не принято: ${problems.join('; ')}`);
     const key = `staff-photos/${id}-${Date.now()}`;

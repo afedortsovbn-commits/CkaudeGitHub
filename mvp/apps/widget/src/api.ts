@@ -9,6 +9,14 @@ export interface WidgetConfig {
   prechatFields?: { key: 'name' | 'phone' | 'email'; required: boolean }[];
   /** Показывать клиенту, что оператор печатает (настройка канала, по умолчанию — да). */
   showTyping?: boolean;
+  /** Д-096: другие способы связи (нет — сразу чат). */
+  contacts?: Partial<Record<'phone' | 'telegram' | 'viber', { label: string; href: string } | null>>;
+}
+/** Д-095: оператор, который ведёт переписку (фото — по токену клиента). */
+export interface Agent {
+  id: string;
+  name: string | null;
+  photo: string | null;
 }
 export interface Msg {
   id: string;
@@ -74,6 +82,9 @@ export class ChatApi {
     this.req<Msg[]>('GET', `/messages${after ? `?after=${encodeURIComponent(after)}` : ''}`);
   send = (clientMessageId: string, body: string, attachmentIds: string[]) =>
     this.req('POST', '/messages', { clientMessageId, body, attachmentIds });
+  agent = () => this.req<{ agent: Agent | null }>('GET', '/agent');
+  agentPhotoUrl = (path: string) =>
+    `${this.base}/api/v1/client/${path}&t=${encodeURIComponent(this.token ?? '')}`;
   csat = (conversationId: string, score: number) =>
     this.req<{ ok: boolean }>('POST', '/csat', { conversationId, score });
   upload = (file: File) =>

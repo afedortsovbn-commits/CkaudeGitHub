@@ -11,6 +11,37 @@ export const css = `
 .btn.attn{animation:cc-pulse 2s infinite}
 .btn svg{width:28px;height:28px;transition:transform .25s ease}
 .btn.opened svg{transform:rotate(90deg)}
+.btn .bi{display:flex;align-items:center;justify-content:center;flex:none}
+@keyframes cc-strip{from{opacity:0;transform:translateY(20px) scale(.9)}to{opacity:1;transform:none}}
+@keyframes cc-strip-text{from{opacity:0;transform:translateX(-8px)}to{opacity:1;transform:none}}
+.btn.strip{width:auto;height:56px;border-radius:28px;padding:0 20px 0 8px;gap:10px;justify-content:flex-start;animation:cc-strip .45s cubic-bezier(.2,.9,.3,1.2) both}
+.btn.strip.attn{animation:cc-strip .45s cubic-bezier(.2,.9,.3,1.2) both,cc-pulse 2s .5s infinite}
+.btn.strip .bi{width:40px;height:40px;border-radius:50%;background:rgba(255,255,255,.2)}
+.btn.strip svg{width:22px;height:22px}
+.btn.strip:hover{transform:translateY(-2px)}
+.btn .bt{display:flex;flex-direction:column;align-items:flex-start;text-align:left;line-height:1.2;animation:cc-strip-text .4s .15s ease both}
+.btn .bt b{font-size:14px;font-weight:600;white-space:nowrap}
+.btn .bt small{font-size:11px;opacity:.85;display:flex;align-items:center;gap:5px}
+.btn .bt small i{width:7px;height:7px;border-radius:50%;background:#69db7c;display:inline-block;box-shadow:0 0 0 0 rgba(105,219,124,.7);animation:cc-online 1.8s infinite}
+@keyframes cc-online{0%{box-shadow:0 0 0 0 rgba(105,219,124,.7)}70%{box-shadow:0 0 0 6px rgba(105,219,124,0)}100%{box-shadow:0 0 0 0 rgba(105,219,124,0)}}
+@keyframes cc-photo{from{opacity:0;transform:scale(.7)}to{opacity:1;transform:none}}
+.avatar.photo{background:#fff;padding:0;overflow:hidden;box-shadow:0 0 0 2px rgba(255,255,255,.7)}
+.avatar.photo img{width:100%;height:100%;object-fit:cover;animation:cc-photo .35s ease both}
+.head .back{width:28px;height:28px;flex:none}
+.head .back svg{width:16px;height:16px}
+.panel.menu{height:auto}
+.opts{padding:14px;display:flex;flex-direction:column;gap:10px;background:#f4f6f8}
+.opt{display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:14px;background:#fff;border:1px solid #e9ecef;text-decoration:none;color:#1a1a1a;cursor:pointer;font:inherit;text-align:left;width:100%;box-shadow:0 1px 3px rgba(0,0,0,.05);animation:cc-msg .3s ease both;transition:transform .15s ease,box-shadow .15s ease,border-color .15s}
+.opt:hover{transform:translateY(-2px);box-shadow:0 6px 16px rgba(0,0,0,.08);border-color:#d0ebff}
+.opt .oi{width:42px;height:42px;border-radius:12px;display:flex;align-items:center;justify-content:center;color:#fff;flex:none}
+.opt .oi svg{width:22px;height:22px}
+.opt .ot{display:flex;flex-direction:column;min-width:0}
+.opt .ot b{font-size:15px;font-weight:600}
+.opt .ot small{font-size:12px;color:#868e96;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.opt.chat .oi{background:linear-gradient(135deg,#339af0,#1864ab)}
+.opt.phone .oi{background:linear-gradient(135deg,#51cf66,#2b8a3e)}
+.opt.telegram .oi{background:linear-gradient(135deg,#4dabf7,#229ed9)}
+.opt.viber .oi{background:linear-gradient(135deg,#9775fa,#7360f2)}
 .badge{position:absolute;top:-2px;right:-2px;min-width:22px;height:22px;padding:0 6px;border-radius:11px;background:#fa5252;color:#fff;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;border:2px solid #fff;animation:cc-badge .25s ease}
 .panel{position:fixed;right:20px;bottom:94px;width:370px;max-width:calc(100vw - 24px);height:560px;max-height:calc(100vh - 114px);background:#fff;border-radius:18px;box-shadow:0 12px 40px rgba(0,0,0,.22);display:flex;flex-direction:column;overflow:hidden;z-index:2147483000;color:#1a1a1a;transform-origin:bottom right;animation:cc-pop .28s cubic-bezier(.2,.9,.3,1.2)}
 .panel.inline{position:fixed;inset:0;width:100%;height:100%;max-height:none;max-width:none;border-radius:0;animation:none}

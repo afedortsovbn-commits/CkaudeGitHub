@@ -22,4 +22,17 @@ export const widget = {
   sessionExpired: 'Сессия чата устарела — начните чат заново, ваше сообщение сохранено в поле ввода.',
   notSent: 'Сообщение не отправлено',
   close: 'Свернуть чат',
+  // Д-096: свёрнутая полоска, выбор способа связи; Д-095: оператор с фото.
+  launcher: 'Есть вопрос? Напишите нам',
+  launcherSub: 'Мы на связи',
+  menuTitle: 'Как с нами удобнее связаться?',
+  menuSub: 'Выберите способ — ответим быстро',
+  chooseChat: 'Чат на сайте',
+  chooseChatSub: 'Переписка прямо здесь',
+  continueChat: 'Продолжить чат',
+  choosePhone: 'Позвонить',
+  chooseTelegram: 'Telegram',
+  chooseViber: 'Viber',
+  back: 'Другие способы связи',
+  operator: (name: string) => `Оператор ${name}`,
 };

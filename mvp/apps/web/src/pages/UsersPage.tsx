@@ -1,9 +1,11 @@
 import {
   Alert,
+  Avatar,
   Badge,
   Button,
   Checkbox,
   Drawer,
+  FileButton,
   Group,
   MultiSelect,
   Paper,
@@ -18,7 +20,7 @@ import {
 } from '@mantine/core';
 import { useEffect, useState } from 'react';
 import { FormModal } from '../components/FormModal';
-import { get, patch, post, put } from '../lib/api';
+import { authBlobUrl, del, errorText, get, patch, post, put, upload } from '../lib/api';
 import { type Row, options, useAction, useList } from '../lib/data';
 import { t } from '../lib/i18n';
 
@@ -38,6 +40,78 @@ interface UserDetail extends Row {
   anonymizedAt: string | null;
   telegramContact: string | null;
   telegramLinked: boolean;
+  photoUrl: string | null;
+}
+
+/** Фото сотрудника (Д-095): видит клиент в чате на сайте, пока этот сотрудник ведёт переписку. */
+function PhotoBlock({ user, onChanged }: { user: UserDetail; onChanged(): Promise<void> }) {
+  const [src, setSrc] = useState<string | null>(null);
+  const [problem, setProblem] = useState<string | null>(null);
+  useEffect(() => {
+    let url: string | null = null;
+    setSrc(null);
+    if (user.photoUrl)
+      void authBlobUrl(user.photoUrl)
+        .then((u) => {
+          url = u;
+          setSrc(u);
+        })
+        .catch(() => undefined);
+    return () => {
+      if (url) URL.revokeObjectURL(url);
+    };
+  }, [user.photoUrl]);
+  const up = useAction((f: File) => upload(`/users/${user.id}/photo`, f).then(onChanged), t.users.photoSaved);
+  const rm = useAction(() => del(`/users/${user.id}/photo`).then(onChanged), t.users.photoDeleted);
+  return (
+    <Paper withBorder p="sm">
+      <Group align="flex-start" wrap="nowrap">
+        <Avatar src={src} size={96} radius="md" data-testid="user-photo">
+          {user.fullName.slice(0, 1)}
+        </Avatar>
+        <Stack gap={6}>
+          <Text size="sm" fw={600}>
+            {t.users.photo}
+          </Text>
+          <Text size="xs" c="dimmed">
+            {t.users.photoRules}
+          </Text>
+          <Group gap="xs">
+            <FileButton
+              accept="image/jpeg,image/png,image/webp"
+              onChange={(f) => {
+                if (!f) return;
+                setProblem(null);
+                up.mutate(f, { onError: (e) => setProblem(errorText(e)) });
+              }}
+            >
+              {(props) => (
+                <Button
+                  size="xs"
+                  variant="light"
+                  loading={up.isPending}
+                  {...props}
+                  data-testid="user-photo-upload"
+                >
+                  {user.photoUrl ? t.users.photoReplace : t.users.photoUpload}
+                </Button>
+              )}
+            </FileButton>
+            {user.photoUrl && (
+              <Button size="xs" variant="subtle" color="red" onClick={() => rm.mutate(undefined)}>
+                {t.users.photoDelete}
+              </Button>
+            )}
+          </Group>
+          {problem && (
+            <Alert color="red" p="xs" data-testid="user-photo-problem">
+              {problem}
+            </Alert>
+          )}
+        </Stack>
+      </Group>
+    </Paper>
+  );
 }
 
 const UNCLASSIFIED_OPTIONS = [
@@ -245,6 +319,7 @@ function UserDrawer({ id, onClose }: { id: string; onClose(): void }) {
         </Tabs.List>
         <Tabs.Panel value="main">
           <Stack>
+            <PhotoBlock user={user} onChanged={load} />
             <TextInput
               label={t.users.fio}
               value={String(form.fullName ?? '')}

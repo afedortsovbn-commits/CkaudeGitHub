@@ -1,6 +1,6 @@
-import { Fragment, render } from 'preact';
+import { Fragment, type JSX, render } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { ChatApi, type Msg, store, uuid, type WidgetConfig } from './api';
+import { type Agent, ChatApi, type Msg, store, uuid, type WidgetConfig } from './api';
 import { css } from './styles';
 import { t } from './lib/i18n';
 
@@ -50,6 +50,41 @@ const ICON = {
       <path d="M3.4 20.4l17.4-7.5a1 1 0 0 0 0-1.8L3.4 3.6a.9.9 0 0 0-1.2 1.1L4.5 11 13 12l-8.5 1-2.3 6.3a.9.9 0 0 0 1.2 1.1z" />
     </svg>
   ),
+  phone: (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    >
+      <path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2" />
+    </svg>
+  ),
+  telegram: (
+    <svg viewBox="0 0 24 24" fill="currentColor">
+      <path d="M21.5 4.3 2.9 11.5c-1.3.5-1.3 1.2-.2 1.6l4.8 1.5 1.8 5.6c.2.6.4.8.9.8.4 0 .6-.2.9-.4l2.3-2.2 4.7 3.5c.9.5 1.5.2 1.7-.8L23 5.6c.3-1.3-.5-1.9-1.5-1.3zM9.6 14.2l8.5-5.4c.4-.2.7-.1.4.2l-7 6.4-.3 3.3-1.6-4.5z" />
+    </svg>
+  ),
+  viber: (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="1.8"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    >
+      <path d="M12 2.5c5 0 8.5 1.6 8.5 7.5s-3.5 7.5-8.5 7.5c-.8 0-1.6 0-2.3-.2L6 21v-4.2C4 15.5 3.5 13.3 3.5 10 3.5 4.1 7 2.5 12 2.5z" />
+      <path d="M9.2 7.2c.4-.3.9-.2 1.1.2l.7 1.4c.2.4 0 .8-.3 1l-.4.3a5 5 0 0 0 2.6 2.6l.3-.4c.2-.3.6-.5 1-.3l1.4.7c.4.2.5.7.2 1.1-.6.9-1.5 1.2-2.6.8a8 8 0 0 1-4.6-4.6c-.4-1.1-.1-2 .6-2.8z" />
+    </svg>
+  ),
+  back: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
+      <path d="M15 5l-7 7 7 7" />
+    </svg>
+  ),
   agent: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
       <path d="M4 14v-2a8 8 0 0 1 16 0v2" />
@@ -62,7 +97,11 @@ const ICON = {
 
 function Chat() {
   const api = useRef(new ChatApi(base, key)).current;
-  const [open, setOpen] = useState(inline);
+  // Д-096: свёрнутая полоска → выбор способа связи → чат (в приложении — сразу чат).
+  const [view, setView] = useState<'closed' | 'menu' | 'chat'>(inline ? 'chat' : 'closed');
+  const open = view === 'chat';
+  // Д-095: оператор, который ведёт переписку (имя и фото); нет оператора — без фото.
+  const [agent, setAgent] = useState<Agent | null>(null);
   const [cfg, setCfg] = useState<WidgetConfig | null>(null);
   const [token, setToken] = useState<string | null>(store.get(TOKEN_KEY));
   const [msgs, setMsgs] = useState<Msg[]>([]);
@@ -81,6 +120,23 @@ function Chat() {
   const lastAt = useRef<string | undefined>(undefined);
 
   api.token = token;
+
+  const refreshAgent = () => {
+    if (!api.token) return;
+    api
+      .agent()
+      .then((r) => setAgent(r.agent))
+      .catch(() => undefined);
+  };
+  const refreshAgentRef = useRef(refreshAgent);
+  refreshAgentRef.current = refreshAgent;
+  // Оператор мог смениться (передача коллеге) — проверяем при открытии чата и раз в 15 с.
+  useEffect(() => {
+    if (!token || !open) return;
+    refreshAgent();
+    const i = setInterval(refreshAgent, 15_000);
+    return () => clearInterval(i);
+  }, [token, open]);
 
   useEffect(() => {
     api
@@ -119,6 +175,7 @@ function Chat() {
         if ((e as { status?: number }).status === 401) {
           store.set(TOKEN_KEY, null);
           setToken(null);
+          setAgent(null);
           return;
         }
       }
@@ -132,7 +189,10 @@ function Chat() {
           merge([d.message]);
           // Ответ пришёл, пока чат свёрнут, — счётчик на значке.
           if (!openRef.current && d.message?.direction === 'out') setUnread((n) => n + 1);
-          if (d.message?.direction === 'out') setTyping(false);
+          if (d.message?.direction === 'out') {
+            setTyping(false);
+            refreshAgentRef.current();
+          }
         }
         if (d.type === 'typing' && showTypingRef.current) {
           setTyping(String(d.name ?? ''));
@@ -282,13 +342,127 @@ function Chat() {
   ];
   const missing = appUser ? [] : fields.filter((f) => f.required && !form[f.key].trim());
 
-  const panel = (
-    <div class={`panel${inline ? ' inline' : ''}`} data-testid="cc-panel">
+  const contacts = cfg?.contacts ?? {};
+  const hasContacts = !!(contacts.phone || contacts.telegram || contacts.viber);
+  const options: { k: string; icon: JSX.Element; title: string; sub: string; href?: string }[] = [
+    {
+      k: 'chat',
+      icon: ICON.chat,
+      title: token ? t.widget.continueChat : t.widget.chooseChat,
+      sub: t.widget.chooseChatSub,
+    },
+  ];
+  if (contacts.phone)
+    options.push({
+      k: 'phone',
+      icon: ICON.phone,
+      title: t.widget.choosePhone,
+      sub: contacts.phone.label,
+      href: contacts.phone.href,
+    });
+  if (contacts.telegram)
+    options.push({
+      k: 'telegram',
+      icon: ICON.telegram,
+      title: t.widget.chooseTelegram,
+      sub: contacts.telegram.label,
+      href: contacts.telegram.href,
+    });
+  if (contacts.viber)
+    options.push({
+      k: 'viber',
+      icon: ICON.viber,
+      title: t.widget.chooseViber,
+      sub: contacts.viber.label,
+      href: contacts.viber.href,
+    });
+  const optBody = (o: (typeof options)[number]) => (
+    <>
+      <span class="oi">{o.icon}</span>
+      <span class="ot">
+        <b>{o.title}</b>
+        <small>{o.sub}</small>
+      </span>
+    </>
+  );
+  const menu = (
+    <div class="panel menu" data-testid="cc-menu">
       <div class="head">
         <div class="ttl">
           <div class="avatar">{ICON.agent}</div>
           <div style="min-width:0">
-            <div class="name">{cfg?.name ?? t.widget.chat}</div>
+            <div class="name">{t.widget.menuTitle}</div>
+            <div class="sub">
+              <i />
+              {t.widget.menuSub}
+            </div>
+          </div>
+        </div>
+        <button onClick={() => setView('closed')} title={t.widget.close} aria-label={t.widget.close}>
+          {ICON.close}
+        </button>
+      </div>
+      <div class="opts">
+        {options.map((o, i) =>
+          o.href ? (
+            <a
+              key={o.k}
+              class={`opt ${o.k}`}
+              href={o.href}
+              target={o.k === 'phone' ? undefined : '_blank'}
+              rel="noopener"
+              style={{ animationDelay: `${i * 60}ms` }}
+              data-testid={`cc-choose-${o.k}`}
+            >
+              {optBody(o)}
+            </a>
+          ) : (
+            <button
+              key={o.k}
+              class={`opt ${o.k}`}
+              style={{ animationDelay: `${i * 60}ms` }}
+              onClick={() => setView('chat')}
+              data-testid={`cc-choose-${o.k}`}
+            >
+              {optBody(o)}
+            </button>
+          ),
+        )}
+      </div>
+    </div>
+  );
+
+  const panel = (
+    <div class={`panel${inline ? ' inline' : ''}`} data-testid="cc-panel">
+      <div class="head">
+        <div class="ttl">
+          {!inline && hasContacts && (
+            <button
+              class="back"
+              onClick={() => setView('menu')}
+              title={t.widget.back}
+              aria-label={t.widget.back}
+              data-testid="cc-back"
+            >
+              {ICON.back}
+            </button>
+          )}
+          <div class={`avatar${agent?.photo ? ' photo' : ''}`} data-testid="cc-avatar">
+            {agent?.photo ? (
+              <img
+                key={agent.photo}
+                src={api.agentPhotoUrl(agent.photo)}
+                alt={agent.name ?? ''}
+                data-testid="cc-agent-photo"
+              />
+            ) : (
+              ICON.agent
+            )}
+          </div>
+          <div style="min-width:0">
+            <div class="name" data-testid="cc-agent-name">
+              {agent?.name ? t.widget.operator(agent.name) : (cfg?.name ?? t.widget.chat)}
+            </div>
             <div class="sub">
               <i />
               {t.widget.online}
@@ -296,7 +470,7 @@ function Chat() {
           </div>
         </div>
         {!inline && (
-          <button onClick={() => setOpen(false)} title={t.widget.close} aria-label={t.widget.close}>
+          <button onClick={() => setView('closed')} title={t.widget.close} aria-label={t.widget.close}>
             {ICON.close}
           </button>
         )}
@@ -448,20 +622,30 @@ function Chat() {
   return (
     <>
       <style>{css}</style>
-      {open ? panel : null}
+      {open ? panel : view === 'menu' ? menu : null}
       {!inline && (
         <button
-          class={`btn${open ? ' opened' : ''}${!open && unread ? ' attn' : ''}`}
+          class={`btn${view !== 'closed' ? ' opened' : ' strip'}${view === 'closed' && unread ? ' attn' : ''}`}
           title={t.widget.chatSPodderzhkoy}
           aria-label={t.widget.chatSPodderzhkoy}
           data-testid="cc-open"
           onClick={() => {
-            setOpen(!open);
+            // Свёрнуто → меню способов связи (если они заданы и нет непрочитанного ответа) или сразу чат.
+            setView(view !== 'closed' ? 'closed' : hasContacts && !unread ? 'menu' : 'chat');
             setUnread(0);
           }}
         >
-          {open ? ICON.close : ICON.chat}
-          {!open && unread > 0 && <span class="badge">{unread}</span>}
+          <span class="bi">{view !== 'closed' ? ICON.close : ICON.chat}</span>
+          {view === 'closed' && (
+            <span class="bt">
+              <b>{t.widget.launcher}</b>
+              <small>
+                <i />
+                {t.widget.launcherSub}
+              </small>
+            </span>
+          )}
+          {view === 'closed' && unread > 0 && <span class="badge">{unread}</span>}
         </button>
       )}
     </>

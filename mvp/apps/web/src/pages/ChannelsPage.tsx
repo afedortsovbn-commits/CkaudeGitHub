@@ -24,6 +24,13 @@ const kindLabel = (k: unknown) => KINDS.find((x) => x.value === k)?.label ?? Str
 
 const isChat = (v: Record<string, unknown>) => v.kind === 'webchat' || v.kind === 'app';
 const isTg = (v: Record<string, unknown>) => v.kind === 'telegram';
+const isWebchat = (v: Record<string, unknown>) => v.kind === 'webchat';
+/** Д-096: ссылка без схемы (t.me/…, сайт) — дописать https://; @имя Telegram и номера телефонов — как есть. */
+const contactLink = (x: unknown) => {
+  const v = String(x ?? '').trim();
+  if (!v || v.startsWith('@') || /^\+?[\d\s()-]+$/.test(v) || /^[a-z][a-z0-9+.-]*:/i.test(v)) return v;
+  return `https://${v}`;
+};
 const isMail = (v: Record<string, unknown>) => v.kind === 'email';
 const isVoice = (v: Record<string, unknown>) => v.kind === 'voice';
 const isReview = (v: Record<string, unknown>) => v.kind === 'review';
@@ -147,6 +154,25 @@ const FIELDS: FormField[] = [
   },
   { key: 'maxFileMb', label: t.channels.maksRazmerFaylaMb, type: 'number', show: isChat },
   { key: 'showTyping', label: t.channels.showTyping, type: 'switch', show: isChat },
+  {
+    key: 'contactPhone',
+    label: t.channels.contactPhone,
+    description: t.channels.contactsHint,
+    placeholder: '+375 17 000-00-00',
+    show: isWebchat,
+  },
+  {
+    key: 'contactTelegram',
+    label: t.channels.contactTelegram,
+    placeholder: t.channels.contactTelegramPh,
+    show: isWebchat,
+  },
+  {
+    key: 'contactViber',
+    label: t.channels.contactViber,
+    placeholder: t.channels.contactViberPh,
+    show: isWebchat,
+  },
   ...PRECHAT_KEYS.map(
     (k, i): FormField => ({
       key: PRECHAT_FORM_KEY[k],
@@ -251,6 +277,9 @@ const toForm = (r: Row) => {
     greeting: c.greeting,
     maxFileMb: c.max_file_mb,
     showTyping: c.show_typing !== false,
+    contactPhone: c.contact_phone ?? '',
+    contactTelegram: c.contact_telegram ?? '',
+    contactViber: c.contact_viber ?? '',
     ...Object.fromEntries(
       PRECHAT_KEYS.map((k) => {
         const f = ((c.prechat_fields as PrechatField[] | undefined) ?? DEFAULT_PRECHAT).find(
@@ -356,6 +385,9 @@ const fromForm = (v: Record<string, unknown>, editing: Row | null) => {
       ...(v.greeting ? { greeting: v.greeting } : {}),
       ...(v.maxFileMb ? { max_file_mb: v.maxFileMb } : {}),
       show_typing: v.showTyping !== false,
+      contact_phone: str(v.contactPhone).trim(),
+      contact_telegram: contactLink(v.contactTelegram),
+      contact_viber: contactLink(v.contactViber),
       prechat_fields: PRECHAT_KEYS.filter((k) => (v[PRECHAT_FORM_KEY[k]] ?? 'off') !== 'off').map((k) => ({
         key: k,
         required: v[PRECHAT_FORM_KEY[k]] === 'required',

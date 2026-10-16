@@ -1,5 +1,5 @@
 import { type Browser, type BrowserContext, expect, type Page, test } from '@playwright/test';
-import { DEMO_PASSWORD, login, nav, tree, listView } from './helpers';
+import { DEMO_PASSWORD, login, nav, tree, listView, openChatWidget } from './helpers';
 import { readMailbox } from './mail';
 
 const stamp = Date.now().toString().slice(-6);
@@ -11,7 +11,7 @@ async function openWidget(browser: Browser) {
   const page = await ctx.newPage();
   await page.goto('/widget/demo.html');
   const w = page.locator('#cc-widget');
-  await w.getByTestId('cc-open').click();
+  await openChatWidget(w);
   await w.getByPlaceholder('Ваше имя (необязательно)').fill(CLIENT);
   await w.getByRole('checkbox').check();
   await w.getByRole('button', { name: 'Начать чат' }).click();

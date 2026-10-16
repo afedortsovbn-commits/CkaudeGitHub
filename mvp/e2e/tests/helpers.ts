@@ -147,3 +147,14 @@ export async function openSettings(page: Page): Promise<void> {
     if ((await sec.getAttribute('data-open')) === null)
       await sec.locator('[data-testid$="-toggle"]').first().click();
 }
+
+/**
+ * Открыть чат в виджете на сайте (Д-096): свёрнутая полоска → меню способов связи → «Чат на сайте». Без способов
+ * связи в канале (или с непрочитанным ответом) виджет открывает чат сразу.
+ */
+export async function openChatWidget(w: Locator) {
+  await w.getByTestId('cc-open').click();
+  await expect(w.getByTestId('cc-panel').or(w.getByTestId('cc-menu'))).toBeVisible();
+  if (await w.getByTestId('cc-menu').isVisible()) await w.getByTestId('cc-choose-chat').click();
+  await expect(w.getByTestId('cc-panel')).toBeVisible();
+}

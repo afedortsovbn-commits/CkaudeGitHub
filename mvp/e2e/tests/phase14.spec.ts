@@ -9,7 +9,7 @@ import {
   type Page,
   test,
 } from '@playwright/test';
-import { ADMIN, DEMO_PASSWORD, login, nav, setAgentStatus, listView } from './helpers';
+import { ADMIN, DEMO_PASSWORD, login, nav, setAgentStatus, listView, openChatWidget } from './helpers';
 
 /**
  * Ф14 (указания заказчика 01.10): тайм-аут молчания в боте, позиция в очереди, супервизор — прослушивание →
@@ -155,7 +155,7 @@ async function openWidget(browser: Browser, name: string, key: string) {
   const page = await newPage(browser);
   await page.goto(`/widget/demo.html?key=${key}`);
   const w = page.locator('#cc-widget');
-  await w.getByTestId('cc-open').click();
+  await openChatWidget(w);
   await w.getByPlaceholder('Ваше имя (необязательно)').fill(name);
   await w.getByRole('checkbox').check();
   await w.getByRole('button', { name: 'Начать чат' }).click();

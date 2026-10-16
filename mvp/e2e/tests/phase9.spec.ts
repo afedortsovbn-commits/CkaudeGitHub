@@ -1,6 +1,6 @@
 import { type Browser, expect, type Page, request, test } from '@playwright/test';
 import { readFileSync } from 'node:fs';
-import { ADMIN, DEMO_PASSWORD, login, nav, listView } from './helpers';
+import { ADMIN, DEMO_PASSWORD, login, nav, listView, openChatWidget } from './helpers';
 
 const stamp = Date.now().toString().slice(-6);
 /** Мок внешних систем (mock-selfservice): приёмник webhooks, анализатор, эхо-бот. */
@@ -13,7 +13,7 @@ async function openWidget(browser: Browser, name: string, key: string) {
   const page = await ctx.newPage();
   await page.goto(`/widget/demo.html?key=${key}`);
   const w = page.locator('#cc-widget');
-  await w.getByTestId('cc-open').click();
+  await openChatWidget(w);
   await w.getByPlaceholder('Ваше имя (необязательно)').fill(name);
   await w.getByRole('checkbox').check();
   await w.getByRole('button', { name: 'Начать чат' }).click();

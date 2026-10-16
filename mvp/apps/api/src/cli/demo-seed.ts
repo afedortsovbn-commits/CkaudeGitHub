@@ -275,6 +275,10 @@ export async function seedDemo(tx: PoolClient, demoPassword: string): Promise<bo
         'Я согласен(на) на обработку персональных данных в соответствии с политикой конфиденциальности.',
       greeting: 'Здравствуйте! Напишите ваш вопрос — оператор скоро ответит.',
       max_file_mb: 10,
+      // Д-096: другие способы связи в виджете (демо-значения).
+      contact_phone: '+375 17 000-00-00',
+      contact_telegram: '@omni_demo_bot',
+      contact_viber: '+375 29 000-00-00',
     }),
   });
   await ins('channel', {
