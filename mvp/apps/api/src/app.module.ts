@@ -18,6 +18,7 @@ import { HealthController } from './health.controller';
 import { ImportController } from './import/import.controller';
 import { IvrController } from './ivr/ivr.controller';
 import { TtsController } from './ivr/tts.controller';
+import { ImprovementsController } from './automation/improvements.controller';
 import { ChannelsController } from './org/channels.controller';
 import { DictController } from './org/dict.controller';
 import { MatrixController } from './org/matrix.controller';
@@ -71,6 +72,7 @@ export class AppModule {
         TelephonyController,
         IvrController,
         TtsController,
+        ImprovementsController,
         AutomationController,
         TicketsController,
         NotificationsController,

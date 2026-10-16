@@ -1,7 +1,7 @@
 import { Badge, Button, Card, Group, Paper, Stack, Text, Tooltip } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { useQuery } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { errorText, get, post } from '../lib/api';
 import type { Row } from '../lib/data';
 import { t } from '../lib/i18n';
@@ -149,6 +149,54 @@ export function AssistPanel({
       )}
     </Paper>
   );
+}
+
+/**
+ * Д-099: оператор пишет ответ вручную — если текст похож на шаблон (больше половины значимых слов совпадает),
+ * подсказать его. Поиск — по первым словам набранного текста, с задержкой, чтобы не спрашивать сервер на каждую букву.
+ */
+export function useTemplateHint(text: string, channel: string, enabled: boolean): Row | null {
+  const [term, setTerm] = useState('');
+  useEffect(() => {
+    const v = text.trim();
+    if (!enabled || v.length < 15 || v.startsWith('/')) {
+      setTerm('');
+      return;
+    }
+    const h = setTimeout(() => {
+      // Последнее слово может быть недописанным — не ищем по нему.
+      const words = v
+        .split(/\s+/)
+        .slice(0, -1)
+        .filter((w) => w.length >= 4);
+      setTerm(words.slice(0, 4).join(' '));
+    }, 600);
+    return () => clearTimeout(h);
+  }, [text, enabled]);
+  const q = useQuery({
+    queryKey: ['tpl-hint', channel, term],
+    queryFn: () => get<Row[]>(`/templates?channel=${channel}&q=${encodeURIComponent(term)}`),
+    enabled: enabled && !!term,
+    staleTime: 30_000,
+  });
+  if (!enabled || !term) return null;
+  const words = (s: string) =>
+    new Set(
+      s
+        .toLowerCase()
+        .split(/[^\p{L}\p{N}]+/u)
+        .filter((w) => w.length > 2),
+    );
+  const mine = words(text);
+  let best: { r: Row; score: number } | null = null;
+  for (const r of (q.data ?? []).slice(0, 20)) {
+    const tw = words(String(r.body));
+    let hit = 0;
+    for (const w of mine) if (tw.has(w)) hit++;
+    const score = mine.size ? hit / mine.size : 0;
+    if (!best || score > best.score) best = { r, score };
+  }
+  return best && best.score >= 0.5 ? best.r : null;
 }
 
 /** Быстрый вызов шаблона: «/код» в начале поля ответа (M-AUTO-01). */

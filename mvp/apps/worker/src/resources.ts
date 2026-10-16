@@ -1,6 +1,7 @@
 import { readFile, statfs } from 'node:fs/promises';
 import { cpus } from 'node:os';
 import {
+  analyzeImprovements,
   checkBreaks,
   pruneOutbox,
   remindTestDeadlines,
@@ -12,6 +13,7 @@ import type { Pool } from 'pg';
 
 export const RESOURCE_QUEUE = 'worker.resources';
 export const HOUSEKEEPING_QUEUE = 'worker.housekeeping';
+export const IMPROVEMENTS_QUEUE = 'worker.improvements';
 export const BREAKS_QUEUE = 'worker.breaks';
 /** Напоминания о сроке тестов сотрудников (раз в день после времени ежедневной рассылки). */
 export const TESTS_QUEUE = 'worker.test-deadlines';
@@ -65,6 +67,13 @@ export class ResourceMonitor {
       if (n) logger.info({ deleted: n }, 'очередь outbox очищена от отправленных событий старше 30 дней');
     });
     await boss.schedule(HOUSEKEEPING_QUEUE, '40 3 * * *');
+    // Д-098, Д-099: робот предложений по улучшению и кандидатов в шаблоны — раз в сутки ночью.
+    await ensureJobQueue(boss, IMPROVEMENTS_QUEUE);
+    await boss.work(IMPROVEMENTS_QUEUE, async () => {
+      const r = await analyzeImprovements(pool);
+      if (r) logger.info(r, 'анализ предложений по улучшению выполнен');
+    });
+    await boss.schedule(IMPROVEMENTS_QUEUE, '20 2 * * *');
     // Контроль перерывов по графику: не ушёл на перерыв / не вернулся — уведомление супервизорам.
     await ensureJobQueue(boss, BREAKS_QUEUE);
     await boss.work(BREAKS_QUEUE, async () => {

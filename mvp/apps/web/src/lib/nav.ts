@@ -147,6 +147,13 @@ export const MENU: MenuItem[] = [
   },
 
   {
+    to: '/improvements',
+    label: t.improvements.navTitle,
+    perms: ['improvements.manage'],
+    group: 'control',
+    icon: IconBulb,
+  },
+  {
     to: '/ai-journal',
     label: t.ai.journalNav,
     perms: ['supervisor.monitor', 'assist.manage'],

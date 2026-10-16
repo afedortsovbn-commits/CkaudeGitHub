@@ -54,6 +54,13 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
           'Мониторинг очередей и операторов, все открытые обращения, просмотр сценариев IVR, ботов, объявлений и объектов',
       },
       {
+        code: 'improvements.manage',
+        title: 'Предложения по улучшению',
+        description:
+          'Робот предложений по улучшению процессов и системы, кандидаты в шаблоны ответов: статусы',
+        readOnly: true,
+      },
+      {
         code: 'supervisor.approvals',
         title: '2-я линия: контроль',
         description: 'Согласования и контроль сроков 2-й линии',

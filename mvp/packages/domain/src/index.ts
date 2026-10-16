@@ -23,4 +23,5 @@ export * from './notify';
 export * from './telegram-client';
 export * from './staffing';
 export * from './alerts';
+export * from './improvements';
 export * from './mail-policy';

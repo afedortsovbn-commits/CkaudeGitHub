@@ -54,7 +54,7 @@ import { type Row, options, useAction, useList, useRequired } from '../lib/data'
 import { notify, onRealtime, useRealtime } from '../lib/realtime';
 import { setFocusMode, useCompactMenu } from '../lib/focus';
 import { ExternalDataPanel } from './IvrAdminPages';
-import { renderTemplate, SlashList, useSlashTemplates } from '../components/AssistPanel';
+import { renderTemplate, SlashList, useSlashTemplates, useTemplateHint } from '../components/AssistPanel';
 import { HintPanel } from '../components/HintPanel';
 import { AzsMapModal, type Station, type StationKind, useStations } from '../components/AzsMap';
 import { softphone, useSoftphone } from '../lib/softphone';
@@ -607,6 +607,13 @@ function Messages({ conv, typing, onTyping }: { conv: Row; typing: boolean; onTy
     ? conv.status !== 'closed'
     : conv.assigneeId === me?.id && ['active', 'hold'].includes(String(conv.status));
   const slash = useSlashTemplates(text, String(conv.channelKind));
+  // Д-099: набираемый вручную ответ похож на шаблон — подсказать его (скрытая подсказка не возвращается).
+  const tplHint = useTemplateHint(
+    text,
+    String(conv.channelKind),
+    !note && !hint && !voice && canWrite && !slash.open,
+  );
+  const [hiddenHint, setHiddenHint] = useState<string | null>(null);
   const lastInSeq = Math.max(
     0,
     ...(msgs.data ?? []).filter((m) => m.direction === 'in').map((m) => Number(m.seq)),
@@ -762,6 +769,33 @@ function Messages({ conv, typing, onTyping }: { conv: Row; typing: boolean; onTy
         </Text>
       ) : null}
       {!voice && slash.open && <SlashList items={slash.items} onPick={pickTemplate} />}
+      {tplHint && hiddenHint !== String(tplHint.id) && (
+        <Paper withBorder p={4} px="xs" bg="yellow.0" className="cc-appear" data-testid="tpl-hint">
+          <Group gap="xs" wrap="nowrap">
+            <Text size="xs" style={{ flex: 1 }} truncate>
+              💡 {t.improvements.suggest(String(tplHint.title))}
+            </Text>
+            <Button
+              size="compact-xs"
+              onClick={() => {
+                pickTemplate(tplHint);
+                setHiddenHint(String(tplHint.id));
+              }}
+              data-testid="tpl-hint-insert"
+            >
+              {t.improvements.suggestInsert}
+            </Button>
+            <Button
+              size="compact-xs"
+              variant="subtle"
+              color="gray"
+              onClick={() => setHiddenHint(String(tplHint.id))}
+            >
+              {t.improvements.suggestHide}
+            </Button>
+          </Group>
+        </Paper>
+      )}
       {!voice && (
         <>
           <Group gap={4}>
