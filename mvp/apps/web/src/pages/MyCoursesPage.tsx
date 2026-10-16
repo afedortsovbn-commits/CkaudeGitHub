@@ -18,6 +18,7 @@ import {
   Text,
   ThemeIcon,
   Title,
+  UnstyledButton,
 } from '@mantine/core';
 import {
   IconAlertTriangle,
@@ -27,6 +28,7 @@ import {
   IconChevronLeft,
   IconChevronRight,
   IconCircleCheck,
+  IconPlayerPlayFilled,
   IconQuote,
   IconSchool,
 } from '@tabler/icons-react';
@@ -58,7 +60,14 @@ export type Block =
   | { type: 'case'; title?: string; situation: string; action: string; result: string }
   | { type: 'text'; title?: string; text: string }
   | { type: 'image'; assetId?: string; url?: string; caption?: string }
-  | { type: 'video'; assetId?: string; url?: string; title?: string; caption?: string }
+  | {
+      type: 'video';
+      assetId?: string;
+      posterAssetId?: string;
+      url?: string;
+      title?: string;
+      caption?: string;
+    }
   | { type: 'tip'; text: string; tone?: 'info' | 'warning' | 'success' }
   | { type: 'steps'; title?: string; items: string[] }
   | { type: 'quote'; text: string; author?: string }
@@ -163,7 +172,7 @@ export function AssetImage({
 }
 
 /** Д-089: видеоурок из файлов курса — загружается с авторизацией, играет во всю ширину слайда. */
-export function AssetVideo({ id, url }: { id?: string; url?: string }) {
+function useAssetUrl(id?: string, url?: string): string | null {
   const [src, setSrc] = useState<string | null>(url ?? null);
   useEffect(() => {
     let alive = true;
@@ -176,15 +185,82 @@ export function AssetVideo({ id, url }: { id?: string; url?: string }) {
       alive = false;
     };
   }, [id, url]);
+  return src;
+}
+
+/** Длительность исчезновения заставки видеоурока (мс). */
+const POSTER_FADE_MS = 700;
+
+/**
+ * Д-089, Д-092: видеоурок из файлов курса. До запуска поверх — заставка урока (о чём урок) с кнопкой «Смотреть»;
+ * по нажатию заставка плавно исчезает, и сразу начинается урок.
+ */
+export function AssetVideo({ id, url, posterId }: { id?: string; url?: string; posterId?: string }) {
+  const src = useAssetUrl(id, url);
+  const poster = useAssetUrl(posterId);
+  const video = useRef<HTMLVideoElement>(null);
+  const [phase, setPhase] = useState<'poster' | 'fading' | 'playing'>(posterId ? 'poster' : 'playing');
+  const start = () => {
+    if (phase !== 'poster') return;
+    setPhase('fading');
+    setTimeout(() => {
+      setPhase('playing');
+      void video.current?.play().catch(() => undefined);
+    }, POSTER_FADE_MS);
+  };
   if (!src) return <Loader size="sm" my="xl" />;
   return (
-    <video
-      src={src}
-      controls
-      preload="metadata"
-      style={{ width: '100%', maxHeight: '62vh', borderRadius: 8, background: '#fff' }}
-      data-testid="lesson-video"
-    />
+    <Box pos="relative" style={{ borderRadius: 8, overflow: 'hidden' }}>
+      <video
+        ref={video}
+        src={src}
+        poster={poster ?? undefined}
+        controls={phase === 'playing'}
+        preload="metadata"
+        style={{
+          display: 'block',
+          width: '100%',
+          aspectRatio: '16 / 9',
+          maxHeight: '62vh',
+          background: '#fff',
+        }}
+        data-testid="lesson-video"
+      />
+      {phase !== 'playing' && (
+        <UnstyledButton
+          onClick={start}
+          aria-label={t.courses.videoPlay}
+          data-testid="lesson-video-poster"
+          style={{
+            position: 'absolute',
+            inset: 0,
+            background: '#fff',
+            opacity: phase === 'fading' ? 0 : 1,
+            transition: `opacity ${POSTER_FADE_MS}ms ease`,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          {poster && (
+            <img
+              src={poster}
+              alt=""
+              style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain' }}
+            />
+          )}
+          <ThemeIcon
+            size={84}
+            radius="xl"
+            color="blue"
+            className="cc-video-play"
+            style={{ position: 'relative' }}
+          >
+            <IconPlayerPlayFilled size={40} />
+          </ThemeIcon>
+        </UnstyledButton>
+      )}
+    </Box>
   );
 }
 
@@ -464,7 +540,7 @@ function BlockView({
     case 'video':
       return (
         <Box ta="center">
-          <AssetVideo id={b.assetId} url={b.url} />
+          <AssetVideo id={b.assetId} url={b.url} posterId={b.posterAssetId} />
           {b.caption && (
             <Text size="xs" c="dimmed" mt={4}>
               {b.caption}

@@ -249,3 +249,21 @@
 .cc-item {
   scroll-margin: 14px;
 }
+
+/* Д-092: кнопка запуска на заставке видеоурока — крупная, мягко «дышит», при наведении крупнее. */
+@keyframes cc-video-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(34, 139, 230, 0.45);
+  }
+  50% {
+    box-shadow: 0 0 0 16px rgba(34, 139, 230, 0);
+  }
+}
+.cc-video-play {
+  animation: cc-video-pulse 1.8s ease-in-out infinite;
+  transition: transform 0.15s ease;
+}
+[data-testid='lesson-video-poster']:hover .cc-video-play {
+  transform: scale(1.08);
+}

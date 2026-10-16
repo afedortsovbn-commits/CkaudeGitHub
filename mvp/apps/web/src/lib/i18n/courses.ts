@@ -111,6 +111,7 @@ export const courses = {
   blockImageUrl: 'Адрес картинки',
   blockImageUpload: 'Загрузить картинку',
   blockVideo: 'Видеоурок',
+  videoPlay: 'Смотреть видеоурок',
   blockVideoUpload: 'Загрузить видео (WebM, MP4)',
   blockCaption: 'Подпись',
   blockTone: 'Тон',

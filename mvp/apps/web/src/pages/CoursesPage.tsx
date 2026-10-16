@@ -281,7 +281,7 @@ function LessonEditor({
             )}
             {b.type === 'video' && (
               <Stack gap={6}>
-                <AssetVideo id={b.assetId} url={b.url} />
+                <AssetVideo id={b.assetId} url={b.url} posterId={b.posterAssetId} />
                 <Group align="flex-end">
                   <FileButton
                     onChange={(file) => file && uploadImage.mutate({ file, i })}

@@ -107,6 +107,8 @@ const Block = z.discriminatedUnion('type', [
     .object({
       type: z.literal('video'),
       assetId: uuid.optional(),
+      /** Д-092: заставка урока до запуска видео. */
+      posterAssetId: uuid.optional(),
       url: z.string().max(1000).optional(),
       title: z.string().max(200).optional(),
       caption: z.string().max(500).optional(),
